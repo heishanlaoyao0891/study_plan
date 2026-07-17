@@ -33,6 +33,7 @@ func AutoMigrate() error {
 		&models.PlanMember{},
 		&models.DailyTask{},
 		&models.StudySession{},
+		&models.PostponeRecord{},
 		&models.Checkin{},
 		&models.SlackConfig{},
 		&models.SlackRecord{},

@@ -114,13 +114,27 @@ func ToggleCheckin(c *gin.Context) {
 		return
 	}
 
-	// 查询现有记录
-	var existing models.Checkin
-	err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&existing).Error
-
 	newVal := true
 	if req.Completed != nil {
 		newVal = *req.Completed
+	}
+
+	// 查询现有记录
+	var existing models.Checkin
+	err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&existing).Error
+	if err == nil && req.Completed == nil {
+		newVal = !existing.Completed
+	}
+	if newVal {
+		var task models.DailyTask
+		if err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&task).Error; err != nil {
+			api.Fail(c, http.StatusBadRequest, "daily task not found")
+			return
+		}
+		if task.Status != models.TaskStatusCompleted {
+			api.Fail(c, http.StatusBadRequest, "complete today's task before check-in")
+			return
+		}
 	}
 
 	if err == gorm.ErrRecordNotFound {
@@ -149,10 +163,6 @@ func ToggleCheckin(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query checkin failed: "+err.Error())
 		return
 	} else {
-		// toggle or set
-		if req.Completed == nil {
-			newVal = !existing.Completed
-		}
 		if e := db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Model(&existing).Update("completed", newVal).Error; err != nil {
 				return err

@@ -9,6 +9,14 @@
       </view>
     </view>
 
+    <view class="eff-card">
+      <view>
+        <view class="eff-title">近 {{ efficiency.days || 30 }} 天效率</view>
+        <view class="eff-sub">{{ efficiency.completed_tasks || 0 }}/{{ efficiency.total_tasks || 0 }} 个任务完成</view>
+      </view>
+      <view class="eff-rate">{{ efficiency.completion_rate || 0 }}%</view>
+    </view>
+
     <view class="section-title">今日分布</view>
     <view class="row" v-for="r in daily" :key="r.plan_id">
       <view>
@@ -34,19 +42,22 @@ import { StatsApi } from '@/api'
 const weekly = ref<any>({})
 const daily = ref<any[]>([])
 const slackDist = ref<any[]>([])
+const efficiency = ref<any>({})
 
 async function load() {
   try {
     const today = new Date().toISOString().slice(0, 10)
     const month = today.slice(0, 7)
-    const [w, d, s] = await Promise.all([
+    const [w, d, s, e] = await Promise.all([
       StatsApi.weeklyReport(),
       StatsApi.dailyDistribution(today),
       StatsApi.slackDistribution(month),
+      StatsApi.efficiency(30),
     ])
     weekly.value = w || {}
     daily.value = d || []
     slackDist.value = s || []
+    efficiency.value = e || {}
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   }
@@ -63,6 +74,10 @@ onShow(load)
 .metric { padding: 22rpx 10rpx; border-radius: 14rpx; background: rgba(255,255,255,.08); text-align: center; }
 .num { font-size: 34rpx; font-weight: 800; }
 .label { margin-top: 8rpx; color: #aeb7c8; font-size: 21rpx; }
+.eff-card { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.eff-title { color: #111827; font-size: 29rpx; font-weight: 800; }
+.eff-sub { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
+.eff-rate { color: #0f766e; font-size: 44rpx; font-weight: 800; }
 .section-title { margin: 34rpx 0 16rpx; color: #111827; font-size: 30rpx; font-weight: 800; }
 .row { display: flex; justify-content: space-between; align-items: center; padding: 26rpx; margin-bottom: 14rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
 .row-title { color: #111827; font-size: 28rpx; font-weight: 700; }

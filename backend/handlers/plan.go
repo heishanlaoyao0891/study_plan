@@ -99,7 +99,12 @@ func CreatePlan(c *gin.Context) {
 		EndDate:           req.EndDate,
 		Status:            models.PlanStatusActive,
 	}
-	if err := db.DB.Create(&plan).Error; err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&plan).Error; err != nil {
+			return err
+		}
+		return generateTasksForPlan(tx, uid, plan)
+	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "create plan failed: "+err.Error())
 		return
 	}
@@ -160,6 +165,21 @@ func DeletePlan(c *gin.Context) {
 	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("plan_id = ?", plan.ID).Delete(&models.Checkin{}).Error; e != nil {
+			return e
+		}
+		var taskIDs []uint
+		if e := tx.Model(&models.DailyTask{}).Where("plan_id = ?", plan.ID).Pluck("id", &taskIDs).Error; e != nil {
+			return e
+		}
+		if len(taskIDs) > 0 {
+			if e := tx.Where("task_id IN ?", taskIDs).Delete(&models.StudySession{}).Error; e != nil {
+				return e
+			}
+			if e := tx.Where("task_id IN ?", taskIDs).Delete(&models.PostponeRecord{}).Error; e != nil {
+				return e
+			}
+		}
+		if e := tx.Where("plan_id = ?", plan.ID).Delete(&models.DailyTask{}).Error; e != nil {
 			return e
 		}
 		return tx.Delete(&plan).Error
@@ -330,3 +350,34 @@ func mustGetOwnedPlan(c *gin.Context, uid uint) (*models.Plan, error) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan) error {
+	if plan.StartDate == "" || plan.EndDate == "" {
+		return nil
+	}
+	start, err := time.Parse(dateLayout, plan.StartDate)
+	if err != nil {
+		return nil
+	}
+	end, err := time.Parse(dateLayout, plan.EndDate)
+	if err != nil || end.Before(start) {
+		return nil
+	}
+	order := 1
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		task := models.DailyTask{
+			UserID:      uid,
+			PlanID:      plan.ID,
+			Date:        d.Format(dateLayout),
+			Title:       plan.Title,
+			Description: plan.Description,
+			Status:      models.TaskStatusPending,
+			SortOrder:   order,
+		}
+		if err := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, plan.ID, task.Date).FirstOrCreate(&task).Error; err != nil {
+			return err
+		}
+		order++
+	}
+	return nil
+}

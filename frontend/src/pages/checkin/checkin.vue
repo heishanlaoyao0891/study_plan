@@ -30,6 +30,20 @@
       <view class="progress-track"><view class="progress-fill" :style="{ width: percent + '%' }" /></view>
     </view>
 
+    <view class="decision-panel" v-if="pendingTasks.length">
+      <view class="decision-title">待处理学习</view>
+      <view class="decision" v-for="task in pendingTasks" :key="task.id">
+        <view>
+          <view class="decision-name">{{ task.title }}</view>
+          <view class="decision-meta">仍处于学习中，需结束或推迟</view>
+        </view>
+        <view class="decision-actions">
+          <button @click="makeup(task)">补录</button>
+          <button @click="postpone(task)">推迟</button>
+        </view>
+      </view>
+    </view>
+
     <view class="toolbar">
       <view class="toolbar-title">今日计划</view>
       <button class="mini-btn" @click="load">刷新</button>
@@ -79,6 +93,7 @@ const checkins = ref<CheckinInfo[]>([])
 const loading = ref(false)
 const streak = ref<number | null>(null)
 const slackBalance = ref(0)
+const pendingTasks = ref<any[]>([])
 const doneCount = computed(() => checkins.value.filter(c => c.completed).length)
 const totalCount = computed(() => checkins.value.length)
 const percent = computed(() => totalCount.value === 0 ? 0 : Math.round((doneCount.value / totalCount.value) * 100))
@@ -92,6 +107,7 @@ async function load() {
       SlackApi.balance().catch(() => null),
     ])
     checkins.value = list || []
+    pendingTasks.value = await StudyTaskApi.pendingDecision(todayStr).catch(() => [])
     if (s) streak.value = s.streak
     if (slack) slackBalance.value = slack.balance
   } catch (e: any) {
@@ -142,6 +158,33 @@ async function complete(item: CheckinInfo) {
     uni.showToast({ title: '完成并奖励躺平币', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '完成失败', icon: 'none' })
+  }
+}
+
+async function makeup(task: any) {
+  const res = await new Promise<any>(resolve => {
+    uni.showModal({ title: '补录结束时间', editable: true, placeholderText: `${todayStr} 23:30`, success: resolve })
+  })
+  if (!res.confirm) return
+  try {
+    await StudyTaskApi.makeup(task.id, res.content || `${todayStr} 23:30`, '手动补录')
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '补录失败', icon: 'none' })
+  }
+}
+
+async function postpone(task: any) {
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const res = await new Promise<any>(resolve => {
+    uni.showModal({ title: '推迟任务', editable: true, placeholderText: tomorrow, success: resolve })
+  })
+  if (!res.confirm) return
+  try {
+    await StudyTaskApi.postpone(task.id, res.content || tomorrow, '手动推迟')
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '推迟失败', icon: 'none' })
   }
 }
 
@@ -211,6 +254,13 @@ onShow(load)
 .progress-percent { color: #2264d1; font-size: 42rpx; font-weight: 800; }
 .progress-track { margin-top: 28rpx; height: 16rpx; border-radius: 99rpx; background: #edf2f8; overflow: hidden; }
 .progress-fill { height: 100%; border-radius: 99rpx; background: #2264d1; transition: width .2s ease; }
+.decision-panel { margin-top: 20rpx; padding: 26rpx; border-radius: 16rpx; background: #fff7e6; border: 1rpx solid #ffe1a6; }
+.decision-title { color: #7a4b00; font-size: 29rpx; font-weight: 800; margin-bottom: 14rpx; }
+.decision { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; padding: 14rpx 0; }
+.decision-name { color: #111827; font-size: 26rpx; font-weight: 700; }
+.decision-meta { margin-top: 6rpx; color: #9a5b00; font-size: 22rpx; }
+.decision-actions { display: flex; gap: 8rpx; width: 170rpx; }
+.decision-actions button { margin: 0; flex: 1; height: 52rpx; line-height: 52rpx; border-radius: 8rpx; background: #fff; color: #9a5b00; font-size: 21rpx; padding: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin: 34rpx 4rpx 18rpx; }
 .toolbar-title { color: #111827; font-size: 32rpx; font-weight: 800; }
 .mini-btn { margin: 0; width: 120rpx; height: 56rpx; line-height: 56rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 24rpx; }

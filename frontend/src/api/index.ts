@@ -94,6 +94,18 @@ export const PlanApi = {
   shift(id: number, days: number) {
     return api.put<Plan>(`/api/plans/${id}/shift`, { days })
   },
+  invite(id: number, user_id: number) {
+    return api.post<any>(`/api/plans/${id}/invite`, { user_id })
+  },
+  tasks(id: number) {
+    return api.get<any[]>(`/api/plans/${id}/tasks`)
+  },
+  createTask(id: number, data: { date: string; title: string; description?: string; sort_order?: number }) {
+    return api.post<any>(`/api/plans/${id}/tasks`, data)
+  },
+  reorderTasks(id: number, task_ids: number[]) {
+    return api.put<any>(`/api/plans/${id}/tasks/reorder`, { task_ids })
+  },
 }
 
 export const CheckinApi = {
@@ -118,6 +130,15 @@ export const StudyTaskApi = {
   },
   complete(id: number) {
     return api.put<any>(`/api/tasks/${id}/complete`)
+  },
+  update(id: number, data: any) {
+    return api.put<any>(`/api/tasks/${id}`, data)
+  },
+  remove(id: number) {
+    return api.delete<any>(`/api/tasks/${id}`)
+  },
+  postpone(id: number, date: string, reason = '') {
+    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason })
   },
   makeup(id: number, end_time: string, reason = '') {
     return api.put<any>(`/api/tasks/${id}/makeup`, { end_time, reason })
@@ -157,6 +178,9 @@ export const StatsApi = {
   },
   slackDistribution(month?: string) {
     return api.get<any[]>(`/api/stats/slack-distribution${month ? `?month=${month}` : ''}`)
+  },
+  efficiency(days = 30) {
+    return api.get<any>(`/api/stats/efficiency?days=${days}`)
   },
 }
 

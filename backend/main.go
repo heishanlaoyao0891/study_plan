@@ -67,11 +67,17 @@ func main() {
 		auth.GET("/checkins/streak", handlers.Streak)
 
 		// 学习任务
+		auth.GET("/plans/:id/tasks", handlers.ListPlanTasks)
+		auth.POST("/plans/:id/tasks", handlers.CreatePlanTask)
+		auth.PUT("/plans/:id/tasks/reorder", handlers.ReorderPlanTasks)
 		auth.PUT("/tasks/:id/start", handlers.StartTask)
 		auth.PUT("/tasks/:id/stop", handlers.StopTask)
 		auth.PUT("/tasks/:id/pause", handlers.StopTask)
 		auth.PUT("/tasks/:id/resume", handlers.StartTask)
 		auth.PUT("/tasks/:id/extend", handlers.StartTask)
+		auth.PUT("/tasks/:id", handlers.UpdateTask)
+		auth.DELETE("/tasks/:id", handlers.DeleteTask)
+		auth.PUT("/tasks/:id/postpone", handlers.PostponeTask)
 		auth.PUT("/tasks/:id/makeup", handlers.MakeupTask)
 		auth.PUT("/tasks/:id/complete", handlers.CompleteTask)
 		auth.GET("/tasks/pending-decision", handlers.PendingDecisionTasks)
@@ -89,6 +95,7 @@ func main() {
 		auth.GET("/stats/weekly-report", handlers.WeeklyReport)
 		auth.GET("/stats/monthly-report", handlers.MonthlyReport)
 		auth.GET("/stats/slack-distribution", handlers.SlackDistribution)
+		auth.GET("/stats/efficiency", handlers.EfficiencyStats)
 
 		// 提醒占位
 		auth.GET("/notifications/subscriptions", handlers.NotificationSubscriptions)

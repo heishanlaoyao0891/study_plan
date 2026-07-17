@@ -55,6 +55,8 @@
         <view class="actions">
           <button class="action" @click="togglePause(p)">{{ p.status === 'paused' ? '恢复' : '暂停' }}</button>
           <button class="action" @click="openEdit(p)">编辑</button>
+          <button class="action" @click="shift(p)">平移</button>
+          <button class="action" @click="invite(p)">邀请</button>
           <button class="action danger" @click="del(p)">删除</button>
         </view>
       </view>
@@ -188,6 +190,43 @@ async function del(p: Plan) {
   }
 }
 
+async function shift(p: Plan) {
+  const res = await new Promise<any>(resolve => {
+    uni.showModal({ title: '平移计划', editable: true, placeholderText: '输入天数，例如 1 或 -1', success: resolve })
+  })
+  if (!res.confirm) return
+  const days = Number(res.content || 0)
+  if (!days) {
+    uni.showToast({ title: '请输入非 0 天数', icon: 'none' })
+    return
+  }
+  try {
+    await PlanApi.shift(p.id, days)
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '平移失败', icon: 'none' })
+  }
+}
+
+async function invite(p: Plan) {
+  const res = await new Promise<any>(resolve => {
+    uni.showModal({ title: '邀请用户', editable: true, placeholderText: '输入用户 ID', success: resolve })
+  })
+  if (!res.confirm) return
+  const userId = Number(res.content || 0)
+  if (!userId) {
+    uni.showToast({ title: '请输入用户 ID', icon: 'none' })
+    return
+  }
+  try {
+    await PlanApi.invite(p.id, userId)
+    uni.showToast({ title: '已邀请', icon: 'success' })
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '邀请失败', icon: 'none' })
+  }
+}
+
 function statusText(s: string) { return s === 'paused' ? '暂停' : s === 'archived' ? '归档' : '进行' }
 function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
@@ -227,7 +266,7 @@ onShow(load)
 .metric { padding: 20rpx; border-radius: 12rpx; background: #f8fafc; }
 .metric-num { color: #111827; font-size: 30rpx; font-weight: 800; }
 .metric-label { margin-top: 6rpx; color: #7b8498; font-size: 22rpx; }
-.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 22rpx; }
+.actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10rpx; margin-top: 22rpx; }
 .action { margin: 0; height: 64rpx; line-height: 64rpx; border-radius: 10rpx; background: #f3f6fb; color: #384257; font-size: 24rpx; }
 .action.danger { color: #cf1322; background: #fff1f0; }
 .empty { margin-top: 24rpx; padding: 54rpx 34rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }

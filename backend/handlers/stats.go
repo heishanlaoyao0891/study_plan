@@ -104,6 +104,47 @@ func SlackDistribution(c *gin.Context) {
 	api.OK(c, out)
 }
 
+func EfficiencyStats(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
+	if days <= 0 || days > 366 {
+		days = 30
+	}
+	start := time.Now().AddDate(0, 0, -days+1).Format(dateLayout)
+	today := time.Now().Format(dateLayout)
+	var total, completed int64
+	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date <= ?", uid, start, today).Count(&total)
+	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date <= ? AND status = ?", uid, start, today, models.TaskStatusCompleted).Count(&completed)
+	var minutes int64
+	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date <= ?", uid, start, today).Select("COALESCE(SUM(study_minutes),0)").Scan(&minutes)
+	completionRate := 0
+	if total > 0 {
+		completionRate = int(completed * 100 / total)
+	}
+	type trendRow struct {
+		Date         string `json:"date"`
+		Completed    int    `json:"completed"`
+		Total        int    `json:"total"`
+		StudyMinutes int    `json:"study_minutes"`
+	}
+	var trend []trendRow
+	db.DB.Model(&models.DailyTask{}).
+		Select("date, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed, COUNT(*) AS total, COALESCE(SUM(study_minutes),0) AS study_minutes", models.TaskStatusCompleted).
+		Where("user_id = ? AND date >= ? AND date <= ?", uid, start, today).
+		Group("date").Order("date ASC").Scan(&trend)
+	api.OK(c, gin.H{
+		"days":              days,
+		"start":             start,
+		"end":               today,
+		"total_tasks":       total,
+		"completed_tasks":   completed,
+		"completion_rate":   completionRate,
+		"study_minutes":     minutes,
+		"avg_minutes_per_day": int(minutes) / days,
+		"trend":             trend,
+	})
+}
+
 func reportRange(c *gin.Context, uid uint, start, end time.Time) {
 	var studyMinutes int64
 	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date < ?", uid, start.Format(dateLayout), end.Format(dateLayout)).Select("COALESCE(SUM(study_minutes),0)").Scan(&studyMinutes)

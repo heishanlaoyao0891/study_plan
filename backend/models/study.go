@@ -16,6 +16,7 @@ type DailyTask struct {
 	Title        string     `gorm:"size:128;not null" json:"title"`
 	Description  string     `gorm:"size:1024" json:"description"`
 	Status       string     `gorm:"size:24;default:pending;not null" json:"status"`
+	SortOrder    int        `gorm:"default:0" json:"sort_order"`
 	ActualStart  *time.Time `json:"actual_start,omitempty"`
 	ActualEnd    *time.Time `json:"actual_end,omitempty"`
 	StudyMinutes int        `gorm:"default:0" json:"study_minutes"`
@@ -38,3 +39,16 @@ type StudySession struct {
 }
 
 func (StudySession) TableName() string { return "study_sessions" }
+
+type PostponeRecord struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	TaskID    uint      `gorm:"index;not null" json:"task_id"`
+	UserID    uint      `gorm:"index;not null" json:"user_id"`
+	PlanID    uint      `gorm:"index;not null" json:"plan_id"`
+	OldDate   string    `gorm:"size:10;not null" json:"old_date"`
+	NewDate   string    `gorm:"size:10;not null" json:"new_date"`
+	Reason    string    `gorm:"size:256" json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (PostponeRecord) TableName() string { return "postpone_records" }

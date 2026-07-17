@@ -20,6 +20,67 @@ type makeupTaskReq struct {
 	Reason  string `json:"reason"`
 }
 
+type createTaskReq struct {
+	Date        string `json:"date" binding:"required"`
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+	SortOrder   int    `json:"sort_order"`
+}
+
+type updateTaskReq struct {
+	Date        *string `json:"date"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	Status      *string `json:"status"`
+	SortOrder   *int    `json:"sort_order"`
+}
+
+type reorderTaskReq struct {
+	TaskIDs []uint `json:"task_ids" binding:"required"`
+}
+
+type postponeTaskReq struct {
+	Date   string `json:"date" binding:"required"`
+	Reason string `json:"reason"`
+}
+
+func ListPlanTasks(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var tasks []models.DailyTask
+	if err := db.DB.Where("user_id = ? AND plan_id = ?", uid, plan.ID).Order("date ASC, sort_order ASC, id ASC").Find(&tasks).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query tasks failed: "+err.Error())
+		return
+	}
+	api.OK(c, tasks)
+}
+
+func CreatePlanTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req createTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if _, err := time.Parse(dateLayout, req.Date); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
+		return
+	}
+	task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: req.Date, Title: req.Title, Description: req.Description, SortOrder: req.SortOrder, Status: models.TaskStatusPending}
+	if err := db.DB.Create(&task).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "create task failed: "+err.Error())
+		return
+	}
+	api.OK(c, task)
+}
+
 func StartTask(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	task, ok := getOwnedTask(c, uid)
@@ -117,6 +178,120 @@ func CompleteTask(c *gin.Context) {
 		return
 	}
 	api.OK(c, task)
+}
+
+func UpdateTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	var req updateTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	updates := map[string]interface{}{}
+	if req.Date != nil {
+		if _, err := time.Parse(dateLayout, *req.Date); err != nil {
+			api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
+			return
+		}
+		updates["date"] = *req.Date
+	}
+	if req.Title != nil {
+		updates["title"] = *req.Title
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	if req.SortOrder != nil {
+		updates["sort_order"] = *req.SortOrder
+	}
+	if len(updates) > 0 {
+		if err := db.DB.Model(task).Updates(updates).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "update task failed: "+err.Error())
+			return
+		}
+		db.DB.First(task, task.ID)
+	}
+	api.OK(c, task)
+}
+
+func DeleteTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_id = ?", task.ID).Delete(&models.StudySession{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(task).Error
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "delete task failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"deleted": task.ID})
+}
+
+func ReorderPlanTasks(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req reorderTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.TaskIDs) == 0 {
+		api.Fail(c, http.StatusBadRequest, "task_ids required")
+		return
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		for i, id := range req.TaskIDs {
+			if err := tx.Model(&models.DailyTask{}).Where("id = ? AND user_id = ? AND plan_id = ?", id, uid, plan.ID).Update("sort_order", i+1).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "reorder tasks failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"reordered": len(req.TaskIDs)})
+}
+
+func PostponeTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	var req postponeTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if _, err := time.Parse(dateLayout, req.Date); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
+		return
+	}
+	record := models.PostponeRecord{TaskID: task.ID, UserID: uid, PlanID: task.PlanID, OldDate: task.Date, NewDate: req.Date, Reason: req.Reason}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+		task.Date = req.Date
+		task.Status = models.TaskStatusPending
+		return tx.Save(task).Error
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "postpone task failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"task": task, "record": record})
 }
 
 func MakeupTask(c *gin.Context) {
