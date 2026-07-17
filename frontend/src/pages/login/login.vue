@@ -1,28 +1,38 @@
 <template>
-  <view class="login-page">
-    <view class="logo">📚</view>
-    <view class="title">学习打卡</view>
-    <view class="subtitle">坚持每日学习 · 赚躺平币</view>
-
-    <button class="btn-login" open-type="getUserInfo" @click="onLogin">微信一键登录</button>
-
-    <view class="hint" v-if="errMsg">{{ errMsg }}</view>
-    <view class="hint small">登录后即可创建学习计划并每日打卡</view>
-
-    <view class="dev-panel" v-if="showDev">
-      <view class="dev-title">本地调试</view>
-      <view class="dev-row">
-        <text>API 地址：</text>
-        <input v-model="apiBase" placeholder="http://localhost:8080" />
+  <view class="page">
+    <view class="topbar">
+      <view class="brand-mark">学</view>
+      <view>
+        <view class="brand-name">Study Plan</view>
+        <view class="brand-sub">计划、打卡、奖励闭环</view>
       </view>
-      <button size="mini" @click="saveApiBase">保存</button>
-      <view class="dev-row">
-        <text>mock code：</text>
-        <input v-model="mockCode" placeholder="任意字符串" />
-      </view>
-      <button size="mini" @click="mockLogin">mock 登录</button>
     </view>
-    <view class="dev-toggle" @click="showDev = !showDev">{{ showDev ? '收起' : '开发模式 →' }}</view>
+
+    <view class="panel hero">
+      <view class="hero-kicker">Personal Learning Console</view>
+      <view class="hero-title">把学习计划变成每天能完成的动作</view>
+      <view class="hero-copy">先记录，后优化。MVP 当前支持手动计划、今日打卡和基础登录。</view>
+      <button class="primary-btn" @click="onLogin">微信登录</button>
+      <button class="secondary-btn" @click="showDev = !showDev">{{ showDev ? '收起调试' : '本地调试' }}</button>
+    </view>
+
+    <view class="panel dev" v-if="showDev">
+      <view class="section-title">本地调试</view>
+      <view class="field">
+        <text class="field-label">API 地址</text>
+        <input class="field-input" v-model="apiBase" placeholder="http://localhost:8080" />
+      </view>
+      <view class="field">
+        <text class="field-label">Mock Code</text>
+        <input class="field-input" v-model="mockCode" placeholder="test_user" />
+      </view>
+      <view class="dev-actions">
+        <button class="ghost-btn" @click="saveApiBase">保存地址</button>
+        <button class="dark-btn" @click="mockLogin">Mock 登录</button>
+      </view>
+    </view>
+
+    <view class="error" v-if="errMsg">{{ errMsg }}</view>
   </view>
 </template>
 
@@ -38,7 +48,7 @@ const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
 
 function saveApiBase() {
   setApiBase(apiBase.value.trim())
-  uni.showToast({ title: '已保存' })
+  uni.showToast({ title: '已保存', icon: 'success' })
 }
 
 function afterLogin(resp: LoginResp) {
@@ -50,16 +60,12 @@ function afterLogin(resp: LoginResp) {
 async function onLogin() {
   errMsg.value = ''
   try {
-    const loginRes: any = await new Promise((resolve, reject) =>
-      uni.login({
-        provider: 'weixin',
-        success: resolve,
-        fail: reject,
-      })
-    )
+    const loginRes: any = await new Promise((resolve, reject) => {
+      uni.login({ provider: 'weixin', success: resolve, fail: reject })
+    })
     const code = loginRes?.code || ''
     if (!code) {
-      errMsg.value = '获取微信 code 失败'
+      errMsg.value = '获取微信 code 失败，请使用本地调试模式。'
       return
     }
     const resp = await AuthApi.login(code, '', '')
@@ -70,6 +76,7 @@ async function onLogin() {
 }
 
 async function mockLogin() {
+  errMsg.value = ''
   try {
     setApiBase(apiBase.value.trim())
     const resp = await AuthApi.login(mockCode.value, '测试用户', '')
@@ -81,37 +88,93 @@ async function mockLogin() {
 </script>
 
 <style lang="scss">
-.login-page {
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 44rpx 32rpx;
+  background: #f6f7fb;
+}
+.topbar {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  padding-top: 120rpx;
-  height: 100vh;
-  background: linear-gradient(180deg, #eef4ff 0%, #f8f8f8 100%);
+  gap: 20rpx;
+  margin-bottom: 40rpx;
 }
-.logo { font-size: 160rpx; margin-bottom: 30rpx; }
-.title { font-size: 48rpx; font-weight: 600; color: #333; }
-.subtitle { font-size: 26rpx; color: #888; margin-top: 16rpx; margin-bottom: 100rpx; }
-.btn-login {
-  width: 560rpx;
-  background: #07c160;
+.brand-mark {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  background: #111827;
   color: #fff;
-  border-radius: 48rpx;
-  font-size: 32rpx;
-  margin-bottom: 30rpx;
+  font-size: 34rpx;
+  font-weight: 700;
 }
-.hint { color: #e53935; font-size: 26rpx; margin-bottom: 20rpx; }
-.hint.small { color: #999; }
-.dev-panel {
-  margin-top: 60rpx;
-  width: 600rpx;
-  padding: 30rpx;
+.brand-name { color: #111827; font-size: 34rpx; font-weight: 700; }
+.brand-sub { margin-top: 4rpx; color: #7b8498; font-size: 23rpx; }
+.panel {
   background: #fff;
+  border: 1rpx solid #e9edf5;
   border-radius: 16rpx;
-  border: 1rpx solid #eee;
+  box-shadow: 0 10rpx 30rpx rgba(19, 35, 78, 0.06);
 }
-.dev-title { font-size: 28rpx; color: #333; margin-bottom: 20rpx; font-weight: 600; }
-.dev-row { display: flex; align-items: center; margin: 20rpx 0; font-size: 26rpx; color: #555; }
-.dev-row input { flex: 1; margin-left: 12rpx; border: 1rpx solid #ddd; border-radius: 8rpx; padding: 8rpx 16rpx; }
-.dev-toggle { margin-top: 40rpx; color: #4C8BF5; font-size: 24rpx; }
+.hero { padding: 44rpx 36rpx 36rpx; }
+.hero-kicker {
+  color: #2264d1;
+  font-size: 22rpx;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hero-title {
+  margin-top: 20rpx;
+  color: #111827;
+  font-size: 46rpx;
+  line-height: 1.22;
+  font-weight: 800;
+}
+.hero-copy {
+  margin: 22rpx 0 38rpx;
+  color: #606a80;
+  font-size: 27rpx;
+  line-height: 1.6;
+}
+.primary-btn,
+.secondary-btn,
+.dark-btn,
+.ghost-btn {
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 12rpx;
+  font-size: 29rpx;
+}
+.primary-btn { background: #2264d1; color: #fff; }
+.secondary-btn { margin-top: 20rpx; background: #eef4ff; color: #2264d1; }
+.dev { margin-top: 24rpx; padding: 30rpx; }
+.section-title { color: #111827; font-size: 30rpx; font-weight: 700; margin-bottom: 24rpx; }
+.field { margin-bottom: 22rpx; }
+.field-label { display: block; color: #606a80; font-size: 24rpx; margin-bottom: 10rpx; }
+.field-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 80rpx;
+  padding: 0 22rpx;
+  border: 1rpx solid #dbe2ee;
+  border-radius: 12rpx;
+  background: #f9fbff;
+  color: #111827;
+  font-size: 27rpx;
+}
+.dev-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx; }
+.ghost-btn { background: #f3f6fb; color: #384257; }
+.dark-btn { background: #111827; color: #fff; }
+.error {
+  margin-top: 24rpx;
+  padding: 22rpx;
+  border-radius: 12rpx;
+  background: #fff1f0;
+  color: #cf1322;
+  font-size: 25rpx;
+}
 </style>

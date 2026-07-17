@@ -1,56 +1,83 @@
 <template>
   <view class="plans-page">
-    <view class="actions">
-      <button class="btn-add" @click="openCreate">+ 新建计划</button>
+    <view class="summary">
+      <view>
+        <view class="summary-label">Active Plans</view>
+        <view class="summary-title">{{ activeCount }} 个进行中</view>
+      </view>
+      <button class="add-btn" @click="openCreate">新建</button>
+    </view>
+
+    <view class="stats-row">
+      <view class="stat-box">
+        <view class="stat-value">{{ plans.length }}</view>
+        <view class="stat-label">全部计划</view>
+      </view>
+      <view class="stat-box">
+        <view class="stat-value">{{ totalWeeklyHours }}</view>
+        <view class="stat-label">周目标小时</view>
+      </view>
+      <view class="stat-box">
+        <view class="stat-value">{{ pausedCount }}</view>
+        <view class="stat-label">已暂停</view>
+      </view>
     </view>
 
     <view class="empty" v-if="!loading && plans.length === 0">
-      <view class="empty-icon">📋</view>
-      <view>还没有学习计划</view>
-      <button class="link" @click="openCreate">创建第一个计划</button>
+      <view class="empty-title">还没有计划</view>
+      <view class="empty-desc">从一个明确的小目标开始，比如「Go 基础语法，每周 7 小时」。</view>
+      <button class="primary-btn" @click="openCreate">创建第一个计划</button>
     </view>
 
     <view class="plan-list" v-else>
       <view class="plan-card" v-for="p in plans" :key="p.id" :class="{ paused: p.status === 'paused' }">
-        <view class="plan-title" @click="goToday(p)">{{ p.title }}</view>
-        <view class="plan-desc" v-if="p.description">{{ p.description }}</view>
-        <view class="plan-meta">
-          <text>目标 {{ p.weekly_target_hours || 0 }} h/周</text>
-          <text class="tag" :class="p.status">{{ statusText(p.status) }}</text>
+        <view class="card-head">
+          <view class="plan-title">{{ p.title }}</view>
+          <view class="status-pill" :class="p.status">{{ statusText(p.status) }}</view>
         </view>
-        <view class="plan-actions">
-          <view class="pact" @click="togglePause(p)">{{ p.status === 'paused' ? '恢复' : '暂停' }}</view>
-          <view class="pact" @click="openEdit(p)">编辑</view>
-          <view class="pact danger" @click="del(p)">删除</view>
+        <view class="plan-desc" v-if="p.description">{{ p.description }}</view>
+        <view class="metrics">
+          <view class="metric">
+            <view class="metric-num">{{ p.weekly_target_hours || 0 }}</view>
+            <view class="metric-label">小时 / 周</view>
+          </view>
+          <view class="metric">
+            <view class="metric-num">{{ p.ai_generated ? 'AI' : '手动' }}</view>
+            <view class="metric-label">创建方式</view>
+          </view>
+        </view>
+        <view class="actions">
+          <button class="action" @click="togglePause(p)">{{ p.status === 'paused' ? '恢复' : '暂停' }}</button>
+          <button class="action" @click="openEdit(p)">编辑</button>
+          <button class="action danger" @click="del(p)">删除</button>
         </view>
       </view>
     </view>
 
-    <!-- 新建/编辑 弹层 -->
     <view class="modal" v-if="showModal" @click.self="closeModal">
       <view class="modal-body">
-        <view class="modal-title">{{ editing ? '编辑计划' : '新建学习计划' }}</view>
-        <view class="form-row">
-          <text class="label">标题</text>
-          <input v-model="form.title" placeholder="如：学习Go语言" />
+        <view class="modal-title">{{ editing ? '编辑计划' : '新建计划' }}</view>
+        <view class="field">
+          <text class="label">计划名称</text>
+          <input class="input" v-model="form.title" placeholder="例如：学习 Go 语言" />
         </view>
-        <view class="form-row">
-          <text class="label">描述</text>
-          <textarea v-model="form.description" placeholder="可选" />
+        <view class="field">
+          <text class="label">计划说明</text>
+          <textarea class="textarea" v-model="form.description" placeholder="可选，写下阶段目标或范围" />
         </view>
-        <view class="form-row">
-          <text class="label">每周目标(小时)</text>
-          <input v-model.number="form.weekly_target_hours" type="number" placeholder="如 28" />
+        <view class="field">
+          <text class="label">每周目标小时</text>
+          <input class="input" v-model.number="form.weekly_target_hours" type="number" placeholder="例如：7" />
         </view>
-        <view class="warnings" v-if="warnings.length > 0">
-          <view class="warn-item" v-for="w in warnings" :key="w">⚠️ {{ w }}</view>
-          <view class="warn-confirm">
-            <label><input type="checkbox" v-model="form.confirm_overload" />我已知晓，仍要创建</label>
-          </view>
+        <view class="confirm-row" v-if="!editing">
+          <label class="confirm-label">
+            <checkbox :checked="!!form.confirm_overload" @click="form.confirm_overload = !form.confirm_overload" />
+            <text>如系统提示压力过大，仍允许创建</text>
+          </label>
         </view>
         <view class="modal-actions">
-          <button @click="closeModal">取消</button>
-          <button class="primary" @click="save">{{ editing ? '保存' : '创建' }}</button>
+          <button class="cancel" @click="closeModal">取消</button>
+          <button class="submit" @click="save">{{ editing ? '保存' : '创建' }}</button>
         </view>
       </view>
     </view>
@@ -58,47 +85,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { PlanApi, type Plan, type CreatePlanReq } from '@/api'
 
-interface FormState extends CreatePlanReq {
-  confirm_overload?: boolean
-}
+interface FormState extends CreatePlanReq { confirm_overload?: boolean }
 
 const plans = ref<Plan[]>([])
 const loading = ref(false)
 const showModal = ref(false)
 const editing = ref<Plan | null>(null)
-const warnings = ref<string[]>([])
-const form = reactive<FormState>({
-  title: '',
-  description: '',
-  weekly_target_hours: 0,
-  start_date: '',
-  end_date: '',
-  confirm_overload: false,
-})
+const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 0, confirm_overload: false })
+const activeCount = computed(() => plans.value.filter(p => p.status === 'active').length)
+const pausedCount = computed(() => plans.value.filter(p => p.status === 'paused').length)
+const totalWeeklyHours = computed(() => plans.value.filter(p => p.status === 'active').reduce((sum, p) => sum + (p.weekly_target_hours || 0), 0))
 
 async function load() {
   loading.value = true
-  try {
-    plans.value = await PlanApi.list()
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
-  } finally {
-    loading.value = false
-  }
+  try { plans.value = await PlanApi.list() }
+  catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
+  finally { loading.value = false }
 }
 
 function resetForm() {
   form.title = ''
   form.description = ''
   form.weekly_target_hours = 0
-  form.start_date = ''
-  form.end_date = ''
   form.confirm_overload = false
-  warnings.value = []
 }
 
 function openCreate() {
@@ -112,20 +125,15 @@ function openEdit(p: Plan) {
   form.title = p.title
   form.description = p.description || ''
   form.weekly_target_hours = p.weekly_target_hours || 0
-  form.start_date = p.start_date || ''
-  form.end_date = p.end_date || ''
   form.confirm_overload = false
-  warnings.value = []
   showModal.value = true
 }
 
-function closeModal() {
-  showModal.value = false
-}
+function closeModal() { showModal.value = false }
 
 async function save() {
   if (!form.title?.trim()) {
-    uni.showToast({ title: '请输入计划标题', icon: 'none' })
+    uni.showToast({ title: '请输入计划名称', icon: 'none' })
     return
   }
   try {
@@ -134,130 +142,99 @@ async function save() {
         title: form.title,
         description: form.description,
         weekly_target_hours: form.weekly_target_hours,
-        start_date: form.start_date,
-        end_date: form.end_date,
       })
       uni.showToast({ title: '已保存', icon: 'success' })
     } else {
-      // 注意：后端在有警告但未 confirm 时会返回错误
-      try {
-        await PlanApi.create({ ...form })
-        uni.showToast({ title: '已创建', icon: 'success' })
-      } catch (e: any) {
-        // 后端在超负荷且未 confirm 时返回 code != 0；
-        // 我们的封装会把 message 通过 e.message 透出
-        if (e?.code === 400 && /overload/i.test(e?.message || '')) {
-          // 这里走二次提示，要求用户勾选 confirm
-          uni.showModal({
-            title: '超负荷提示',
-            content: e.message + '\n\n如要继续创建，请在表单中勾选"我已知晓"',
-            showCancel: false,
-          })
-          return
-        }
-        throw e
-      }
+      await PlanApi.create({ ...form })
+      uni.showToast({ title: '已创建', icon: 'success' })
     }
     showModal.value = false
     await load()
   } catch (e: any) {
-    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+    const msg = e?.message || '保存失败'
+    if (/overload/i.test(msg)) {
+      uni.showModal({ title: '创建压力提示', content: '当前计划可能过多或周目标过高。勾选「仍允许创建」后可继续。', showCancel: false })
+    } else {
+      uni.showToast({ title: msg, icon: 'none' })
+    }
   }
 }
 
 async function togglePause(p: Plan) {
   try {
-    if (p.status === 'paused') {
-      await PlanApi.resume(p.id)
-      p.status = 'active'
-      uni.showToast({ title: '已恢复', icon: 'success' })
-    } else {
-      await PlanApi.pause(p.id)
-      p.status = 'paused'
-      uni.showToast({ title: '已暂停', icon: 'success' })
-    }
+    const updated = p.status === 'paused' ? await PlanApi.resume(p.id) : await PlanApi.pause(p.id)
+    Object.assign(p, updated)
   } catch (e: any) {
     uni.showToast({ title: e?.message || '操作失败', icon: 'none' })
   }
 }
 
 async function del(p: Plan) {
-  const res = await new Promise<boolean>(resolve =>
-    uni.showModal({
-      title: '删除计划',
-      content: `确定删除「${p.title}」？相关打卡记录也会被删除`,
-      success: r => resolve(r.confirm),
-    })
-  )
-  if (!res) return
+  const ok = await new Promise<boolean>(resolve => {
+    uni.showModal({ title: '删除计划', content: `删除「${p.title}」及相关打卡记录？`, success: r => resolve(r.confirm) })
+  })
+  if (!ok) return
   try {
     await PlanApi.remove(p.id)
     plans.value = plans.value.filter(x => x.id !== p.id)
-    uni.showToast({ title: '已删除', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '删除失败', icon: 'none' })
   }
 }
 
-function goToday(p: Plan) {
-  uni.switchTab({ url: '/pages/checkin/checkin' })
-}
-
-function statusText(s: string) {
-  return s === 'paused' ? '已暂停' : s === 'archived' ? '已归档' : '进行中'
-}
-
+function statusText(s: string) { return s === 'paused' ? '暂停' : s === 'archived' ? '归档' : '进行' }
 onShow(load)
 </script>
 
 <style lang="scss">
-.plans-page { min-height: 100vh; background: #f5f6fa; padding-bottom: 40rpx; }
-.actions { padding: 20rpx 30rpx 0; }
-.btn-add {
-  background: #4C8BF5; color: #fff; border-radius: 40rpx; font-size: 28rpx;
-  width: 240rpx; margin-left: auto;
+.plans-page { min-height: 100vh; box-sizing: border-box; padding: 28rpx 28rpx 60rpx; background: #f6f7fb; }
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 34rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  border: 1rpx solid #e9edf5;
 }
-
-.empty { text-align: center; padding: 120rpx 40rpx; color: #888; }
-.empty-icon { font-size: 120rpx; margin-bottom: 30rpx; }
-.link { margin-top: 30rpx; color: #4C8BF5; background: transparent; font-size: 28rpx; }
-
-.plan-list { padding: 30rpx; }
-.plan-card {
-  background: #fff; border-radius: 16rpx; padding: 30rpx; margin-bottom: 20rpx;
-  box-shadow: 0 2rpx 12rpx rgba(0,0,0,.04);
-}
-.plan-card.paused { opacity: .6; }
-.plan-title { font-size: 34rpx; font-weight: 600; color: #333; }
-.plan-desc { font-size: 26rpx; color: #888; margin-top: 10rpx; }
-.plan-meta { display: flex; justify-content: space-between; margin-top: 20rpx; font-size: 24rpx; color: #666; }
-.tag { padding: 4rpx 16rpx; border-radius: 20rpx; background: #e8f5e9; color: #2e7d32; }
-.tag.paused { background: #fff3e0; color: #fb8c00; }
-.tag.archived { background: #f5f5f5; color: #888; }
-.plan-actions { display: flex; margin-top: 24rpx; border-top: 1rpx solid #eee; padding-top: 16rpx; }
-.pact { flex: 1; text-align: center; color: #4C8BF5; font-size: 26rpx; }
-.pact.danger { color: #e53935; }
-
-.modal {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center;
-  z-index: 99;
-}
-.modal-body {
-  width: 640rpx; background: #fff; border-radius: 20rpx; padding: 30rpx;
-}
-.modal-title { font-size: 34rpx; font-weight: 600; margin-bottom: 24rpx; text-align: center; }
-.form-row { margin-bottom: 24rpx; }
-.label { display: block; font-size: 26rpx; color: #666; margin-bottom: 10rpx; }
-.form-row input, .form-row textarea {
-  width: 100%; border: 1rpx solid #ddd; border-radius: 12rpx; padding: 16rpx;
-  font-size: 28rpx;
-}
-.warnings { margin: 16rpx 0; padding: 16rpx; background: #fffbe6; border-radius: 12rpx; }
-.warn-item { font-size: 24rpx; color: #d46b08; margin-bottom: 8rpx; }
-.warn-confirm { font-size: 24rpx; color: #555; margin-top: 10rpx; }
-.warn-confirm input { margin-right: 8rpx; }
-.modal-actions { display: flex; margin-top: 30rpx; }
-.modal-actions button { flex: 1; margin: 0 8rpx; }
-.modal-actions .primary { background: #4C8BF5; color: #fff; }
+.summary-label { color: #2264d1; font-size: 22rpx; font-weight: 800; }
+.summary-title { margin-top: 10rpx; color: #111827; font-size: 42rpx; font-weight: 800; }
+.add-btn { margin: 0; width: 132rpx; height: 70rpx; line-height: 70rpx; background: #2264d1; color: #fff; border-radius: 12rpx; font-size: 27rpx; }
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 18rpx; }
+.stat-box { padding: 24rpx 12rpx; border-radius: 14rpx; background: #fff; border: 1rpx solid #e9edf5; text-align: center; }
+.stat-value { color: #111827; font-size: 34rpx; font-weight: 800; }
+.stat-label { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
+.plan-list { margin-top: 24rpx; display: flex; flex-direction: column; gap: 18rpx; }
+.plan-card { padding: 28rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.plan-card.paused { opacity: .62; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
+.plan-title { flex: 1; min-width: 0; color: #111827; font-size: 32rpx; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-pill { min-width: 76rpx; text-align: center; padding: 8rpx 0; border-radius: 99rpx; color: #2264d1; background: #eef4ff; font-size: 22rpx; font-weight: 700; }
+.status-pill.paused { color: #9a5b00; background: #fff7e6; }
+.plan-desc { margin-top: 14rpx; color: #606a80; font-size: 25rpx; line-height: 1.5; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; margin-top: 22rpx; }
+.metric { padding: 20rpx; border-radius: 12rpx; background: #f8fafc; }
+.metric-num { color: #111827; font-size: 30rpx; font-weight: 800; }
+.metric-label { margin-top: 6rpx; color: #7b8498; font-size: 22rpx; }
+.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 22rpx; }
+.action { margin: 0; height: 64rpx; line-height: 64rpx; border-radius: 10rpx; background: #f3f6fb; color: #384257; font-size: 24rpx; }
+.action.danger { color: #cf1322; background: #fff1f0; }
+.empty { margin-top: 24rpx; padding: 54rpx 34rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.empty-title { color: #111827; font-size: 32rpx; font-weight: 800; }
+.empty-desc { margin-top: 12rpx; color: #7b8498; font-size: 26rpx; line-height: 1.5; }
+.primary-btn { margin-top: 32rpx; background: #2264d1; color: #fff; border-radius: 12rpx; }
+.modal { position: fixed; inset: 0; z-index: 99; background: rgba(17,24,39,.46); display: flex; align-items: flex-end; }
+.modal-body { width: 100%; box-sizing: border-box; padding: 34rpx 30rpx 42rpx; border-radius: 24rpx 24rpx 0 0; background: #fff; }
+.modal-title { color: #111827; font-size: 34rpx; font-weight: 800; margin-bottom: 28rpx; }
+.field { margin-bottom: 22rpx; }
+.label { display: block; color: #606a80; font-size: 24rpx; margin-bottom: 10rpx; }
+.input, .textarea { box-sizing: border-box; width: 100%; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; color: #111827; font-size: 27rpx; }
+.input { height: 80rpx; padding: 0 20rpx; }
+.textarea { height: 138rpx; padding: 18rpx 20rpx; }
+.confirm-row { margin: 8rpx 0 24rpx; color: #606a80; font-size: 24rpx; }
+.confirm-label { display: flex; align-items: center; gap: 10rpx; }
+.modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }
+.cancel, .submit { margin: 0; height: 82rpx; line-height: 82rpx; border-radius: 12rpx; font-size: 28rpx; }
+.cancel { background: #f3f6fb; color: #384257; }
+.submit { background: #2264d1; color: #fff; }
 </style>

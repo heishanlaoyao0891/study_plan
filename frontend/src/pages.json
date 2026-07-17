@@ -7,12 +7,12 @@
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "学习打卡",
-    "navigationBarBackgroundColor": "#F8F8F8",
-    "backgroundColor": "#F8F8F8"
+    "navigationBarBackgroundColor": "#F6F7FB",
+    "backgroundColor": "#F6F7FB"
   },
   "tabBar": {
-    "color": "#888888",
-    "selectedColor": "#4C8BF5",
+    "color": "#8A92A6",
+    "selectedColor": "#2264D1",
     "backgroundColor": "#FFFFFF",
     "borderStyle": "black",
     "list": [
