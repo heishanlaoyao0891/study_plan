@@ -57,6 +57,28 @@ The system SHALL allow users to create a new study plan item without AI.
 - **WHEN** user sends POST /api/plans with title and schedule
 - **THEN** system creates the plan and user can manually add daily tasks
 
+### Requirement: System warns when plans overlap or overload
+The system SHALL check existing active plans and warn the user if the new plan would cause excessive workload.
+
+#### Scenario: Time slot overlap warning
+- **WHEN** user creates a plan with time slot 20:00-22:00 and an existing active plan already occupies 20:00-21:00
+- **THEN** system returns a warning: "该时间段与 [计划名] 重叠，是否确认？"
+
+#### Scenario: Total weekly hours overload warning
+- **WHEN** user's new plan would bring total weekly hours across all active plans above a threshold (e.g. 56h/week)
+- **THEN** system returns a warning: "所有计划每周总学时已达 X 小时，压力可能过大，是否确认？"
+
+#### Scenario: Too many active plans warning
+- **WHEN** user already has 3+ active plans and tries to create another
+- **THEN** system returns a warning: "已有 X 个活跃计划，不建议同时进行过多学习计划"
+
+### Requirement: User can override overload warnings
+The system SHALL allow the user to confirm and proceed despite warnings.
+
+#### Scenario: Confirm override
+- **WHEN** system shows overload warning and user chooses to proceed anyway
+- **THEN** system creates the plan without further阻拦
+
 ### Requirement: Plan can be shared with other users
 The system SHALL allow a plan to be shared among multiple users for collaborative learning.
 
