@@ -17,6 +17,8 @@ Thumbs.db
 # Build artifacts
 *.exe
 *.db
+*.db-shm
+*.db-wal
 
 # Frontend
 node_modules/
