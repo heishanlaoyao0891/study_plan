@@ -52,6 +52,14 @@ func main() {
 		auth.DELETE("/plans/:id", handlers.DeletePlan)
 		auth.PUT("/plans/:id/pause", handlers.PausePlan)
 		auth.PUT("/plans/:id/resume", handlers.ResumePlan)
+		auth.PUT("/plans/:id/shift", handlers.ShiftPlan)
+		auth.POST("/plans/:id/invite", handlers.InvitePlanMember)
+		auth.POST("/plans/:id/join", handlers.JoinPlan)
+
+		// AI 计划
+		auth.POST("/ai/generate-plan", handlers.GeneratePlan)
+		auth.POST("/ai/regenerate", handlers.RegeneratePlan)
+		auth.PUT("/ai/plan/:id/edit", handlers.EditAIPlan)
 
 		// 打卡
 		auth.GET("/checkins", handlers.ListCheckins)
@@ -61,10 +69,29 @@ func main() {
 		// 学习任务
 		auth.PUT("/tasks/:id/start", handlers.StartTask)
 		auth.PUT("/tasks/:id/stop", handlers.StopTask)
+		auth.PUT("/tasks/:id/pause", handlers.StopTask)
+		auth.PUT("/tasks/:id/resume", handlers.StartTask)
+		auth.PUT("/tasks/:id/extend", handlers.StartTask)
 		auth.PUT("/tasks/:id/complete", handlers.CompleteTask)
 
 		// 躺平币
 		auth.GET("/slack/balance", handlers.SlackBalance)
+		auth.POST("/slack/start", handlers.StartSlack)
+		auth.PUT("/slack/stop", handlers.StopSlack)
+		auth.GET("/slack/records", handlers.SlackRecords)
+
+		// 统计
+		auth.GET("/stats/calendar", handlers.StatsCalendar)
+		auth.GET("/stats/streak", handlers.Streak)
+		auth.GET("/stats/daily-distribution", handlers.DailyDistribution)
+		auth.GET("/stats/weekly-report", handlers.WeeklyReport)
+		auth.GET("/stats/monthly-report", handlers.MonthlyReport)
+		auth.GET("/stats/slack-distribution", handlers.SlackDistribution)
+
+		// 提醒占位
+		auth.GET("/notifications/subscriptions", handlers.NotificationSubscriptions)
+		auth.POST("/notifications/subscribe", handlers.SubscribeNotification)
+		auth.DELETE("/notifications/subscribe", handlers.UnsubscribeNotification)
 	}
 
 	// 管理员
@@ -73,6 +100,9 @@ func main() {
 		admin.GET("/users", handlers.ListUsers)
 		admin.POST("/users/:id/ban", handlers.BanUser)
 		admin.POST("/users/:id/unban", handlers.UnbanUser)
+		admin.GET("/slack-config", handlers.GetSlackConfigs)
+		admin.PUT("/slack-config", handlers.UpsertGlobalSlackConfig)
+		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)
 	}
 
 	addr := ":" + config.App.Port

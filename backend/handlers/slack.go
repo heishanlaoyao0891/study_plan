@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -23,6 +24,80 @@ func SlackBalance(c *gin.Context) {
 		return
 	}
 	api.OK(c, gin.H{"balance": user.SlackBalance, "unit": "minutes"})
+}
+
+type slackStartReq struct {
+	Activity string `json:"activity" binding:"required"`
+}
+
+func StartSlack(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req slackStartReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "activity required")
+		return
+	}
+	var active models.SlackRecord
+	if err := db.DB.Where("user_id = ? AND end_time IS NULL", uid).First(&active).Error; err == nil {
+		api.OK(c, active)
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		api.Fail(c, http.StatusInternalServerError, "query slack failed: "+err.Error())
+		return
+	}
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
+		return
+	}
+	if user.SlackBalance <= 0 {
+		api.Fail(c, http.StatusBadRequest, "slack balance is empty")
+		return
+	}
+	rec := models.SlackRecord{UserID: uid, StartTime: time.Now(), Activity: req.Activity}
+	if err := db.DB.Create(&rec).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "start slack failed: "+err.Error())
+		return
+	}
+	api.OK(c, rec)
+}
+
+func StopSlack(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var rec models.SlackRecord
+	if err := db.DB.Where("user_id = ? AND end_time IS NULL", uid).First(&rec).Error; err != nil {
+		api.Fail(c, http.StatusBadRequest, "no active slack session")
+		return
+	}
+	now := time.Now()
+	dur := int(now.Sub(rec.StartTime).Minutes())
+	if dur < 1 {
+		dur = 1
+	}
+	rec.EndTime = &now
+	rec.DurationMin = dur
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if e := tx.Model(&models.User{}).Where("id = ?", uid).
+			Update("slack_balance", gorm.Expr("CASE WHEN slack_balance >= ? THEN slack_balance - ? ELSE 0 END", dur, dur)).Error; e != nil {
+			return e
+		}
+		return tx.Save(&rec).Error
+	})
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "stop slack failed: "+err.Error())
+		return
+	}
+	api.OK(c, rec)
+}
+
+func SlackRecords(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var records []models.SlackRecord
+	if err := db.DB.Where("user_id = ?", uid).Order("id DESC").Limit(50).Find(&records).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query records failed: "+err.Error())
+		return
+	}
+	api.OK(c, records)
 }
 
 func slackRewardMinutes(uid uint) int {

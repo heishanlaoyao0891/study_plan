@@ -20,6 +20,13 @@ type banReq struct {
 	Reason        string `json:"reason"`
 }
 
+type slackConfigReq struct {
+	CheckinMinutes int  `json:"checkin_minutes"`
+	StreakBonus    int  `json:"streak_bonus"`
+	QualityBonus   int  `json:"quality_bonus"`
+	UserID         *uint `json:"user_id"`
+}
+
 const farFutureYear = 2099
 
 // ListUsers 管理员：列出所有用户
@@ -126,4 +133,61 @@ func UnbanUser(c *gin.Context) {
 	user.BannedUntil = nil
 	user.BannedReason = ""
 	api.OK(c, user)
+}
+
+func GetSlackConfigs(c *gin.Context) {
+	var configs []models.SlackConfig
+	if err := db.DB.Order("user_id ASC, id ASC").Find(&configs).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query configs failed: "+err.Error())
+		return
+	}
+	api.OK(c, configs)
+}
+
+func UpsertGlobalSlackConfig(c *gin.Context) {
+	upsertSlackConfig(c, nil)
+}
+
+func UpsertUserSlackConfig(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("userId"), 10, 64)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+	uid := uint(id)
+	upsertSlackConfig(c, &uid)
+}
+
+func upsertSlackConfig(c *gin.Context, targetUserID *uint) {
+	adminID := c.GetUint(middleware.CtxUserIDKey)
+	var req slackConfigReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if req.CheckinMinutes < 0 || req.StreakBonus < 0 || req.QualityBonus < 0 {
+		api.Fail(c, http.StatusBadRequest, "config values must be non-negative")
+		return
+	}
+	var cfg models.SlackConfig
+	q := db.DB.Where("user_id IS NULL")
+	if targetUserID != nil {
+		q = db.DB.Where("user_id = ?", *targetUserID)
+	}
+	err := q.First(&cfg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		cfg = models.SlackConfig{UserID: targetUserID}
+	} else if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query config failed: "+err.Error())
+		return
+	}
+	cfg.CheckinMinutes = req.CheckinMinutes
+	cfg.StreakBonus = req.StreakBonus
+	cfg.QualityBonus = req.QualityBonus
+	cfg.UpdatedBy = &adminID
+	if err := db.DB.Save(&cfg).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "save config failed: "+err.Error())
+		return
+	}
+	api.OK(c, cfg)
 }

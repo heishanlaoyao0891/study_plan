@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -36,6 +37,14 @@ type updatePlanReq struct {
 	StartDate         *string `json:"start_date"`
 	EndDate           *string `json:"end_date"`
 	Status            *string `json:"status"`
+}
+
+type shiftPlanReq struct {
+	Days int `json:"days" binding:"required"`
+}
+
+type invitePlanReq struct {
+	UserID uint `json:"user_id" binding:"required"`
 }
 
 // ListPlans 当前用户的计划列表
@@ -170,6 +179,93 @@ func PausePlan(c *gin.Context) {
 // ResumePlan 恢复计划
 func ResumePlan(c *gin.Context) {
 	changePlanStatus(c, models.PlanStatusActive)
+}
+
+func ShiftPlan(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req shiftPlanReq
+	if err := c.ShouldBindJSON(&req); err != nil || req.Days == 0 {
+		api.Fail(c, http.StatusBadRequest, "invalid request: days required")
+		return
+	}
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		if plan.StartDate != "" {
+			if t, e := time.Parse(dateLayout, plan.StartDate); e == nil {
+				plan.StartDate = t.AddDate(0, 0, req.Days).Format(dateLayout)
+			}
+		}
+		if plan.EndDate != "" {
+			if t, e := time.Parse(dateLayout, plan.EndDate); e == nil {
+				plan.EndDate = t.AddDate(0, 0, req.Days).Format(dateLayout)
+			}
+		}
+		if e := tx.Save(plan).Error; e != nil {
+			return e
+		}
+		return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ?", req.Days, plan.ID, uid).Error
+	})
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "shift plan failed: "+err.Error())
+		return
+	}
+	api.OK(c, plan)
+}
+
+func InvitePlanMember(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req invitePlanReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if req.UserID == uid {
+		api.Fail(c, http.StatusBadRequest, "cannot invite yourself")
+		return
+	}
+	var user models.User
+	if err := db.DB.First(&user, req.UserID).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	now := time.Now()
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		if e := tx.Model(plan).Update("is_shared", true).Error; e != nil {
+			return e
+		}
+		owner := models.PlanMember{PlanID: plan.ID, UserID: uid, Role: "owner", JoinedAt: now}
+		_ = tx.Where("plan_id = ? AND user_id = ?", plan.ID, uid).FirstOrCreate(&owner).Error
+		member := models.PlanMember{PlanID: plan.ID, UserID: req.UserID, Role: "member", JoinedAt: now}
+		return tx.Where("plan_id = ? AND user_id = ?", plan.ID, req.UserID).FirstOrCreate(&member).Error
+	})
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "invite failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"plan_id": plan.ID, "user_id": req.UserID})
+}
+
+func JoinPlan(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	pid, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, errParamPlanID)
+		return
+	}
+	now := time.Now()
+	member := models.PlanMember{PlanID: uint(pid), UserID: uid, Role: "member", JoinedAt: now}
+	if err := db.DB.Where("plan_id = ? AND user_id = ?", pid, uid).FirstOrCreate(&member).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "join failed: "+err.Error())
+		return
+	}
+	api.OK(c, member)
 }
 
 func changePlanStatus(c *gin.Context, status string) {

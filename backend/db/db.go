@@ -30,6 +30,7 @@ func AutoMigrate() error {
 	if err := DB.AutoMigrate(
 		&models.User{},
 		&models.Plan{},
+		&models.PlanMember{},
 		&models.DailyTask{},
 		&models.StudySession{},
 		&models.Checkin{},

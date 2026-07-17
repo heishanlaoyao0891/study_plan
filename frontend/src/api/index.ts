@@ -122,4 +122,31 @@ export const SlackApi = {
   balance() {
     return api.get<{ balance: number; unit: string }>('/api/slack/balance')
   },
+  start(activity: string) {
+    return api.post<any>('/api/slack/start', { activity })
+  },
+  stop() {
+    return api.put<any>('/api/slack/stop')
+  },
+  records() {
+    return api.get<any[]>('/api/slack/records')
+  },
+}
+
+export const StatsApi = {
+  calendar(month?: string) {
+    return api.get<any[]>(`/api/stats/calendar${month ? `?month=${month}` : ''}`)
+  },
+  dailyDistribution(date?: string) {
+    return api.get<any[]>(`/api/stats/daily-distribution${date ? `?date=${date}` : ''}`)
+  },
+  weeklyReport() {
+    return api.get<any>('/api/stats/weekly-report')
+  },
+  monthlyReport() {
+    return api.get<any>('/api/stats/monthly-report')
+  },
+  slackDistribution(month?: string) {
+    return api.get<any[]>(`/api/stats/slack-distribution${month ? `?month=${month}` : ''}`)
+  },
 }

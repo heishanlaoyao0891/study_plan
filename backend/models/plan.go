@@ -27,3 +27,13 @@ type Plan struct {
 }
 
 func (Plan) TableName() string { return "plans" }
+
+type PlanMember struct {
+	ID       uint      `gorm:"primaryKey" json:"id"`
+	PlanID   uint      `gorm:"index;not null" json:"plan_id"`
+	UserID   uint      `gorm:"index;not null" json:"user_id"`
+	Role     string    `gorm:"size:16;default:member;not null" json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+func (PlanMember) TableName() string { return "plan_members" }
