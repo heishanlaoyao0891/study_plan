@@ -10,6 +10,7 @@ type Checkin struct {
 	PlanID    uint      `gorm:"index;not null" json:"plan_id"`
 	Date      string    `gorm:"size:10;not null;index" json:"date"` // YYYY-MM-DD
 	Completed bool      `gorm:"default:false" json:"completed"`
+	Rewarded  bool      `gorm:"default:false" json:"rewarded"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

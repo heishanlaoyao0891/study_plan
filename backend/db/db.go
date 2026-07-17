@@ -30,13 +30,33 @@ func AutoMigrate() error {
 	if err := DB.AutoMigrate(
 		&models.User{},
 		&models.Plan{},
+		&models.DailyTask{},
+		&models.StudySession{},
 		&models.Checkin{},
+		&models.SlackConfig{},
+		&models.SlackRecord{},
 	); err != nil {
 		return err
 	}
 	// 复合唯一索引：同一用户/同一天/同一计划 只能有一条打卡记录
 	idx := &models.Checkin{}
-	return DB.Exec(
+	if err := DB.Exec(
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_checkins_user_plan_date ON " + idx.TableName() + " (user_id, plan_id, date)",
-	).Error
+	).Error; err != nil {
+		return err
+	}
+	if err := DB.Exec(
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_tasks_user_plan_date ON daily_tasks (user_id, plan_id, date)",
+	).Error; err != nil {
+		return err
+	}
+
+	var count int64
+	if err := DB.Model(&models.SlackConfig{}).Where("user_id IS NULL").Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return DB.Create(&models.SlackConfig{CheckinMinutes: 10}).Error
+	}
+	return nil
 }

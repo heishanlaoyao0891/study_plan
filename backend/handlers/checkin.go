@@ -46,11 +46,14 @@ func ListCheckins(c *gin.Context) {
 		planIDs = append(planIDs, p.ID)
 	}
 	type checkinfo struct {
-		PlanID    uint   `json:"plan_id"`
-		Title     string `json:"title"`
-		Status    string `json:"status"`
-		Date      string `json:"date"`
-		Completed bool   `json:"completed"`
+		PlanID       uint   `json:"plan_id"`
+		TaskID       uint   `json:"task_id"`
+		Title        string `json:"title"`
+		Status       string `json:"status"`
+		TaskStatus   string `json:"task_status"`
+		Date         string `json:"date"`
+		StudyMinutes int    `json:"study_minutes"`
+		Completed    bool   `json:"completed"`
 	}
 	out := make([]checkinfo, 0, len(plans))
 
@@ -67,12 +70,20 @@ func ListCheckins(c *gin.Context) {
 			}
 		}
 		for _, p := range plans {
+			task, err := ensureDailyTask(uid, p, date)
+			if err != nil {
+				api.Fail(c, http.StatusInternalServerError, "ensure daily task failed: "+err.Error())
+				return
+			}
 			out = append(out, checkinfo{
-				PlanID:    p.ID,
-				Title:     p.Title,
-				Status:    p.Status,
-				Date:      date,
-				Completed: checked[p.ID],
+				PlanID:       p.ID,
+				TaskID:       task.ID,
+				Title:        p.Title,
+				Status:       p.Status,
+				TaskStatus:   task.Status,
+				Date:         date,
+				StudyMinutes: task.StudyMinutes,
+				Completed:    checked[p.ID],
 			})
 		}
 	}
@@ -119,7 +130,18 @@ func ToggleCheckin(c *gin.Context) {
 			Date:      req.Date,
 			Completed: newVal,
 		}
-		if e := db.DB.Create(&existing).Error; e != nil {
+		if e := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&existing).Error; err != nil {
+				return err
+			}
+			if newVal {
+				if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusCompleted).Error; err != nil {
+					return err
+				}
+				return awardSlackIfNeeded(tx, uid, &existing)
+			}
+			return nil
+		}); e != nil {
 			api.Fail(c, http.StatusInternalServerError, "create checkin failed: "+e.Error())
 			return
 		}
@@ -131,11 +153,22 @@ func ToggleCheckin(c *gin.Context) {
 		if req.Completed == nil {
 			newVal = !existing.Completed
 		}
-		if e := db.DB.Model(&existing).Update("completed", newVal).Error; e != nil {
+		if e := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&existing).Update("completed", newVal).Error; err != nil {
+				return err
+			}
+			existing.Completed = newVal
+			if newVal {
+				if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusCompleted).Error; err != nil {
+					return err
+				}
+				return awardSlackIfNeeded(tx, uid, &existing)
+			}
+			return tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusPending).Error
+		}); e != nil {
 			api.Fail(c, http.StatusInternalServerError, "update checkin failed: "+e.Error())
 			return
 		}
-		existing.Completed = newVal
 	}
 	api.OK(c, existing)
 }

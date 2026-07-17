@@ -11,6 +11,14 @@
       </view>
     </view>
 
+    <view class="wallet-panel">
+      <view>
+        <view class="wallet-label">躺平币余额</view>
+        <view class="wallet-desc">完成打卡自动奖励，当前按分钟计算</view>
+      </view>
+      <view class="wallet-value">{{ slackBalance }}<text> 分钟</text></view>
+    </view>
+
     <view class="progress-panel">
       <view class="progress-head">
         <view>
@@ -39,14 +47,19 @@
         v-for="item in checkins"
         :key="item.plan_id"
         :class="{ done: item.completed, disabled: item.status === 'paused' }"
-        @click="toggle(item)"
       >
         <view class="state-dot"><view class="state-inner" /></view>
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
-          <view class="item-meta">{{ item.status === 'paused' ? '计划已暂停' : item.completed ? '今日已完成' : '等待打卡' }}</view>
+          <view class="item-meta">{{ item.status === 'paused' ? '计划已暂停' : item.completed ? '今日已完成' : statusText(item) }}</view>
+          <view class="item-meta">已学习 {{ item.study_minutes || 0 }} 分钟</view>
         </view>
-        <view class="state-text">{{ item.completed ? '完成' : '打卡' }}</view>
+        <view class="button-stack" v-if="item.status !== 'paused'">
+          <button class="task-btn" v-if="item.task_status !== 'in_progress' && !item.completed" @click.stop="start(item)">开始</button>
+          <button class="task-btn warn" v-if="item.task_status === 'in_progress'" @click.stop="stop(item)">结束</button>
+          <button class="task-btn done-btn" v-if="!item.completed" @click.stop="complete(item)">完成</button>
+        </view>
+        <view class="state-text" v-else>暂停</view>
       </view>
     </view>
 
@@ -57,7 +70,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { CheckinApi, type CheckinInfo } from '@/api'
+import { CheckinApi, SlackApi, StudyTaskApi, type CheckinInfo } from '@/api'
 
 const today = new Date()
 const todayStr = today.toISOString().slice(0, 10)
@@ -65,6 +78,7 @@ const todayText = `${today.getMonth() + 1}月${today.getDate()}日`
 const checkins = ref<CheckinInfo[]>([])
 const loading = ref(false)
 const streak = ref<number | null>(null)
+const slackBalance = ref(0)
 const doneCount = computed(() => checkins.value.filter(c => c.completed).length)
 const totalCount = computed(() => checkins.value.length)
 const percent = computed(() => totalCount.value === 0 ? 0 : Math.round((doneCount.value / totalCount.value) * 100))
@@ -72,12 +86,14 @@ const percent = computed(() => totalCount.value === 0 ? 0 : Math.round((doneCoun
 async function load() {
   loading.value = true
   try {
-    const [list, s] = await Promise.all([
+    const [list, s, slack] = await Promise.all([
       CheckinApi.listByDate(todayStr),
       CheckinApi.streak().catch(() => null),
+      SlackApi.balance().catch(() => null),
     ])
     checkins.value = list || []
     if (s) streak.value = s.streak
+    if (slack) slackBalance.value = slack.balance
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   } finally {
@@ -98,6 +114,39 @@ async function toggle(item: CheckinInfo) {
   } catch (e: any) {
     uni.showToast({ title: e?.message || '打卡失败', icon: 'none' })
   }
+}
+
+async function start(item: CheckinInfo) {
+  try {
+    await StudyTaskApi.start(item.task_id)
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '开始失败', icon: 'none' })
+  }
+}
+
+async function stop(item: CheckinInfo) {
+  try {
+    await StudyTaskApi.stop(item.task_id)
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '结束失败', icon: 'none' })
+  }
+}
+
+async function complete(item: CheckinInfo) {
+  try {
+    await StudyTaskApi.complete(item.task_id)
+    await CheckinApi.toggle({ plan_id: item.plan_id, date: todayStr, completed: true })
+    await load()
+    uni.showToast({ title: '完成并奖励躺平币', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '完成失败', icon: 'none' })
+  }
+}
+
+function statusText(item: CheckinInfo) {
+  return item.task_status === 'in_progress' ? '学习中' : item.study_minutes > 0 ? '已记录学习' : '等待开始'
 }
 
 function goPlans() {
@@ -135,6 +184,20 @@ onShow(load)
 }
 .streak-num { font-size: 44rpx; font-weight: 800; }
 .streak-label { color: #aeb7c8; font-size: 22rpx; }
+.wallet-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18rpx;
+  padding: 26rpx 30rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  border: 1rpx solid #e9edf5;
+}
+.wallet-label { color: #111827; font-size: 29rpx; font-weight: 800; }
+.wallet-desc { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
+.wallet-value { color: #0f766e; font-size: 38rpx; font-weight: 800; }
+.wallet-value text { font-size: 22rpx; font-weight: 600; }
 .progress-panel {
   margin-top: 24rpx;
   padding: 30rpx;
@@ -180,6 +243,19 @@ onShow(load)
 .item-title { color: #111827; font-size: 30rpx; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
 .state-text { color: #2264d1; font-size: 25rpx; font-weight: 700; }
+.button-stack { display: flex; flex-direction: column; gap: 8rpx; width: 112rpx; }
+.task-btn {
+  margin: 0;
+  height: 48rpx;
+  line-height: 48rpx;
+  border-radius: 9rpx;
+  background: #eef4ff;
+  color: #2264d1;
+  font-size: 22rpx;
+  padding: 0;
+}
+.task-btn.warn { background: #fff7e6; color: #9a5b00; }
+.task-btn.done-btn { background: #2264d1; color: #fff; }
 .empty { margin-top: 22rpx; padding: 56rpx 34rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
 .empty-title { color: #111827; font-size: 32rpx; font-weight: 800; }
 .empty-desc { margin-top: 12rpx; color: #7b8498; font-size: 26rpx; line-height: 1.5; }

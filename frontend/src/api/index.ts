@@ -46,9 +46,12 @@ export interface CreatePlanReq {
 
 export interface CheckinInfo {
   plan_id: number
+  task_id: number
   title: string
   status: string
+  task_status: 'pending' | 'in_progress' | 'completed'
   date: string
+  study_minutes: number
   completed: boolean
 }
 
@@ -100,5 +103,23 @@ export const CheckinApi = {
   },
   streak() {
     return api.get<{ streak: number; streak_str: string }>(`/api/checkins/streak`)
+  },
+}
+
+export const StudyTaskApi = {
+  start(id: number) {
+    return api.put<any>(`/api/tasks/${id}/start`)
+  },
+  stop(id: number) {
+    return api.put<any>(`/api/tasks/${id}/stop`)
+  },
+  complete(id: number) {
+    return api.put<any>(`/api/tasks/${id}/complete`)
+  },
+}
+
+export const SlackApi = {
+  balance() {
+    return api.get<{ balance: number; unit: string }>('/api/slack/balance')
   },
 }

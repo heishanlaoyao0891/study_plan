@@ -57,6 +57,14 @@ func main() {
 		auth.GET("/checkins", handlers.ListCheckins)
 		auth.POST("/checkins", handlers.ToggleCheckin)
 		auth.GET("/checkins/streak", handlers.Streak)
+
+		// 学习任务
+		auth.PUT("/tasks/:id/start", handlers.StartTask)
+		auth.PUT("/tasks/:id/stop", handlers.StopTask)
+		auth.PUT("/tasks/:id/complete", handlers.CompleteTask)
+
+		// 躺平币
+		auth.GET("/slack/balance", handlers.SlackBalance)
 	}
 
 	// 管理员
