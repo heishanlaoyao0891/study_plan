@@ -13,3 +13,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Build artifacts
+*.exe
+*.db
+
+# Frontend
+node_modules/
+dist/

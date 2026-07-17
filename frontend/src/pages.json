@@ -1,0 +1,23 @@
+{
+  "pages": [
+    { "path": "pages/checkin/checkin", "style": { "navigationBarTitleText": "今日打卡" } },
+    { "path": "pages/plans/plans", "style": { "navigationBarTitleText": "我的计划" } },
+    { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "学习打卡",
+    "navigationBarBackgroundColor": "#F8F8F8",
+    "backgroundColor": "#F8F8F8"
+  },
+  "tabBar": {
+    "color": "#888888",
+    "selectedColor": "#4C8BF5",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/checkin/checkin", "text": "打卡" },
+      { "pagePath": "pages/plans/plans", "text": "计划" }
+    ]
+  }
+}

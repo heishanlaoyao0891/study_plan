@@ -1,0 +1,12 @@
+# build
+dist/
+build/
+node_modules/
+
+# IDE
+.uni-app/
+
+# misc
+*.log
+.DS_Store
+Thumbs.db
