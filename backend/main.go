@@ -99,6 +99,7 @@ func main() {
 
 		// 提醒占位
 		auth.GET("/notifications/subscriptions", handlers.NotificationSubscriptions)
+		auth.GET("/notifications/due", handlers.DueNotificationEvents)
 		auth.POST("/notifications/subscribe", handlers.SubscribeNotification)
 		auth.DELETE("/notifications/subscribe", handlers.UnsubscribeNotification)
 	}

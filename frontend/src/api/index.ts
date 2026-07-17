@@ -200,6 +200,9 @@ export const NotificationApi = {
   unsubscribe() {
     return api.delete<any>('/api/notifications/subscribe')
   },
+  due(date?: string) {
+    return api.get<any>(`/api/notifications/due${date ? `?date=${date}` : ''}`)
+  },
 }
 
 export const AdminApi = {
