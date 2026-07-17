@@ -72,7 +72,9 @@ func main() {
 		auth.PUT("/tasks/:id/pause", handlers.StopTask)
 		auth.PUT("/tasks/:id/resume", handlers.StartTask)
 		auth.PUT("/tasks/:id/extend", handlers.StartTask)
+		auth.PUT("/tasks/:id/makeup", handlers.MakeupTask)
 		auth.PUT("/tasks/:id/complete", handlers.CompleteTask)
+		auth.GET("/tasks/pending-decision", handlers.PendingDecisionTasks)
 
 		// 躺平币
 		auth.GET("/slack/balance", handlers.SlackBalance)

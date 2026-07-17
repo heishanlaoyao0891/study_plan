@@ -15,6 +15,11 @@ import (
 	"study_plan_backend/models"
 )
 
+type makeupTaskReq struct {
+	EndTime string `json:"end_time" binding:"required"`
+	Reason  string `json:"reason"`
+}
+
 func StartTask(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	task, ok := getOwnedTask(c, uid)
@@ -112,6 +117,58 @@ func CompleteTask(c *gin.Context) {
 		return
 	}
 	api.OK(c, task)
+}
+
+func MakeupTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	var req makeupTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	end, err := time.Parse(time.RFC3339, req.EndTime)
+	if err != nil {
+		if t, e := time.Parse("2006-01-02 15:04", req.EndTime); e == nil {
+			end = t
+		} else {
+			api.Fail(c, http.StatusBadRequest, "invalid end_time, use RFC3339 or yyyy-mm-dd hh:mm")
+			return
+		}
+	}
+	if task.ActualStart == nil {
+		task.ActualStart = &end
+	}
+	if end.Before(*task.ActualStart) {
+		api.Fail(c, http.StatusBadRequest, "end_time before actual_start")
+		return
+	}
+	minutes := int(end.Sub(*task.ActualStart).Minutes())
+	if minutes < 1 {
+		minutes = 1
+	}
+	task.ActualEnd = &end
+	task.StudyMinutes = minutes
+	task.Status = models.TaskStatusPending
+	if err := db.DB.Save(task).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "makeup task failed: "+err.Error())
+		return
+	}
+	api.OK(c, task)
+}
+
+func PendingDecisionTasks(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	date := c.DefaultQuery("date", time.Now().Format(dateLayout))
+	var tasks []models.DailyTask
+	if err := db.DB.Where("user_id = ? AND date = ? AND status = ?", uid, date, models.TaskStatusInProgress).Find(&tasks).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query tasks failed: "+err.Error())
+		return
+	}
+	api.OK(c, tasks)
 }
 
 func getOwnedTask(c *gin.Context, uid uint) (*models.DailyTask, bool) {

@@ -91,6 +91,9 @@ export const PlanApi = {
   resume(id: number) {
     return api.put<Plan>(`/api/plans/${id}/resume`)
   },
+  shift(id: number, days: number) {
+    return api.put<Plan>(`/api/plans/${id}/shift`, { days })
+  },
 }
 
 export const CheckinApi = {
@@ -115,6 +118,12 @@ export const StudyTaskApi = {
   },
   complete(id: number) {
     return api.put<any>(`/api/tasks/${id}/complete`)
+  },
+  makeup(id: number, end_time: string, reason = '') {
+    return api.put<any>(`/api/tasks/${id}/makeup`, { end_time, reason })
+  },
+  pendingDecision(date?: string) {
+    return api.get<any[]>(`/api/tasks/pending-decision${date ? `?date=${date}` : ''}`)
   },
 }
 
@@ -148,5 +157,41 @@ export const StatsApi = {
   },
   slackDistribution(month?: string) {
     return api.get<any[]>(`/api/stats/slack-distribution${month ? `?month=${month}` : ''}`)
+  },
+}
+
+export const AIApi = {
+  generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[] }) {
+    return api.post<any>('/api/ai/generate-plan', data)
+  },
+}
+
+export const NotificationApi = {
+  list() {
+    return api.get<any[]>('/api/notifications/subscriptions')
+  },
+  subscribe() {
+    return api.post<any>('/api/notifications/subscribe', {})
+  },
+  unsubscribe() {
+    return api.delete<any>('/api/notifications/subscribe')
+  },
+}
+
+export const AdminApi = {
+  users() {
+    return api.get<any>('/api/admin/users')
+  },
+  ban(id: number, duration_hours: number, reason: string) {
+    return api.post<any>(`/api/admin/users/${id}/ban`, { duration_hours, reason })
+  },
+  unban(id: number) {
+    return api.post<any>(`/api/admin/users/${id}/unban`, {})
+  },
+  slackConfigs() {
+    return api.get<any[]>('/api/admin/slack-config')
+  },
+  saveSlackConfig(data: { checkin_minutes: number; streak_bonus?: number; quality_bonus?: number }) {
+    return api.put<any>('/api/admin/slack-config', data)
   },
 }
