@@ -46,6 +46,10 @@ func GeneratePlan(c *gin.Context) {
 		return
 	}
 	preview := services.FallbackPlanPreview(ctx)
+	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "fallback preview validation failed: "+err.Error())
+		return
+	}
 	start := time.Now()
 	if req.StartDate != "" {
 		if t, err := time.Parse(dateLayout, req.StartDate); err == nil {

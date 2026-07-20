@@ -18,11 +18,11 @@
 
 ## 3. Structured Plan Output
 
-- [ ] 3.1 Define AI plan JSON schema
-- [ ] 3.2 Validate model output before returning it
-- [ ] 3.3 Repair minor JSON format issues when safe
-- [ ] 3.4 Reject invalid dates, empty tasks, and excessive durations
-- [ ] 3.5 Enforce default maximum preview length of 30 days
+- [x] 3.1 Define AI plan JSON schema
+- [x] 3.2 Validate model output before returning it
+- [x] 3.3 Repair minor JSON format issues when safe
+- [x] 3.4 Reject invalid dates, empty tasks, and excessive durations
+- [x] 3.5 Enforce default maximum preview length of 30 days
 
 ## 4. Preview And Commit
 
