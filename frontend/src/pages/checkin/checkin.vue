@@ -45,13 +45,13 @@
     </view>
 
     <view class="toolbar">
-      <view class="toolbar-title">今日计划</view>
+      <view class="toolbar-title">今日任务</view>
       <button class="mini-btn" @click="load">刷新</button>
     </view>
 
     <view class="empty" v-if="!loading && checkins.length === 0">
-      <view class="empty-title">还没有学习计划</view>
-      <view class="empty-desc">先创建一个计划，明天的打卡就不再靠记忆。</view>
+      <view class="empty-title">还没有学习目标</view>
+      <view class="empty-desc">先创建一个目标，系统会为它生成每天要执行的任务。</view>
       <button class="primary-btn" @click="goPlans">创建计划</button>
     </view>
 

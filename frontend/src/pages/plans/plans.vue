@@ -2,7 +2,7 @@
   <view class="plans-page">
     <view class="summary">
       <view>
-        <view class="summary-label">Active Plans</view>
+        <view class="summary-label">学习目标</view>
         <view class="summary-title">{{ activeCount }} 个进行中</view>
       </view>
       <button class="add-btn" @click="openCreate">新建</button>
@@ -11,15 +11,15 @@
     <view class="stats-row">
       <view class="stat-box">
         <view class="stat-value">{{ plans.length }}</view>
-        <view class="stat-label">全部计划</view>
+        <view class="stat-label">目标计划</view>
       </view>
       <view class="stat-box">
         <view class="stat-value">{{ totalWeeklyHours }}</view>
-        <view class="stat-label">周目标小时</view>
+        <view class="stat-label">周目标工时</view>
       </view>
       <view class="stat-box">
         <view class="stat-value">{{ pausedCount }}</view>
-        <view class="stat-label">已暂停</view>
+        <view class="stat-label">已暂停目标</view>
       </view>
     </view>
 
@@ -30,7 +30,7 @@
 
     <view class="empty" v-if="!loading && plans.length === 0">
       <view class="empty-title">还没有计划</view>
-      <view class="empty-desc">从一个明确的小目标开始，比如「Go 基础语法，每周 7 小时」。</view>
+      <view class="empty-desc">从一个明确的目标开始，系统会按天生成可执行任务，比如「Go 基础语法，每周 7 小时」。</view>
       <button class="primary-btn" @click="openCreate">创建第一个计划</button>
     </view>
 
@@ -44,17 +44,17 @@
         <view class="metrics">
           <view class="metric">
             <view class="metric-num">{{ p.weekly_target_hours || 0 }}</view>
-            <view class="metric-label">小时 / 周</view>
+          <view class="metric-label">计划工时 / 周</view>
           </view>
           <view class="metric">
             <view class="metric-num">{{ p.ai_generated ? 'AI' : '手动' }}</view>
-            <view class="metric-label">创建方式</view>
+          <view class="metric-label">任务来源</view>
           </view>
         </view>
         <view class="actions">
           <button class="action" @click="togglePause(p)">{{ p.status === 'paused' ? '恢复' : '暂停' }}</button>
-          <button class="action" @click="openEdit(p)">编辑</button>
-          <button class="action" @click="shift(p)">平移</button>
+          <button class="action" @click="openEdit(p)">编辑目标</button>
+          <button class="action" @click="shift(p)">平移任务</button>
           <button class="action" @click="invite(p)">邀请</button>
           <button class="action danger" @click="del(p)">删除</button>
         </view>

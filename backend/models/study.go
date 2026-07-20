@@ -21,6 +21,7 @@ type DailyTask struct {
 	PlannedEnd       string     `gorm:"size:5" json:"planned_end,omitempty"`
 	EstimatedMinutes int        `gorm:"default:0" json:"estimated_minutes"`
 	Difficulty       string     `gorm:"size:16" json:"difficulty,omitempty"`
+	NeedsDecision    bool       `gorm:"default:false" json:"needs_decision"`
 	ActualStart      *time.Time `json:"actual_start,omitempty"`
 	ActualEnd        *time.Time `json:"actual_end,omitempty"`
 	StudyMinutes     int        `gorm:"default:0" json:"study_minutes"`

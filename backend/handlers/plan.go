@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	maxActivePlans       = 3
-	maxWeeklyHoursTotal  = 56
-	errParamPlanID       = "invalid plan id"
+	maxActivePlans      = 3
+	maxWeeklyHoursTotal = 56
+	errParamPlanID      = "invalid plan id"
 )
 
 type createPlanReq struct {
@@ -88,6 +88,14 @@ func CreatePlan(c *gin.Context) {
 	if err != nil {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
+	}
+	if req.StartDate != "" && req.EndDate != "" {
+		if slotWarnings, slotErr := checkTaskSlotConflicts(uid, req.StartDate, req.EndDate, "20:00", "21:00"); slotErr == nil && len(slotWarnings) > 0 {
+			warnings = append(warnings, slotWarnings...)
+		} else if slotErr != nil {
+			api.Fail(c, http.StatusBadRequest, slotErr.Error())
+			return
+		}
 	}
 
 	plan := models.Plan{
@@ -330,6 +338,35 @@ func checkOverload(uid uint, newHours int, confirmed bool) ([]string, error) {
 	return warnings, nil
 }
 
+func checkTaskSlotConflicts(uid uint, startDate, endDate, plannedStart, plannedEnd string) ([]string, error) {
+	start, err := time.Parse(dateLayout, startDate)
+	if err != nil {
+		return nil, errors.New("invalid start_date, expect YYYY-MM-DD")
+	}
+	end, err := time.Parse(dateLayout, endDate)
+	if err != nil {
+		return nil, errors.New("invalid end_date, expect YYYY-MM-DD")
+	}
+	if end.Before(start) {
+		return nil, errors.New("end_date cannot be earlier than start_date")
+	}
+	var tasks []models.DailyTask
+	if err := db.DB.Where(
+		"user_id = ? AND date >= ? AND date <= ? AND planned_start < ? AND planned_end > ?",
+		uid, startDate, endDate, plannedEnd, plannedStart,
+	).Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	warnings := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		warnings = append(warnings, "任务 "+task.Date+" "+task.Title+" 的计划时段与新计划默认时段冲突")
+	}
+	return warnings, nil
+}
+
 // mustGetOwnedPlan 取回路径参数对应的计划，并校验归属当前用户
 func mustGetOwnedPlan(c *gin.Context, uid uint) (*models.Plan, error) {
 	pid, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -366,13 +403,17 @@ func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan) error {
 	order := 1
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		task := models.DailyTask{
-			UserID:      uid,
-			PlanID:      plan.ID,
-			Date:        d.Format(dateLayout),
-			Title:       plan.Title,
-			Description: plan.Description,
-			Status:      models.TaskStatusPending,
-			SortOrder:   order,
+			UserID:           uid,
+			PlanID:           plan.ID,
+			Date:             d.Format(dateLayout),
+			Title:            plan.Title,
+			Description:      plan.Description,
+			PlannedStart:     "20:00",
+			PlannedEnd:       "21:00",
+			EstimatedMinutes: 60,
+			Difficulty:       "medium",
+			Status:           models.TaskStatusPending,
+			SortOrder:        order,
 		}
 		if err := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, plan.ID, task.Date).FirstOrCreate(&task).Error; err != nil {
 			return err

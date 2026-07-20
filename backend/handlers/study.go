@@ -21,18 +21,26 @@ type makeupTaskReq struct {
 }
 
 type createTaskReq struct {
-	Date        string `json:"date" binding:"required"`
-	Title       string `json:"title" binding:"required"`
-	Description string `json:"description"`
-	SortOrder   int    `json:"sort_order"`
+	Date             string `json:"date" binding:"required"`
+	Title            string `json:"title" binding:"required"`
+	Description      string `json:"description"`
+	SortOrder        int    `json:"sort_order"`
+	PlannedStart     string `json:"planned_start"`
+	PlannedEnd       string `json:"planned_end"`
+	EstimatedMinutes int    `json:"estimated_minutes"`
+	Difficulty       string `json:"difficulty"`
 }
 
 type updateTaskReq struct {
-	Date        *string `json:"date"`
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	Status      *string `json:"status"`
-	SortOrder   *int    `json:"sort_order"`
+	Date             *string `json:"date"`
+	Title            *string `json:"title"`
+	Description      *string `json:"description"`
+	Status           *string `json:"status"`
+	SortOrder        *int    `json:"sort_order"`
+	PlannedStart     *string `json:"planned_start"`
+	PlannedEnd       *string `json:"planned_end"`
+	EstimatedMinutes *int    `json:"estimated_minutes"`
+	Difficulty       *string `json:"difficulty"`
 }
 
 type reorderTaskReq struct {
@@ -73,7 +81,19 @@ func CreatePlanTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
 		return
 	}
-	task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: req.Date, Title: req.Title, Description: req.Description, SortOrder: req.SortOrder, Status: models.TaskStatusPending}
+	task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: req.Date, Title: req.Title, Description: req.Description, SortOrder: req.SortOrder, PlannedStart: defaultPlannedStart(), PlannedEnd: defaultPlannedEnd(), EstimatedMinutes: defaultPlannedMinutes(), Difficulty: defaultPlannedDifficulty(), Status: models.TaskStatusPending}
+	if req.PlannedStart != "" {
+		task.PlannedStart = req.PlannedStart
+	}
+	if req.PlannedEnd != "" {
+		task.PlannedEnd = req.PlannedEnd
+	}
+	if req.EstimatedMinutes > 0 {
+		task.EstimatedMinutes = req.EstimatedMinutes
+	}
+	if req.Difficulty != "" {
+		task.Difficulty = req.Difficulty
+	}
 	if err := db.DB.Create(&task).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "create task failed: "+err.Error())
 		return
@@ -148,6 +168,7 @@ func StopTask(c *gin.Context) {
 	if task.Status == models.TaskStatusInProgress {
 		task.Status = models.TaskStatusPending
 	}
+	task.NeedsDecision = false
 
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		if e := tx.Save(&session).Error; e != nil {
@@ -173,6 +194,7 @@ func CompleteTask(c *gin.Context) {
 		task.ActualEnd = &now
 	}
 	task.Status = models.TaskStatusCompleted
+	task.NeedsDecision = false
 	if err := db.DB.Save(task).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "complete task failed: "+err.Error())
 		return
@@ -210,6 +232,18 @@ func UpdateTask(c *gin.Context) {
 	}
 	if req.SortOrder != nil {
 		updates["sort_order"] = *req.SortOrder
+	}
+	if req.PlannedStart != nil {
+		updates["planned_start"] = *req.PlannedStart
+	}
+	if req.PlannedEnd != nil {
+		updates["planned_end"] = *req.PlannedEnd
+	}
+	if req.EstimatedMinutes != nil {
+		updates["estimated_minutes"] = *req.EstimatedMinutes
+	}
+	if req.Difficulty != nil {
+		updates["difficulty"] = *req.Difficulty
 	}
 	if len(updates) > 0 {
 		if err := db.DB.Model(task).Updates(updates).Error; err != nil {
@@ -286,6 +320,7 @@ func PostponeTask(c *gin.Context) {
 		}
 		task.Date = req.Date
 		task.Status = models.TaskStatusPending
+		task.NeedsDecision = false
 		return tx.Save(task).Error
 	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "postpone task failed: "+err.Error())
@@ -328,6 +363,7 @@ func MakeupTask(c *gin.Context) {
 	task.ActualEnd = &end
 	task.StudyMinutes = minutes
 	task.Status = models.TaskStatusPending
+	task.NeedsDecision = false
 	if err := db.DB.Save(task).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "makeup task failed: "+err.Error())
 		return
@@ -339,7 +375,7 @@ func PendingDecisionTasks(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	date := c.DefaultQuery("date", time.Now().Format(dateLayout))
 	var tasks []models.DailyTask
-	if err := db.DB.Where("user_id = ? AND date = ? AND status = ?", uid, date, models.TaskStatusInProgress).Find(&tasks).Error; err != nil {
+	if err := db.DB.Where("user_id = ? AND date = ? AND (status = ? OR needs_decision = ?)", uid, date, models.TaskStatusInProgress, true).Find(&tasks).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "query tasks failed: "+err.Error())
 		return
 	}
@@ -374,11 +410,20 @@ func ensureDailyTask(uid uint, plan models.Plan, date string) (models.DailyTask,
 		return task, err
 	}
 	task = models.DailyTask{
-		UserID: uid,
-		PlanID: plan.ID,
-		Date:   date,
-		Title:  plan.Title,
-		Status: models.TaskStatusPending,
+		UserID:           uid,
+		PlanID:           plan.ID,
+		Date:             date,
+		Title:            plan.Title,
+		PlannedStart:     defaultPlannedStart(),
+		PlannedEnd:       defaultPlannedEnd(),
+		EstimatedMinutes: defaultPlannedMinutes(),
+		Difficulty:       defaultPlannedDifficulty(),
+		Status:           models.TaskStatusPending,
 	}
 	return task, db.DB.Create(&task).Error
 }
+
+func defaultPlannedStart() string      { return "20:00" }
+func defaultPlannedEnd() string        { return "21:00" }
+func defaultPlannedMinutes() int       { return 60 }
+func defaultPlannedDifficulty() string { return "medium" }
