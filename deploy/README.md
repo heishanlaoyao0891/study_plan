@@ -42,6 +42,19 @@ npm run build:mp-weixin
 
 4. Set `VITE_API_BASE=https://your-api-domain` before building, or set it from the login debug field during local testing.
 
+## Admin Console
+
+1. Build the PC admin console as static assets:
+
+```bash
+cd admin
+npm run build
+```
+
+2. Set `VITE_ADMIN_API_BASE=https://your-api-domain` when the admin console is served from a separate domain.
+
+3. Serve `admin/dist` behind HTTPS on a separate admin domain such as `admin.example.com`. Do not link this console from the mini program.
+
 ## Notes
 
 - Personal mini programs can publish this app without WeChat Pay because the product uses slack-time points, not real-money payments.

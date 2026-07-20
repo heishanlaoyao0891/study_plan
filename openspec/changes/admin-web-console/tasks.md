@@ -7,11 +7,11 @@
 
 ## 2. Admin Console Setup
 
-- [ ] 2.1 Create PC admin Vue 3 + TypeScript + Vite frontend project or workspace
-- [ ] 2.2 Configure admin API base URL and token storage
-- [ ] 2.3 Implement username/password admin login and session handling
-- [ ] 2.4 Add route guard requiring admin role
-- [ ] 2.5 Document recommended separate admin domain deployment
+- [x] 2.1 Create PC admin Vue 3 + TypeScript + Vite frontend project or workspace
+- [x] 2.2 Configure admin API base URL and token storage
+- [x] 2.3 Implement username/password admin login and session handling
+- [x] 2.4 Add route guard requiring admin role
+- [x] 2.5 Document recommended separate admin domain deployment
 
 ## 3. Admin Credential Backend
 
