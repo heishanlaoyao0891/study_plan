@@ -23,6 +23,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Verify backend build
-- [ ] 5.2 Verify mini program build
-- [ ] 5.3 Validate OpenSpec change
+- [x] 5.1 Verify backend build
+- [x] 5.2 Verify mini program build
+- [x] 5.3 Validate OpenSpec change
