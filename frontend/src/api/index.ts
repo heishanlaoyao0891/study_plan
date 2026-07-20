@@ -14,6 +14,7 @@ export interface User {
   role: 'user' | 'admin'
   banned_until?: string
   banned_reason?: string
+  account_status?: 'active' | 'inactive' | 'deleted'
 }
 
 export interface LoginResp {
@@ -114,6 +115,9 @@ export const AuthApi = {
   },
   updateAvatar(avatar_url: string) {
     return api.put<User>('/api/auth/avatar', { avatar_url })
+  },
+  deactivate(retain: boolean, note = '') {
+    return api.post<User>('/api/auth/deactivate', { retain, note })
   },
 }
 

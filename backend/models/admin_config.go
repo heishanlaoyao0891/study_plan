@@ -104,3 +104,13 @@ type FeedbackReport struct {
 }
 
 func (FeedbackReport) TableName() string { return "feedback_reports" }
+
+type AccountEvent struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"user_id"`
+	EventType string    `gorm:"size:32;index;not null" json:"event_type"`
+	Detail    string    `gorm:"size:512" json:"detail,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (AccountEvent) TableName() string { return "account_events" }

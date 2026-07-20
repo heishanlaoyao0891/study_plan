@@ -52,6 +52,7 @@ func main() {
 	{
 		auth.GET("/auth/me", handlers.CurrentUser)
 		auth.POST("/auth/phone", handlers.BindPhoneNumber)
+		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)
 	}
 

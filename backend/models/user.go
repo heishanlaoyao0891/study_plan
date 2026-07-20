@@ -9,6 +9,10 @@ import (
 const (
 	RoleUser  = "user"
 	RoleAdmin = "admin"
+
+	AccountStatusActive   = "active"
+	AccountStatusInactive = "inactive"
+	AccountStatusDeleted  = "deleted"
 )
 
 type User struct {
@@ -20,6 +24,7 @@ type User struct {
 	PhoneVerifiedAt *time.Time     `json:"phone_verified_at,omitempty"`
 	WeeklyHours     int            `gorm:"default:0" json:"weekly_hours"`
 	SlackBalance    int            `gorm:"default:0" json:"slack_balance"`
+	AccountStatus   string         `gorm:"size:16;default:active;not null" json:"account_status"`
 	Role            string         `gorm:"size:16;default:user;not null" json:"role"`
 	BannedUntil     *time.Time     `json:"banned_until,omitempty"`
 	BannedReason    string         `gorm:"size:256" json:"banned_reason,omitempty"`

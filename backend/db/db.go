@@ -52,6 +52,7 @@ func AutoMigrate() error {
 		&models.AIGenerationUsage{},
 		&models.OpsContent{},
 		&models.FeedbackReport{},
+		&models.AccountEvent{},
 	); err != nil {
 		return err
 	}

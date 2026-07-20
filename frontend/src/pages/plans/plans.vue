@@ -30,6 +30,7 @@
       <button class="quick" @click="goAI">AI 生成</button>
       <button class="quick" @click="goNotifications">提醒</button>
       <button class="quick" @click="goOps">设置</button>
+      <button class="quick" @click="goAccount">账户</button>
     </view>
 
     <view class="empty" v-if="!loading && plans.length === 0">
@@ -271,6 +272,7 @@ function goRecovery() { uni.navigateTo({ url: '/pages/recovery/recovery' }) }
 function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 function goOps() { uni.navigateTo({ url: '/pages/ops/ops' }) }
+function goAccount() { uni.navigateTo({ url: '/pages/account/account' }) }
 onShow(load)
 </script>
 

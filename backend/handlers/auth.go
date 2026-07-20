@@ -44,6 +44,11 @@ type updateAvatarReq struct {
 	AvatarURL string `json:"avatar_url" binding:"required"`
 }
 
+type deactivateAccountReq struct {
+	Retain bool   `json:"retain"`
+	Note   string `json:"note"`
+}
+
 type adminLoginFailure struct {
 	Count     int
 	LockedTil time.Time
@@ -99,6 +104,11 @@ func Login(c *gin.Context) {
 		return
 	} else {
 		// 老用户：检查封禁
+		if user.AccountStatus != models.AccountStatusActive {
+			db.DB.Model(&user).Updates(map[string]interface{}{"account_status": models.AccountStatusActive})
+			user.AccountStatus = models.AccountStatusActive
+			db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "restore", Detail: "reactivated on login"})
+		}
 		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":         403,
@@ -230,9 +240,111 @@ func BindPhoneNumber(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "bind phone failed: "+err.Error())
 		return
 	}
+	if user.PhoneNumber != "" && user.PhoneNumber != phone {
+		db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "phone_rebind", Detail: user.PhoneNumber + " -> " + phone})
+	}
 	user.PhoneNumber = phone
 	user.PhoneVerifiedAt = &now
 	api.OK(c, user)
+}
+
+func DeactivateAccount(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req deactivateAccountReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	if req.Retain {
+		if err := db.DB.Model(&user).Updates(map[string]interface{}{"account_status": models.AccountStatusInactive}).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "deactivate failed: "+err.Error())
+			return
+		}
+		db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "deactivate_retain", Detail: req.Note})
+		user.AccountStatus = models.AccountStatusInactive
+		api.OK(c, user)
+		return
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := cleanupUserData(tx, user.ID); err != nil {
+			return err
+		}
+		return tx.Model(&user).Updates(map[string]interface{}{
+			"nickname":          "",
+			"avatar_url":        "",
+			"phone_number":      "",
+			"phone_verified_at": nil,
+			"weekly_hours":      0,
+			"slack_balance":     0,
+			"account_status":    models.AccountStatusDeleted,
+		}).Error
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "delete account failed: "+err.Error())
+		return
+	}
+	db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "deactivate_delete", Detail: req.Note})
+	user.AccountStatus = models.AccountStatusDeleted
+	api.OK(c, user)
+}
+
+func cleanupUserData(tx *gorm.DB, uid uint) error {
+	if err := tx.Where("user_id = ?", uid).Delete(&models.PostponeRecord{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.Checkin{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.StudySession{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.SlackRecord{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.NotificationSubscription{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.NotificationDeliveryLog{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.AIGenerationUsage{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.FeedbackReport{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.PlanMember{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.StudyGroupMember{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("created_by = ?", uid).Delete(&models.StudyGroupInvitation{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("sender_user_id = ? OR target_user_id = ?", uid, uid).Delete(&models.StudyGroupNudge{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("leader_user_id = ?", uid).Delete(&models.StudyGroup{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.AccountEvent{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.DailyTask{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.Plan{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.SlackConfig{}).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func UpdateAvatar(c *gin.Context) {
