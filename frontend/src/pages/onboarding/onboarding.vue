@@ -2,7 +2,7 @@
   <view class="page">
     <view class="hero">
       <view class="title">开始使用</view>
-      <view class="subtitle">先把手机号、提醒、计划和今日任务串起来。</view>
+      <view class="subtitle">先把提醒、计划和今日任务串起来。</view>
     </view>
 
     <view class="step" v-if="!reminderDismissed">

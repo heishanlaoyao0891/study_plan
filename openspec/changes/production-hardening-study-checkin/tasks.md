@@ -10,9 +10,9 @@
 - [x] 2.2 Handle WeChat API errors with clear API responses
 - [x] 2.3 Keep local mock login for development only
 - [x] 2.4 Implement optional avatar update after user selection/authorization
-- [x] 2.5 Implement required phone number binding after user authorization
-- [x] 2.6 Block study features until phone number is verified and bound
-- [ ] 2.7 Verify WeChat phone-number capability cost/quota in the WeChat console before release
+- [x] 2.5 Implement optional phone number binding after user authorization
+- [x] 2.6 Make study-feature phone binding gate configurable for certified non-personal mini programs
+- [x] 2.7 Confirmed personal-subject mini program cannot rely on WeChat phone-number capability; keep phone binding optional unless a certified non-personal subject enables it
 - [x] 2.8 Store avatar as URL or object-storage key, not database binary data
 - [x] 2.9 Support object-storage compatible avatar storage configuration for COS or self-hosted MinIO
 

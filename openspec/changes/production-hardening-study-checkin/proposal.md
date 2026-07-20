@@ -7,7 +7,7 @@ The current app demonstrates the core product flow, but it still relies on local
 ## What Changes
 
 - Replace mock login with real WeChat `code2session` behavior in production.
-- Require phone number binding after WeChat login before the user can use study features, and collect avatar opportunistically without blocking login.
+- Support optional phone number binding after WeChat login; keep it disabled for personal-subject mini programs and allow certified non-personal deployments to require it through configuration. Collect avatar opportunistically without blocking login.
 - Add production-safe runtime configuration and startup validation.
 - Add WeChat subscription message template delivery behind the existing notification event queue.
 - Add structured logs for key user actions and backend errors.

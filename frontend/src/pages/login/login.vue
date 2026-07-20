@@ -55,7 +55,7 @@ function afterLogin(resp: LoginResp) {
   setToken(resp.token)
   uni.showToast({ title: '登录成功', icon: 'success' })
   const onboardingDone = !!uni.getStorageSync('onboarding_completed')
-  const url = resp.user.phone_number && resp.user.phone_verified_at ? (onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding') : '/pages/bind/bind'
+  const url = onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding'
   setTimeout(() => uni.reLaunch({ url }), 300)
 }
 

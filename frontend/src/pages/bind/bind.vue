@@ -2,7 +2,7 @@
   <view class="page">
     <view class="panel">
       <view class="title">绑定手机号</view>
-      <view class="desc">完成手机号验证后即可使用计划、打卡和统计功能。头像可选，不影响使用。</view>
+      <view class="desc">手机号验证仅在已开通微信手机号能力时使用。头像可选，不影响使用。</view>
 
       <view class="profile-row" v-if="user">
         <image class="avatar" v-if="user.avatar_url" :src="user.avatar_url" mode="aspectFill" />
@@ -15,7 +15,7 @@
 
       <button class="secondary-btn" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">选择头像</button>
       <button class="primary-btn" open-type="getPhoneNumber" @getphonenumber="onGetPhoneNumber">授权手机号</button>
-      <button class="ghost-btn" v-if="user?.phone_verified_at" @click="enterApp">进入应用</button>
+      <button class="ghost-btn" @click="enterApp">进入应用</button>
     </view>
 
     <view class="panel dev">

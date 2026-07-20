@@ -109,6 +109,44 @@ func TestRequireAdminRejectsNonAdmin(t *testing.T) {
 	}
 }
 
+func TestRequirePhoneBoundIsOptionalByDefault(t *testing.T) {
+	previous := config.App
+	t.Cleanup(func() { config.App = previous })
+	config.App = &config.Config{PhoneBindingRequired: false}
+	g := gin.New()
+	g.GET("/plans", func(c *gin.Context) {
+		c.Set(middleware.CtxRoleKey, models.RoleUser)
+		c.Set(middleware.CtxUserKey, models.User{})
+	}, middleware.RequirePhoneBound(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/plans", nil)
+	g.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected optional phone gate to allow request, got %d", rec.Code)
+	}
+}
+
+func TestRequirePhoneBoundRejectsWhenEnabled(t *testing.T) {
+	previous := config.App
+	t.Cleanup(func() { config.App = previous })
+	config.App = &config.Config{PhoneBindingRequired: true}
+	g := gin.New()
+	g.GET("/plans", func(c *gin.Context) {
+		c.Set(middleware.CtxRoleKey, models.RoleUser)
+		c.Set(middleware.CtxUserKey, models.User{})
+	}, middleware.RequirePhoneBound(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/plans", nil)
+	g.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected required phone gate to reject request, got %d", rec.Code)
+	}
+}
+
 func TestDailyTaskUniqueIndex(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "u1", Nickname: "u1"}

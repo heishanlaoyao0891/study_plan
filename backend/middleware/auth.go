@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"study_plan_backend/config"
 	"study_plan_backend/db"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
@@ -62,6 +63,10 @@ func Auth() gin.HandlerFunc {
 
 func RequirePhoneBound() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if config.App == nil || !config.App.PhoneBindingRequired {
+			c.Next()
+			return
+		}
 		role, _ := c.Get(CtxRoleKey)
 		if role == models.RoleAdmin {
 			c.Next()

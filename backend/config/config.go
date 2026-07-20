@@ -16,6 +16,7 @@ type Config struct {
 	WeChatAppID            string // 微信小程序 AppID
 	WeChatSecret           string // 微信小程序 AppSecret
 	WeChatLoginMock        bool   // 是否使用 mock 模式（无 AppID 时直接用 code 当作 openid）
+	PhoneBindingRequired   bool   // 是否强制要求微信手机号验证；个人主体小程序无法使用该能力
 	AdminUsername          string // PC 管理台初始管理员用户名
 	AdminPassword          string // PC 管理台初始管理员密码
 	AIKeySecret            string // AI API Key 服务端加密密钥
@@ -41,6 +42,7 @@ func Load() *Config {
 		WeChatAppID:            getEnv("WECHAT_APPID", ""),
 		WeChatSecret:           getEnv("WECHAT_SECRET", ""),
 		WeChatLoginMock:        getEnvBool("WECHAT_LOGIN_MOCK", false),
+		PhoneBindingRequired:   getEnvBool("PHONE_BINDING_REQUIRED", false),
 		AdminUsername:          getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),
 		AIKeySecret:            getEnv("AI_KEY_ENCRYPTION_SECRET", ""),

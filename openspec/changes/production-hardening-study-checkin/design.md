@@ -18,7 +18,7 @@ Deployment target is Tencent Cloud. Local development and validation remain requ
 
 Local mock login remains available only when `WECHAT_LOGIN_MOCK=true`. Production login exchanges `code` for `openid` through WeChat `jscode2session` and never accepts mock openids.
 
-The mini program should perform silent login through `uni.login()` when possible to obtain backend identity. Phone number collection cannot be silent in WeChat; it requires an explicit user tap on a phone authorization button. After WeChat login, the app SHALL block study features until the user binds a verified phone number.
+The mini program should perform silent login through `uni.login()` when possible to obtain backend identity. Phone number collection cannot be silent in WeChat; it requires an explicit user tap on a phone authorization button. Because WeChat phone-number verification is not available to personal-subject mini programs, the app SHALL keep phone binding optional by default. Certified non-personal deployments MAY set `PHONE_BINDING_REQUIRED=true` to block study features until the user binds a verified phone number.
 
 Avatar collection should be opportunistic. If the mini program can obtain or let the user choose an avatar during a low-friction profile flow, the app stores it. If avatar collection is skipped or unavailable, it SHALL NOT block login or study features.
 
@@ -30,7 +30,7 @@ If using self-hosted MinIO, the deployment must expose avatar files through HTTP
 
 For initial Tencent Cloud deployment, self-hosted MinIO may run on the same server as the backend through Docker, with persistent volumes and backup included in the server backup plan.
 
-Avatar binding is expected to have no per-use platform fee. Phone number authorization depends on WeChat's current capability rules and account qualification; before implementation or release, the team SHALL verify whether the selected phone-number component has platform fees or quota limits in the WeChat console.
+Avatar binding is expected to have no per-use platform fee. Phone number authorization depends on WeChat's current capability rules and account qualification. Public WeChat documentation says personal-subject mini programs cannot rely on the phone-number verification capability; certified non-personal deployments should verify fees, quota limits, and eligibility in the WeChat console before enabling `PHONE_BINDING_REQUIRED=true`.
 
 ## Notification Delivery
 
