@@ -13,8 +13,8 @@
 
     <view class="wallet-panel">
       <view>
-        <view class="wallet-label">躺平币余额</view>
-        <view class="wallet-desc">完成打卡自动奖励，当前按分钟计算</view>
+        <view class="wallet-label">可用躺平时间</view>
+        <view class="wallet-desc">完成打卡自动累积，仅用于休息时间记录</view>
       </view>
       <view class="wallet-value">{{ slackBalance }}<text> 分钟</text></view>
     </view>
@@ -155,7 +155,7 @@ async function complete(item: CheckinInfo) {
     await StudyTaskApi.complete(item.task_id)
     await CheckinApi.toggle({ plan_id: item.plan_id, date: todayStr, completed: true })
     await load()
-    uni.showToast({ title: '完成并奖励躺平币', icon: 'success' })
+    uni.showToast({ title: '完成并累积躺平时间', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '完成失败', icon: 'none' })
   }

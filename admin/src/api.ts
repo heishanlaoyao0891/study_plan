@@ -46,6 +46,7 @@ export interface SlackConfig {
   id: number
   user_id?: number | null
   checkin_minutes: number
+  makeup_cost_ratio: number
   streak_bonus: number
   quality_bonus: number
   updated_at?: string
@@ -81,6 +82,11 @@ export interface AuditLog {
   action_type: string
   reason?: string
   created_at: string
+}
+
+export interface SuspiciousRecordsResp {
+  tasks: Array<{ id: number; title: string; date: string; study_minutes: number; suspicious_reason?: string }>
+  sessions: Array<{ id: number; task_id: number; duration_min: number; review_note?: string }>
 }
 
 export interface AdminLoginResp {
@@ -167,5 +173,8 @@ export const AdminApi = {
   },
   auditLogs() {
     return request<{ logs: AuditLog[] }>('/api/admin/audit-logs')
+  },
+  suspiciousRecords() {
+    return request<SuspiciousRecordsResp>('/api/admin/suspicious-records')
   },
 }

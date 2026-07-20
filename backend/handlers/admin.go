@@ -30,10 +30,16 @@ type banReq struct {
 }
 
 type slackConfigReq struct {
-	CheckinMinutes int   `json:"checkin_minutes"`
-	StreakBonus    int   `json:"streak_bonus"`
-	QualityBonus   int   `json:"quality_bonus"`
-	UserID         *uint `json:"user_id"`
+	CheckinMinutes  int     `json:"checkin_minutes"`
+	MakeupCostRatio float64 `json:"makeup_cost_ratio"`
+	StreakBonus     int     `json:"streak_bonus"`
+	QualityBonus    int     `json:"quality_bonus"`
+	UserID          *uint   `json:"user_id"`
+}
+
+type suspiciousRecordResp struct {
+	Tasks    []models.DailyTask    `json:"tasks"`
+	Sessions []models.StudySession `json:"sessions"`
 }
 
 type aiConfigReq struct {
@@ -249,6 +255,10 @@ func upsertSlackConfig(c *gin.Context, targetUserID *uint) {
 		api.Fail(c, http.StatusBadRequest, "config values must be non-negative")
 		return
 	}
+	if req.MakeupCostRatio < 0 {
+		api.Fail(c, http.StatusBadRequest, "makeup_cost_ratio must be non-negative")
+		return
+	}
 	var cfg models.SlackConfig
 	q := db.DB.Where("user_id IS NULL")
 	if targetUserID != nil {
@@ -262,6 +272,7 @@ func upsertSlackConfig(c *gin.Context, targetUserID *uint) {
 		return
 	}
 	cfg.CheckinMinutes = req.CheckinMinutes
+	cfg.MakeupCostRatio = req.MakeupCostRatio
 	cfg.StreakBonus = req.StreakBonus
 	cfg.QualityBonus = req.QualityBonus
 	cfg.UpdatedBy = &adminID
@@ -275,6 +286,20 @@ func upsertSlackConfig(c *gin.Context, targetUserID *uint) {
 	}
 	recordAdminAudit(adminID, targetUserID, "update_slack_config", reason)
 	api.OK(c, cfg)
+}
+
+func GetSuspiciousRecords(c *gin.Context) {
+	var tasks []models.DailyTask
+	var sessions []models.StudySession
+	if err := db.DB.Where("suspicious = ?", true).Order("updated_at DESC").Limit(100).Find(&tasks).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query suspicious tasks failed: "+err.Error())
+		return
+	}
+	if err := db.DB.Where("suspicious = ?", true).Order("updated_at DESC").Limit(100).Find(&sessions).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query suspicious sessions failed: "+err.Error())
+		return
+	}
+	api.OK(c, suspiciousRecordResp{Tasks: tasks, Sessions: sessions})
 }
 
 func GetAIConfig(c *gin.Context) {

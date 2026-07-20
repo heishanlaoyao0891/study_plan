@@ -8,6 +8,7 @@ import LoginView from './views/LoginView.vue'
 import OverviewView from './views/OverviewView.vue'
 import SlackConfigView from './views/SlackConfigView.vue'
 import SubscriptionConfigView from './views/SubscriptionConfigView.vue'
+import SuspiciousRecordsView from './views/SuspiciousRecordsView.vue'
 import UserDetailView from './views/UserDetailView.vue'
 import UsersView from './views/UsersView.vue'
 
@@ -24,6 +25,7 @@ export const router = createRouter({
         { path: 'users', name: 'users', component: UsersView },
         { path: 'users/:id', name: 'user-detail', component: UserDetailView },
         { path: 'slack-config', name: 'slack-config', component: SlackConfigView },
+        { path: 'suspicious-records', name: 'suspicious-records', component: SuspiciousRecordsView },
         { path: 'ai-config', name: 'ai-config', component: AIConfigView },
         { path: 'subscription-config', name: 'subscription-config', component: SubscriptionConfigView },
         { path: 'audit-logs', name: 'audit-logs', component: AuditLogsView },

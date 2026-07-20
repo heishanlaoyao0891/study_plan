@@ -5,8 +5,16 @@
       <view class="report-grid">
         <view class="metric"><view class="num">{{ weekly.total_study_minutes || 0 }}</view><view class="label">学习分钟</view></view>
         <view class="metric"><view class="num">{{ weekly.completed_checkins || 0 }}</view><view class="label">完成打卡</view></view>
-        <view class="metric"><view class="num">{{ weekly.slack_minutes || 0 }}</view><view class="label">躺平分钟</view></view>
+        <view class="metric"><view class="num">{{ balance }}</view><view class="label">可用休息分钟</view></view>
       </view>
+    </view>
+
+    <view class="suggest-card">
+      <view>
+        <view class="suggest-title">本周学习与休息</view>
+        <view class="suggest-sub">学习 {{ weekly.total_study_minutes || 0 }} 分钟，已记录休息 {{ weekly.slack_minutes || 0 }} 分钟</view>
+      </view>
+      <view class="suggest-text">{{ restSuggestion }}</view>
     </view>
 
     <view class="eff-card">
@@ -35,29 +43,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { StatsApi } from '@/api'
+import { SlackApi, StatsApi } from '@/api'
 
 const weekly = ref<any>({})
 const daily = ref<any[]>([])
 const slackDist = ref<any[]>([])
 const efficiency = ref<any>({})
+const balance = ref(0)
+const restSuggestion = computed(() => {
+  const study = Number(weekly.value.total_study_minutes || 0)
+  if (balance.value <= 0) return '当前没有可用休息分钟，先完成计划内任务再安排休息。'
+  if (study >= 600) return '本周学习量偏高，建议安排一段完整休息。'
+  if (study >= 240) return '本周节奏正常，可以使用少量休息分钟恢复状态。'
+  return '本周学习量较轻，优先保持稳定开始和完成。'
+})
 
 async function load() {
   try {
     const today = new Date().toISOString().slice(0, 10)
     const month = today.slice(0, 7)
-    const [w, d, s, e] = await Promise.all([
+    const [w, d, s, e, b] = await Promise.all([
       StatsApi.weeklyReport(),
       StatsApi.dailyDistribution(today),
       StatsApi.slackDistribution(month),
       StatsApi.efficiency(30),
+      SlackApi.balance().catch(() => null),
     ])
     weekly.value = w || {}
     daily.value = d || []
     slackDist.value = s || []
     efficiency.value = e || {}
+    if (b) balance.value = b.balance || 0
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   }
@@ -75,6 +93,10 @@ onShow(load)
 .num { font-size: 34rpx; font-weight: 800; }
 .label { margin-top: 8rpx; color: #aeb7c8; font-size: 21rpx; }
 .eff-card { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.suggest-card { display: flex; justify-content: space-between; gap: 20rpx; margin-top: 18rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.suggest-title { color: #111827; font-size: 29rpx; font-weight: 800; }
+.suggest-sub { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
+.suggest-text { max-width: 260rpx; color: #0f766e; font-size: 24rpx; font-weight: 700; text-align: right; }
 .eff-title { color: #111827; font-size: 29rpx; font-weight: 800; }
 .eff-sub { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
 .eff-rate { color: #0f766e; font-size: 44rpx; font-weight: 800; }

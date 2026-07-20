@@ -131,6 +131,7 @@ func main() {
 		admin.GET("/slack-config", handlers.GetSlackConfigs)
 		admin.PUT("/slack-config", handlers.UpsertGlobalSlackConfig)
 		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)
+		admin.GET("/suspicious-records", handlers.GetSuspiciousRecords)
 		admin.GET("/ai-config", handlers.GetAIConfig)
 		admin.PUT("/ai-config", handlers.UpdateAIConfig)
 		admin.POST("/ai-config/test", handlers.TestAIProvider)

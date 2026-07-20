@@ -3,7 +3,7 @@
     <view class="balance-card">
       <view>
         <view class="label">可用躺平时间</view>
-        <view class="sub">完成学习打卡后自动累积</view>
+        <view class="sub">按分钟记录的休息额度，不代表现金或可交易价值</view>
       </view>
       <view class="balance">{{ balance }}<text>分钟</text></view>
     </view>
@@ -23,7 +23,7 @@
         <view class="record-title">{{ r.activity || '未填写' }}</view>
         <view class="record-time">{{ formatTime(r.start_time) }}</view>
       </view>
-      <view class="record-min">{{ r.duration_min || '进行中' }}<text v-if="r.duration_min">分</text></view>
+      <view class="record-min">{{ recordAmount(r) }}</view>
     </view>
   </view>
 </template>
@@ -75,6 +75,12 @@ async function stop() {
 function formatTime(v: string) {
   if (!v) return ''
   return v.slice(0, 16).replace('T', ' ')
+}
+
+function recordAmount(record: any) {
+  if (record.delta_min) return `${record.delta_min > 0 ? '+' : ''}${record.delta_min}分`
+  if (record.duration_min) return `${record.duration_min}分`
+  return '进行中'
 }
 
 onShow(load)

@@ -67,7 +67,7 @@ func AutoMigrate() error {
 		return err
 	}
 	if count == 0 {
-		if err := DB.Create(&models.SlackConfig{CheckinMinutes: 10}).Error; err != nil {
+		if err := DB.Create(&models.SlackConfig{CheckinMinutes: 10, MakeupCostRatio: 1}).Error; err != nil {
 			return err
 		}
 	}

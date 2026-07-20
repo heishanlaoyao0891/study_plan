@@ -56,6 +56,11 @@ type postponeTaskReq struct {
 	Reason          string `json:"reason"`
 }
 
+const (
+	suspiciousSessionMinutes = 180
+	suspiciousDailyMinutes   = 480
+)
+
 func ListPlanTasks(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	plan, err := mustGetOwnedPlan(c, uid)
@@ -191,6 +196,7 @@ func StopTask(c *gin.Context) {
 	task.NeedsDecision = false
 
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		markStudyReviewFlags(task, &session)
 		if e := tx.Save(&session).Error; e != nil {
 			return e
 		}
@@ -462,11 +468,32 @@ func MakeupTask(c *gin.Context) {
 	task.StudyMinutes = minutes
 	task.Status = models.TaskStatusPending
 	task.NeedsDecision = false
-	if err := db.DB.Save(task).Error; err != nil {
+	cost := makeupSlackCost(uid, minutes)
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
+		return
+	}
+	if cost > user.SlackBalance {
+		api.Fail(c, http.StatusBadRequest, "not enough slack minutes for makeup")
+		return
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		markStudyReviewFlags(task, nil)
+		if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("slack_balance", gorm.Expr("slack_balance - ?", cost)).Error; err != nil {
+			return err
+		}
+		if cost > 0 {
+			if err := recordSlackDelta(tx, uid, "补录消耗: "+task.Title, -cost); err != nil {
+				return err
+			}
+		}
+		return tx.Save(task).Error
+	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "makeup task failed: "+err.Error())
 		return
 	}
-	api.OK(c, task)
+	api.OK(c, gin.H{"task": task, "makeup_cost_minutes": cost})
 }
 
 func PendingDecisionTasks(c *gin.Context) {
@@ -532,6 +559,7 @@ func closeOvernightTasks(uid uint, now time.Time) (int, error) {
 		task.StudyMinutes += minutes
 		task.Status = models.TaskStatusPending
 		task.NeedsDecision = true
+		markStudyReviewFlags(&task, &session)
 		if err := db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Save(&session).Error; err != nil {
 				return err
@@ -543,6 +571,17 @@ func closeOvernightTasks(uid uint, now time.Time) (int, error) {
 		closed++
 	}
 	return closed, nil
+}
+
+func markStudyReviewFlags(task *models.DailyTask, session *models.StudySession) {
+	if session != nil && session.DurationMin > suspiciousSessionMinutes {
+		session.Suspicious = true
+		session.ReviewNote = "single study session exceeds MVP review threshold"
+	}
+	if task != nil && task.StudyMinutes > suspiciousDailyMinutes {
+		task.Suspicious = true
+		task.SuspiciousReason = "daily study minutes exceed MVP review threshold"
+	}
 }
 
 func getOwnedTask(c *gin.Context, uid uint) (*models.DailyTask, bool) {

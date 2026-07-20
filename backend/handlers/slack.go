@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 )
 
 const defaultCheckinRewardMinutes = 10
+const defaultMakeupCostRatio = 1.0
 
 func SlackBalance(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
@@ -100,6 +102,34 @@ func SlackRecords(c *gin.Context) {
 	api.OK(c, records)
 }
 
+func slackMakeupCostRatio(uid uint) float64 {
+	var cfg models.SlackConfig
+	err := db.DB.Where("user_id = ?", uid).First(&cfg).Error
+	if err == nil {
+		return cfg.MakeupCostRatio
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return defaultMakeupCostRatio
+	}
+	err = db.DB.Where("user_id IS NULL").First(&cfg).Error
+	if err == nil {
+		return cfg.MakeupCostRatio
+	}
+	return defaultMakeupCostRatio
+}
+
+func recordSlackDelta(tx *gorm.DB, uid uint, activity string, delta int) error {
+	now := time.Now()
+	return tx.Create(&models.SlackRecord{UserID: uid, StartTime: now, EndTime: &now, DeltaMin: delta, Activity: activity}).Error
+}
+
+func makeupSlackCost(uid uint, minutes int) int {
+	if minutes <= 0 {
+		return 0
+	}
+	return int(math.Ceil(float64(minutes) * slackMakeupCostRatio(uid)))
+}
+
 func slackRewardMinutes(uid uint) int {
 	var cfg models.SlackConfig
 	err := db.DB.Where("user_id = ?", uid).First(&cfg).Error
@@ -141,7 +171,7 @@ func ensureDefaultSlackConfig() error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	cfg = models.SlackConfig{CheckinMinutes: defaultCheckinRewardMinutes}
+	cfg = models.SlackConfig{CheckinMinutes: defaultCheckinRewardMinutes, MakeupCostRatio: defaultMakeupCostRatio}
 	return db.DB.Create(&cfg).Error
 }
 

@@ -21,6 +21,7 @@ type Config struct {
 	AIKeySecret            string // AI API Key 服务端加密密钥
 	AvatarStorage          string // local/cos/minio/object-url
 	AvatarBaseURL          string // 头像对象存储公开 HTTPS base URL
+	MakeupCostRatio        float64
 	ArchiveEnabled         bool   // 是否启用 MySQL 归档同步
 	ArchiveDriver          string // mysql
 	ArchiveDSN             string // 归档库 DSN
@@ -45,6 +46,7 @@ func Load() *Config {
 		AIKeySecret:            getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
 		AvatarStorage:          getEnv("AVATAR_STORAGE", "local"),
 		AvatarBaseURL:          getEnv("AVATAR_BASE_URL", ""),
+		MakeupCostRatio:        getEnvFloat("MAKEUP_COST_RATIO", 1),
 		ArchiveEnabled:         getEnvBool("ARCHIVE_ENABLED", false),
 		ArchiveDriver:          getEnv("ARCHIVE_DRIVER", "mysql"),
 		ArchiveDSN:             getEnv("ARCHIVE_DSN", ""),
@@ -104,6 +106,15 @@ func getEnvBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
+		}
+	}
+	return def
+}
+
+func getEnvFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			return n
 		}
 	}
 	return def

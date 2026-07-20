@@ -9,6 +9,7 @@
         <router-link to="/">Overview</router-link>
         <router-link to="/users">Users</router-link>
         <router-link to="/slack-config">Slack Config</router-link>
+        <router-link to="/suspicious-records">Suspicious Records</router-link>
         <router-link to="/ai-config">AI Config</router-link>
         <router-link to="/subscription-config">Subscriptions</router-link>
         <router-link to="/audit-logs">Audit Logs</router-link>

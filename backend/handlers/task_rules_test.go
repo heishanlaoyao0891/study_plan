@@ -170,3 +170,48 @@ func TestShiftPlanTasksSkipsCompletedTasks(t *testing.T) {
 		t.Fatalf("completed task should not shift, got %s", completed.Date)
 	}
 }
+
+func TestMakeupCostDeductsSlackAndRecordsDelta(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "u1", Nickname: "u1", SlackBalance: 50}
+	if err := db.DB.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Create(&models.SlackConfig{UserID: &user.ID, MakeupCostRatio: 0.5}).Error; err != nil {
+		t.Fatal(err)
+	}
+	cost := makeupSlackCost(user.ID, 40)
+	if cost != 20 {
+		t.Fatalf("expected cost 20, got %d", cost)
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Update("slack_balance", gorm.Expr("slack_balance - ?", cost)).Error; err != nil {
+			return err
+		}
+		return recordSlackDelta(tx, user.ID, "补录消耗: A", -cost)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.First(&user, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.SlackBalance != 30 {
+		t.Fatalf("expected slack balance 30, got %d", user.SlackBalance)
+	}
+	var record models.SlackRecord
+	if err := db.DB.Where("user_id = ? AND delta_min = ?", user.ID, -cost).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if record.Activity == "" || record.DeltaMin != -cost {
+		t.Fatalf("unexpected record: %+v", record)
+	}
+}
+
+func TestMarkStudyReviewFlags(t *testing.T) {
+	task := models.DailyTask{StudyMinutes: suspiciousDailyMinutes + 1}
+	session := models.StudySession{DurationMin: suspiciousSessionMinutes + 1}
+	markStudyReviewFlags(&task, &session)
+	if !task.Suspicious || !session.Suspicious {
+		t.Fatalf("expected both records to be flagged: task=%+v session=%+v", task, session)
+	}
+}
