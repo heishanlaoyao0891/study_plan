@@ -164,6 +164,9 @@ export const StudyTaskApi = {
   pendingDecision(date?: string) {
     return api.get<any[]>(`/api/tasks/pending-decision${date ? `?date=${date}` : ''}`)
   },
+  compensateMidnight() {
+    return api.post<any>('/api/tasks/midnight-compensate', {})
+  },
 }
 
 export const SlackApi = {

@@ -443,6 +443,71 @@ func PendingDecisionTasks(c *gin.Context) {
 	api.OK(c, tasks)
 }
 
+func CompensateMidnightTasks(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	closed, err := closeOvernightTasks(uid, time.Now())
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "midnight compensation failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"closed": closed})
+}
+
+func closeOvernightTasks(uid uint, now time.Time) (int, error) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return 0, err
+	}
+	localNow := now.In(loc)
+	today := localNow.Format(dateLayout)
+	var tasks []models.DailyTask
+	if err := db.DB.Where("user_id = ? AND date < ? AND status = ?", uid, today, models.TaskStatusInProgress).Find(&tasks).Error; err != nil {
+		return 0, err
+	}
+	closed := 0
+	for _, task := range tasks {
+		dateStart, err := time.ParseInLocation(dateLayout, task.Date, loc)
+		if err != nil {
+			continue
+		}
+		midnight := dateStart.AddDate(0, 0, 1)
+		var session models.StudySession
+		err = db.DB.Where("task_id = ? AND user_id = ? AND end_time IS NULL", task.ID, uid).First(&session).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			task.Status = models.TaskStatusPending
+			task.NeedsDecision = true
+			if saveErr := db.DB.Save(&task).Error; saveErr != nil {
+				return closed, saveErr
+			}
+			closed++
+			continue
+		}
+		if err != nil {
+			return closed, err
+		}
+		minutes := int(midnight.Sub(session.StartTime).Minutes())
+		if minutes < 1 {
+			minutes = 1
+		}
+		session.EndTime = &midnight
+		session.DurationMin = minutes
+		task.ActualEnd = &midnight
+		task.StudyMinutes += minutes
+		task.Status = models.TaskStatusPending
+		task.NeedsDecision = true
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Save(&session).Error; err != nil {
+				return err
+			}
+			return tx.Save(&task).Error
+		}); err != nil {
+			return closed, err
+		}
+		closed++
+	}
+	return closed, nil
+}
+
 func getOwnedTask(c *gin.Context, uid uint) (*models.DailyTask, bool) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {

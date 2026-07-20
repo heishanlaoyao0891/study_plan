@@ -89,12 +89,14 @@ func main() {
 		bound.PUT("/tasks/:id/pause", handlers.StopTask)
 		bound.PUT("/tasks/:id/resume", handlers.StartTask)
 		bound.PUT("/tasks/:id/extend", handlers.StartTask)
+		bound.GET("/tasks/:id", handlers.GetTask)
 		bound.PUT("/tasks/:id", handlers.UpdateTask)
 		bound.DELETE("/tasks/:id", handlers.DeleteTask)
 		bound.PUT("/tasks/:id/postpone", handlers.PostponeTask)
 		bound.PUT("/tasks/:id/makeup", handlers.MakeupTask)
 		bound.PUT("/tasks/:id/complete", handlers.CompleteTask)
 		bound.GET("/tasks/pending-decision", handlers.PendingDecisionTasks)
+		bound.POST("/tasks/midnight-compensate", handlers.CompensateMidnightTasks)
 
 		// 躺平币
 		bound.GET("/slack/balance", handlers.SlackBalance)

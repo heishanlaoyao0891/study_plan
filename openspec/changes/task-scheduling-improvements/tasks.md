@@ -25,12 +25,12 @@
 
 ## 4. Midnight Boundary Handling
 
-- [ ] 4.1 Send or surface final 23:30 active-task reminder
-- [ ] 4.2 Auto-close active sessions at 00:00 and attribute them to the previous day's task
-- [ ] 4.3 Allow next-day manual correction of actual end time past midnight while keeping minutes attributed to the previous day
-- [ ] 4.4 Verify stats include midnight-corrected minutes correctly
-- [ ] 4.5 Use `Asia/Shanghai` as scheduling timezone
-- [ ] 4.6 Add frontend compensation check for missed midnight decisions when user opens mini program
+- [x] 4.1 Send or surface final 23:30 active-task reminder
+- [x] 4.2 Auto-close active sessions at 00:00 and attribute them to the previous day's task
+- [x] 4.3 Allow next-day manual correction of actual end time past midnight while keeping minutes attributed to the previous day
+- [x] 4.4 Verify stats include midnight-corrected minutes correctly
+- [x] 4.5 Use `Asia/Shanghai` as scheduling timezone
+- [x] 4.6 Add frontend compensation check for missed midnight decisions when user opens mini program
 
 ## 5. Batch Operations
 
