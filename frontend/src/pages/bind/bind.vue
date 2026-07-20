@@ -83,7 +83,8 @@ async function bindDevPhone() {
 }
 
 function enterApp() {
-  uni.reLaunch({ url: '/pages/checkin/checkin' })
+  const onboardingDone = !!uni.getStorageSync('onboarding_completed')
+  uni.reLaunch({ url: onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding' })
 }
 
 onShow(load)

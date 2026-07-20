@@ -202,6 +202,15 @@ export const GroupApi = {
   },
 }
 
+export const RecoveryApi = {
+  preview() {
+    return api.get<{ mode: string; missed_days: number; overdue_tasks: number; pending_decisions: number; actions: Array<{ task_id: number; title: string; old_date: string; new_date: string }> }>('/api/recovery/preview')
+  },
+  apply(actions: Array<{ task_id: number; title: string; old_date: string; new_date: string }>) {
+    return api.post<{ applied: number }>('/api/recovery/apply', { actions })
+  },
+}
+
 export const CheckinApi = {
   listByDate(date?: string) {
     const q = date ? `?date=${date}` : ''

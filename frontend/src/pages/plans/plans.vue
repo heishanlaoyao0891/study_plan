@@ -26,6 +26,7 @@
     <view class="quick-row">
       <button class="quick" @click="goSchedule">日程</button>
       <button class="quick" @click="goGroup">小组</button>
+      <button class="quick" @click="goRecovery">恢复</button>
       <button class="quick" @click="goAI">AI 生成</button>
       <button class="quick" @click="goNotifications">提醒</button>
     </view>
@@ -265,6 +266,7 @@ async function invite(p: Plan) {
 function statusText(s: string) { return s === 'paused' ? '暂停' : s === 'archived' ? '归档' : '进行' }
 function goSchedule() { uni.navigateTo({ url: '/pages/schedule/schedule' }) }
 function goGroup() { uni.navigateTo({ url: '/pages/group/group' }) }
+function goRecovery() { uni.navigateTo({ url: '/pages/recovery/recovery' }) }
 function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 onShow(load)

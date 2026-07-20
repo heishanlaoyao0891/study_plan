@@ -132,6 +132,9 @@ func main() {
 		bound.GET("/notifications/due", handlers.DueNotificationEvents)
 		bound.POST("/notifications/subscribe", handlers.SubscribeNotification)
 		bound.DELETE("/notifications/subscribe", handlers.UnsubscribeNotification)
+
+		bound.GET("/recovery/preview", handlers.RecoveryPreview)
+		bound.POST("/recovery/apply", handlers.ApplyRecovery)
 	}
 
 	// 管理员

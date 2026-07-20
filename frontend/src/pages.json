@@ -7,8 +7,10 @@
     { "path": "pages/schedule/schedule", "style": { "navigationBarTitleText": "任务日程" } },
     { "path": "pages/task/task", "style": { "navigationBarTitleText": "任务详情" } },
     { "path": "pages/group/group", "style": { "navigationBarTitleText": "学习小组" } },
+    { "path": "pages/recovery/recovery", "style": { "navigationBarTitleText": "重新安排" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
+    { "path": "pages/onboarding/onboarding", "style": { "navigationBarTitleText": "新手引导" } },
     { "path": "pages/bind/bind", "style": { "navigationBarTitleText": "绑定手机号", "navigationStyle": "default" } },
     { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
   ],
