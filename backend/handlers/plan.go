@@ -230,20 +230,7 @@ func ShiftPlan(c *gin.Context) {
 		return
 	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		if plan.StartDate != "" {
-			if t, e := time.Parse(dateLayout, plan.StartDate); e == nil {
-				plan.StartDate = t.AddDate(0, 0, req.Days).Format(dateLayout)
-			}
-		}
-		if plan.EndDate != "" {
-			if t, e := time.Parse(dateLayout, plan.EndDate); e == nil {
-				plan.EndDate = t.AddDate(0, 0, req.Days).Format(dateLayout)
-			}
-		}
-		if e := tx.Save(plan).Error; e != nil {
-			return e
-		}
-		return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", req.Days, plan.ID, uid, models.TaskStatusCompleted, startDate).Error
+		return shiftPlanTasks(tx, uid, plan, req.Days, startDate)
 	})
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "shift plan failed: "+err.Error())
@@ -374,6 +361,23 @@ func checkTaskSlotConflicts(uid uint, startDate, endDate, plannedStart, plannedE
 		warnings = append(warnings, "任务 "+task.Date+" "+task.Title+" 的计划时段与新计划默认时段冲突")
 	}
 	return warnings, nil
+}
+
+func shiftPlanTasks(tx *gorm.DB, uid uint, plan *models.Plan, days int, startDate string) error {
+	if plan.StartDate != "" {
+		if t, e := time.Parse(dateLayout, plan.StartDate); e == nil {
+			plan.StartDate = t.AddDate(0, 0, days).Format(dateLayout)
+		}
+	}
+	if plan.EndDate != "" {
+		if t, e := time.Parse(dateLayout, plan.EndDate); e == nil {
+			plan.EndDate = t.AddDate(0, 0, days).Format(dateLayout)
+		}
+	}
+	if e := tx.Save(plan).Error; e != nil {
+		return e
+	}
+	return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", days, plan.ID, uid, models.TaskStatusCompleted, startDate).Error
 }
 
 // mustGetOwnedPlan 取回路径参数对应的计划，并校验归属当前用户

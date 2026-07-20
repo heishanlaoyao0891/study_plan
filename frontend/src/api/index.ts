@@ -106,8 +106,8 @@ export const PlanApi = {
   resume(id: number) {
     return api.put<Plan>(`/api/plans/${id}/resume`)
   },
-  shift(id: number, days: number) {
-    return api.put<Plan>(`/api/plans/${id}/shift`, { days })
+  shift(id: number, days: number, start_date = '') {
+    return api.put<Plan>(`/api/plans/${id}/shift`, { days, start_date })
   },
   invite(id: number, user_id: number) {
     return api.post<any>(`/api/plans/${id}/invite`, { user_id })

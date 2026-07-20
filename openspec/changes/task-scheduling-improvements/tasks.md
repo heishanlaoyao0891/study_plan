@@ -48,4 +48,4 @@
 
 - [x] 7.1 Verify backend build
 - [x] 7.2 Verify mini program build
-- [ ] 7.3 Add focused tests for postpone, makeup, midnight boundary, batch shift, and auto-check-in rules
+- [x] 7.3 Add focused tests for postpone, makeup, midnight boundary, batch shift, and auto-check-in rules

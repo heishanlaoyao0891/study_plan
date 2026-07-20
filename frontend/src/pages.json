@@ -4,6 +4,8 @@
     { "path": "pages/plans/plans", "style": { "navigationBarTitleText": "我的计划" } },
     { "path": "pages/slack/slack", "style": { "navigationBarTitleText": "躺平币" } },
     { "path": "pages/stats/stats", "style": { "navigationBarTitleText": "统计" } },
+    { "path": "pages/schedule/schedule", "style": { "navigationBarTitleText": "任务日程" } },
+    { "path": "pages/task/task", "style": { "navigationBarTitleText": "任务详情" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
     { "path": "pages/bind/bind", "style": { "navigationBarTitleText": "绑定手机号", "navigationStyle": "default" } },
