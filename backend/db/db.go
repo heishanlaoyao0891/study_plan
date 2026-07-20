@@ -40,6 +40,10 @@ func AutoMigrate() error {
 		&models.SlackConfig{},
 		&models.SlackRecord{},
 		&models.AdminCredential{},
+		&models.AdminAuditLog{},
+		&models.AIConfig{},
+		&models.SubscriptionMessageConfig{},
+		&models.NotificationDeliveryLog{},
 	); err != nil {
 		return err
 	}
@@ -65,7 +69,29 @@ func AutoMigrate() error {
 			return err
 		}
 	}
+	if err := ensureDefaultAdminConfigs(); err != nil {
+		return err
+	}
 	return bootstrapAdminCredential()
+}
+
+func ensureDefaultAdminConfigs() error {
+	var count int64
+	if err := DB.Model(&models.AIConfig{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		if err := DB.Create(&models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 20, Enabled: true}).Error; err != nil {
+			return err
+		}
+	}
+	if err := DB.Model(&models.SubscriptionMessageConfig{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return DB.Create(&models.SubscriptionMessageConfig{StudyStartEnabled: true, CompletionEnabled: true, DecisionEnabled: true, MissedCheckinEnabled: true}).Error
+	}
+	return nil
 }
 
 func bootstrapAdminCredential() error {

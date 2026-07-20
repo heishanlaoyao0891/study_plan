@@ -24,6 +24,11 @@ type generatePlanReq struct {
 
 func GeneratePlan(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
+	var cfg models.AIConfig
+	if err := db.DB.Order("id ASC").First(&cfg).Error; err == nil && !cfg.Enabled {
+		api.Fail(c, http.StatusForbidden, "AI generation is disabled")
+		return
+	}
 	var req generatePlanReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())

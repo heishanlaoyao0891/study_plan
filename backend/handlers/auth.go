@@ -171,6 +171,7 @@ func AdminLogin(c *gin.Context) {
 	now := time.Now()
 	db.DB.Model(&cred).Update("last_login_at", &now)
 	clearAdminLoginFailure(key)
+	recordAdminAudit(cred.User.ID, nil, "admin_login", "")
 	api.OK(c, loginResp{Token: token, User: cred.User})
 }
 

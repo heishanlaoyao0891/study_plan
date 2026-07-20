@@ -15,6 +15,7 @@ type Config struct {
 	WeChatLoginMock bool   // 是否使用 mock 模式（无 AppID 时直接用 code 当作 openid）
 	AdminUsername   string // PC 管理台初始管理员用户名
 	AdminPassword   string // PC 管理台初始管理员密码
+	AIKeySecret     string // AI API Key 服务端加密密钥
 }
 
 var App *Config
@@ -30,6 +31,7 @@ func Load() *Config {
 		WeChatLoginMock: getEnvBool("WECHAT_LOGIN_MOCK", false),
 		AdminUsername:   getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),
+		AIKeySecret:     getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
 	}
 	if App.WeChatAppID == "" || App.WeChatSecret == "" || App.WeChatLoginMock {
 		App.WeChatLoginMock = true

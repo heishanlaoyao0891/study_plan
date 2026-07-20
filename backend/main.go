@@ -108,12 +108,19 @@ func main() {
 	// 管理员
 	admin := apiGroup.Group("/admin", middleware.Auth(), middleware.RequireAdmin())
 	{
+		admin.GET("/overview", handlers.AdminOverview)
 		admin.GET("/users", handlers.ListUsers)
+		admin.GET("/users/:id", handlers.GetAdminUserDetail)
 		admin.POST("/users/:id/ban", handlers.BanUser)
 		admin.POST("/users/:id/unban", handlers.UnbanUser)
 		admin.GET("/slack-config", handlers.GetSlackConfigs)
 		admin.PUT("/slack-config", handlers.UpsertGlobalSlackConfig)
 		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)
+		admin.GET("/ai-config", handlers.GetAIConfig)
+		admin.PUT("/ai-config", handlers.UpdateAIConfig)
+		admin.GET("/subscription-config", handlers.GetSubscriptionMessageConfig)
+		admin.PUT("/subscription-config", handlers.UpdateSubscriptionMessageConfig)
+		admin.GET("/audit-logs", handlers.ListAuditLogs)
 	}
 
 	addr := ":" + config.App.Port

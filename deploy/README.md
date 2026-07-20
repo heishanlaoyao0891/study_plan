@@ -23,6 +23,7 @@ WECHAT_LOGIN_MOCK=false
 AI_PROVIDER=mock
 AI_API_KEY=<optional-ai-key>
 AI_BASE_URL=<optional-ai-base-url>
+AI_KEY_ENCRYPTION_SECRET=<optional-server-side-secret>
 ```
 
 3. Run the backend behind a process manager such as `systemd`, listening on `127.0.0.1:8080`.

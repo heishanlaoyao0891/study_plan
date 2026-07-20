@@ -35,13 +35,13 @@
 
 ## 5. Audit And Backend Support
 
-- [ ] 5.1 Add admin audit log model
-- [ ] 5.2 Record audit logs for login, ban/unban, and config changes
-- [ ] 5.3 Add audit log list API for admin console
-- [ ] 5.4 Add overview metrics API if existing APIs are insufficient
-- [ ] 5.5 Add AI configuration model and admin APIs
-- [ ] 5.6 Add subscription message configuration model and admin APIs
-- [ ] 5.7 Encrypt stored AI API keys when server-side encryption secret is configured
+- [x] 5.1 Add admin audit log model
+- [x] 5.2 Record audit logs for login, ban/unban, and config changes
+- [x] 5.3 Add audit log list API for admin console
+- [x] 5.4 Add overview metrics API if existing APIs are insufficient
+- [x] 5.5 Add AI configuration model and admin APIs
+- [x] 5.6 Add subscription message configuration model and admin APIs
+- [x] 5.7 Encrypt stored AI API keys when server-side encryption secret is configured
 
 ## 6. Verification
 
