@@ -102,6 +102,16 @@ func CurrentStudyGroup(c *gin.Context) {
 	api.OK(c, gin.H{"group": group, "member": member})
 }
 
+func GroupHistory(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var groups []models.StudyGroup
+	if err := db.DB.Table("study_groups").Joins("JOIN study_group_members ON study_group_members.group_id = study_groups.id").Where("study_group_members.user_id = ? AND study_groups.status = ?", uid, models.StudyGroupStatusEnded).Order("study_groups.ended_at DESC, study_groups.id DESC").Scan(&groups).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query group history failed: "+err.Error())
+		return
+	}
+	api.OK(c, groups)
+}
+
 func GroupMembers(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	group, _, err := activeGroupForUser(uid)
@@ -311,6 +321,62 @@ func RemoveStudyGroupMember(c *gin.Context) {
 		return
 	}
 	api.OK(c, gin.H{"group_id": group.ID, "removed_user_id": targetID})
+}
+
+func NudgeStudyGroupMember(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	group, _, err := activeGroupForUser(uid)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query group failed: "+err.Error())
+		return
+	}
+	if group.ID == 0 {
+		api.Fail(c, http.StatusNotFound, "group not found")
+		return
+	}
+	targetID, err := strconv.ParseUint(c.Param("userId"), 10, 64)
+	if err != nil || targetID == 0 {
+		api.Fail(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+	if uint(targetID) == uid {
+		api.Fail(c, http.StatusBadRequest, "cannot nudge yourself")
+		return
+	}
+	var target models.StudyGroupMember
+	if err := db.DB.Where("group_id = ? AND user_id = ? AND status = ?", group.ID, targetID, models.GroupMemberStatusActive).First(&target).Error; err != nil {
+		api.Fail(c, http.StatusBadRequest, "target must be an active member")
+		return
+	}
+	start := time.Now().Truncate(24 * time.Hour)
+	var sameTarget int64
+	db.DB.Model(&models.StudyGroupNudge{}).Where("group_id = ? AND sender_user_id = ? AND target_user_id = ? AND created_at >= ?", group.ID, uid, targetID, start).Count(&sameTarget)
+	if sameTarget > 0 {
+		api.Fail(c, http.StatusBadRequest, "already nudged this member today")
+		return
+	}
+	var received int64
+	db.DB.Model(&models.StudyGroupNudge{}).Where("group_id = ? AND target_user_id = ? AND created_at >= ?", group.ID, targetID, start).Count(&received)
+	if received >= 3 {
+		api.Fail(c, http.StatusBadRequest, "target has received too many nudges today")
+		return
+	}
+	message := "小组成员提醒你开始学习"
+	status := "queued"
+	if !userSubscribed(uint(targetID), "group_nudge") {
+		status = "skipped_missing_subscription"
+	}
+	nudge := models.StudyGroupNudge{GroupID: group.ID, SenderUserID: uid, TargetUserID: uint(targetID), Status: status, Message: message}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&nudge).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.NotificationDeliveryLog{UserID: uint(targetID), ReminderType: "group_nudge", Status: status, Message: message}).Error
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "nudge failed: "+err.Error())
+		return
+	}
+	api.OK(c, nudge)
 }
 
 func JoinStudyGroupByCode(c *gin.Context) {

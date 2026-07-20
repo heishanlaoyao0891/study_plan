@@ -27,6 +27,7 @@ type createPlanReq struct {
 	WeeklyTargetHours int    `json:"weekly_target_hours"`
 	StartDate         string `json:"start_date"`
 	EndDate           string `json:"end_date"`
+	PublicToGroup     bool   `json:"public_to_group"`
 	ConfirmOverload   bool   `json:"confirm_overload"`
 }
 
@@ -37,6 +38,7 @@ type updatePlanReq struct {
 	StartDate         *string `json:"start_date"`
 	EndDate           *string `json:"end_date"`
 	Status            *string `json:"status"`
+	PublicToGroup     *bool   `json:"public_to_group"`
 }
 
 type shiftPlanReq struct {
@@ -106,6 +108,7 @@ func CreatePlan(c *gin.Context) {
 		WeeklyTargetHours: req.WeeklyTargetHours,
 		StartDate:         req.StartDate,
 		EndDate:           req.EndDate,
+		PublicToGroup:     req.PublicToGroup,
 		Status:            models.PlanStatusActive,
 	}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
@@ -151,6 +154,9 @@ func UpdatePlan(c *gin.Context) {
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
+	}
+	if req.PublicToGroup != nil {
+		updates["public_to_group"] = *req.PublicToGroup
 	}
 	if len(updates) == 0 {
 		api.OK(c, plan)

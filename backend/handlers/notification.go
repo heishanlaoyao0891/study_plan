@@ -14,7 +14,7 @@ import (
 	"study_plan_backend/services"
 )
 
-var reminderTypes = []string{"study_start", "completion", "decision_2330", "missed_checkin"}
+var reminderTypes = []string{"study_start", "completion", "decision_2330", "missed_checkin", "group_nudge"}
 
 type subscriptionReq struct {
 	ReminderTypes []string `json:"reminder_types"`

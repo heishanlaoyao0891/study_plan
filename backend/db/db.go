@@ -36,6 +36,7 @@ func AutoMigrate() error {
 		&models.StudyGroup{},
 		&models.StudyGroupMember{},
 		&models.StudyGroupInvitation{},
+		&models.StudyGroupNudge{},
 		&models.DailyTask{},
 		&models.StudySession{},
 		&models.PostponeRecord{},

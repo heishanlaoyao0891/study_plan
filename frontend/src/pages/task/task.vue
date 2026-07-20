@@ -10,6 +10,10 @@
         <view><text>学习分钟</text><view class="value">{{ detail.task.study_minutes || 0 }}</view></view>
       </view>
       <view class="desc" v-if="detail.task.description">{{ detail.task.description }}</view>
+      <view class="visibility-row">
+        <view>小组可见</view>
+        <button @click="togglePublic">{{ detail.task.public_to_group ? '已公开' : '未公开' }}</button>
+      </view>
       <view class="actions">
         <button @click="start" v-if="detail.task.status !== 'in_progress' && detail.task.status !== 'completed'">开始</button>
         <button @click="complete" v-if="detail.task.status !== 'completed'">完成</button>
@@ -72,6 +76,11 @@ async function makeup() {
   await StudyTaskApi.makeup(taskId.value, parsed.end, '手动补录', parsed.start)
   await load()
 }
+async function togglePublic() {
+  const current = !!detail.value.task.public_to_group
+  await StudyTaskApi.update(taskId.value, { public_to_group: !current })
+  await load()
+}
 function modalInput(title: string, placeholderText: string) {
   return new Promise<string | null>(resolve => {
     uni.showModal({ title, editable: true, placeholderText, success: res => resolve(res.confirm ? (res.content || placeholderText) : null) })
@@ -109,6 +118,8 @@ function statusText(status: string) { return status === 'completed' ? '已完成
 .grid text { display: block; color: #7b8498; font-size: 22rpx; }
 .value { margin-top: 8rpx; color: #111827; font-size: 26rpx; font-weight: 800; }
 .desc { margin-top: 22rpx; color: #606a80; font-size: 25rpx; line-height: 1.5; }
+.visibility-row { display: flex; justify-content: space-between; align-items: center; margin-top: 22rpx; padding: 18rpx; border-radius: 12rpx; background: #f8fafc; color: #111827; font-size: 25rpx; font-weight: 700; }
+.visibility-row button { margin: 0; height: 54rpx; line-height: 54rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 23rpx; }
 .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10rpx; margin-top: 24rpx; }
 .actions button { margin: 0; height: 60rpx; line-height: 60rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 23rpx; }
 .section-title { color: #111827; font-size: 28rpx; font-weight: 800; margin-bottom: 12rpx; }

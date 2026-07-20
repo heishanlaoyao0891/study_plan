@@ -30,6 +30,7 @@ export interface Plan {
   weekly_target_hours: number
   start_date?: string
   end_date?: string
+  public_to_group: boolean
   ai_generated: boolean
   is_shared: boolean
   sort_order: number
@@ -75,6 +76,7 @@ export interface CreatePlanReq {
   weekly_target_hours?: number
   start_date?: string
   end_date?: string
+  public_to_group?: boolean
   confirm_overload?: boolean
 }
 
@@ -159,6 +161,9 @@ export const GroupApi = {
   current() {
     return api.get<{ group: StudyGroup | null; member: StudyGroupMember | null }>('/api/groups/current')
   },
+  history() {
+    return api.get<StudyGroup[]>('/api/groups/history')
+  },
   create(data: { name: string; end_date?: string }) {
     return api.post<{ group: StudyGroup; member: StudyGroupMember }>('/api/groups', data)
   },
@@ -176,6 +181,9 @@ export const GroupApi = {
   },
   remove(id: number, userId: number) {
     return api.post<any>(`/api/groups/${id}/members/${userId}/remove`, {})
+  },
+  nudge(id: number, userId: number) {
+    return api.post<any>(`/api/groups/${id}/members/${userId}/nudge`, {})
   },
   join(code: string) {
     return api.post<any>('/api/groups/join', { code })

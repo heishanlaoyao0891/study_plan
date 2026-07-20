@@ -21,6 +21,7 @@ type DailyTask struct {
 	PlannedEnd       string     `gorm:"size:5" json:"planned_end,omitempty"`
 	EstimatedMinutes int        `gorm:"default:0" json:"estimated_minutes"`
 	Difficulty       string     `gorm:"size:16" json:"difficulty,omitempty"`
+	PublicToGroup    bool       `gorm:"default:false" json:"public_to_group"`
 	NeedsDecision    bool       `gorm:"default:false" json:"needs_decision"`
 	Suspicious       bool       `gorm:"default:false" json:"suspicious"`
 	SuspiciousReason string     `gorm:"size:256" json:"suspicious_reason,omitempty"`

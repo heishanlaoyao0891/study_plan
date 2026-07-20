@@ -16,6 +16,14 @@
       <button class="secondary" @click="joinGroup">加入小组</button>
     </view>
 
+    <view class="panel" v-if="history.length">
+      <view class="panel-title">历史小组</view>
+      <view class="rank" v-for="item in history" :key="item.id">
+        <view>{{ item.name }}</view>
+        <view>{{ item.ended_at ? item.ended_at.slice(0, 10) : '已结束' }}</view>
+      </view>
+    </view>
+
     <view v-else>
       <view class="panel">
         <view class="panel-title">邀请</view>
@@ -32,7 +40,10 @@
             <view class="member-name">{{ m.nickname || `用户 #${m.user_id}` }} <text>Lv{{ m.level }}</text></view>
             <view class="member-meta">连续 {{ m.streak }} 天 · {{ m.study_minutes }} 分钟 · 完成率 {{ m.completion_rate }}%</view>
           </view>
-          <view class="done" :class="{ ok: m.today_completed }">{{ m.today_completed ? '今日完成' : '今日未完' }}</view>
+          <view class="member-actions">
+            <view class="done" :class="{ ok: m.today_completed }">{{ m.today_completed ? '今日完成' : '今日未完' }}</view>
+            <button v-if="member && m.user_id !== member.user_id" @click="nudge(m.user_id)">提醒</button>
+          </view>
         </view>
       </view>
 
@@ -64,6 +75,7 @@ const group = ref<StudyGroup | null>(null)
 const member = ref<StudyGroupMember | null>(null)
 const members = ref<GroupMemberView[]>([])
 const leaderboard = ref<GroupMemberView[]>([])
+const history = ref<StudyGroup[]>([])
 const groupName = ref('学习小组')
 const joinCode = ref('')
 const inviteCode = ref('')
@@ -78,6 +90,7 @@ async function load() {
     members.value = await GroupApi.members().catch(() => [])
     await loadLeaderboard('weekly')
   }
+  history.value = await GroupApi.history().catch(() => [])
 }
 
 async function createGroup() {
@@ -139,6 +152,16 @@ async function leaveGroup() {
   await load()
 }
 
+async function nudge(userId: number) {
+  if (!group.value) return
+  try {
+    await GroupApi.nudge(group.value.id, userId)
+    uni.showToast({ title: '已提醒', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '提醒失败', icon: 'none' })
+  }
+}
+
 function modalInput(title: string, placeholderText: string) {
   return new Promise<string | null>(resolve => {
     uni.showModal({ title, editable: true, placeholderText, success: res => resolve(res.confirm ? (res.content || placeholderText) : null) })
@@ -170,6 +193,8 @@ button { margin: 0 0 14rpx; border-radius: 10rpx; }
 .member, .rank { display: flex; justify-content: space-between; align-items: center; padding: 18rpx 0; border-top: 1rpx solid #eef2f7; }
 .member-name { color: #111827; font-size: 27rpx; font-weight: 800; }
 .member-name text { color: #0f766e; font-size: 22rpx; }
+.member-actions { display: flex; align-items: center; gap: 12rpx; }
+.member-actions button { margin: 0; height: 54rpx; line-height: 54rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 22rpx; }
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
 </style>

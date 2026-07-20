@@ -23,11 +23,11 @@
 
 - [x] 3.1 Add group member list API
 - [x] 3.2 Add per-member group daily check-in status API
-- [ ] 3.3 Add public/private visibility fields for plans/tasks if needed
+- [x] 3.3 Add public/private visibility fields for plans/tasks if needed
 - [x] 3.4 Ensure members cannot view other members' private plans/tasks
 - [x] 3.5 Update frontend group dashboard view
 - [x] 3.6 Default group-visible metrics to streak, study minutes, completion rate, level, and current-day completion state
-- [ ] 3.7 Add plan/task detail public-to-group switch where applicable
+- [x] 3.7 Add plan/task detail public-to-group switch where applicable
 
 ## 4. Level System And Leaderboard
 
@@ -36,18 +36,18 @@
 - [x] 4.3 Rank by continuous days, study minutes, completion rate, and level
 - [x] 4.4 Add frontend member level and leaderboard section
 - [x] 4.5 Implement weekly and all-time leaderboard scopes
-- [ ] 4.6 Add historical ended-group detail view
+- [x] 4.6 Add historical ended-group detail view
 
 ## 5. Nudges
 
-- [ ] 5.1 Add member nudge endpoint
-- [ ] 5.2 Connect nudge to WeChat subscription notification event queue
-- [ ] 5.3 Record nudge attempts when target user has not subscribed
-- [ ] 5.4 Add frontend nudge action
-- [ ] 5.5 Limit nudges to same target once per day and max 3 received nudges per day
+- [x] 5.1 Add member nudge endpoint
+- [x] 5.2 Connect nudge to WeChat subscription notification event queue
+- [x] 5.3 Record nudge attempts when target user has not subscribed
+- [x] 5.4 Add frontend nudge action
+- [x] 5.5 Limit nudges to same target once per day and max 3 received nudges per day
 
 ## 6. Verification
 
-- [ ] 6.1 Verify backend build
-- [ ] 6.2 Verify mini program build
-- [ ] 6.3 Add focused access-control tests for group privacy and one-active-group rule
+- [x] 6.1 Verify backend build
+- [x] 6.2 Verify mini program build
+- [x] 6.3 Add focused access-control tests for group privacy and one-active-group rule

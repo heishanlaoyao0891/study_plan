@@ -19,6 +19,7 @@ type Plan struct {
 	WeeklyTargetHours int       `gorm:"default:0" json:"weekly_target_hours"`
 	StartDate         string    `gorm:"size:10" json:"start_date,omitempty"`
 	EndDate           string    `gorm:"size:10" json:"end_date,omitempty"`
+	PublicToGroup     bool      `gorm:"default:false" json:"public_to_group"`
 	AIGenerated       bool      `gorm:"default:false" json:"ai_generated"`
 	IsShared          bool      `gorm:"default:false" json:"is_shared"`
 	SortOrder         int       `gorm:"default:0" json:"sort_order"`

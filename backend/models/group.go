@@ -53,3 +53,15 @@ type StudyGroupInvitation struct {
 }
 
 func (StudyGroupInvitation) TableName() string { return "study_group_invitations" }
+
+type StudyGroupNudge struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	GroupID      uint      `gorm:"index;not null" json:"group_id"`
+	SenderUserID uint      `gorm:"index;not null" json:"sender_user_id"`
+	TargetUserID uint      `gorm:"index;not null" json:"target_user_id"`
+	Status       string    `gorm:"size:32;index;not null" json:"status"`
+	Message      string    `gorm:"size:256" json:"message"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (StudyGroupNudge) TableName() string { return "study_group_nudges" }

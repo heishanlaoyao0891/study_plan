@@ -30,6 +30,7 @@ type createTaskReq struct {
 	PlannedEnd       string `json:"planned_end"`
 	EstimatedMinutes int    `json:"estimated_minutes"`
 	Difficulty       string `json:"difficulty"`
+	PublicToGroup    bool   `json:"public_to_group"`
 }
 
 type updateTaskReq struct {
@@ -42,6 +43,7 @@ type updateTaskReq struct {
 	PlannedEnd       *string `json:"planned_end"`
 	EstimatedMinutes *int    `json:"estimated_minutes"`
 	Difficulty       *string `json:"difficulty"`
+	PublicToGroup    *bool   `json:"public_to_group"`
 }
 
 type reorderTaskReq struct {
@@ -90,7 +92,7 @@ func CreatePlanTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
 		return
 	}
-	task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: req.Date, Title: req.Title, Description: req.Description, SortOrder: req.SortOrder, PlannedStart: defaultPlannedStart(), PlannedEnd: defaultPlannedEnd(), EstimatedMinutes: defaultPlannedMinutes(), Difficulty: defaultPlannedDifficulty(), Status: models.TaskStatusPending}
+	task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: req.Date, Title: req.Title, Description: req.Description, SortOrder: req.SortOrder, PlannedStart: defaultPlannedStart(), PlannedEnd: defaultPlannedEnd(), EstimatedMinutes: defaultPlannedMinutes(), Difficulty: defaultPlannedDifficulty(), PublicToGroup: req.PublicToGroup, Status: models.TaskStatusPending}
 	if req.PlannedStart != "" {
 		task.PlannedStart = req.PlannedStart
 	}
@@ -307,6 +309,9 @@ func UpdateTask(c *gin.Context) {
 	}
 	if req.Difficulty != nil {
 		updates["difficulty"] = *req.Difficulty
+	}
+	if req.PublicToGroup != nil {
+		updates["public_to_group"] = *req.PublicToGroup
 	}
 	if len(updates) > 0 {
 		if err := db.DB.Model(task).Updates(updates).Error; err != nil {

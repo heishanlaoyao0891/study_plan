@@ -85,6 +85,12 @@
             <text>如系统提示压力过大，仍允许创建</text>
           </label>
         </view>
+        <view class="confirm-row">
+          <label class="confirm-label">
+            <checkbox :checked="!!form.public_to_group" @click="form.public_to_group = !form.public_to_group" />
+            <text>小组内可见计划标题和目标</text>
+          </label>
+        </view>
         <view class="modal-actions">
           <button class="cancel" @click="closeModal">取消</button>
           <button class="submit" @click="save">{{ editing ? '保存' : '创建' }}</button>
@@ -105,7 +111,7 @@ const plans = ref<Plan[]>([])
 const loading = ref(false)
 const showModal = ref(false)
 const editing = ref<Plan | null>(null)
-const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 0, confirm_overload: false })
+const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 0, confirm_overload: false, public_to_group: false })
 const activeCount = computed(() => plans.value.filter(p => p.status === 'active').length)
 const pausedCount = computed(() => plans.value.filter(p => p.status === 'paused').length)
 const totalWeeklyHours = computed(() => plans.value.filter(p => p.status === 'active').reduce((sum, p) => sum + (p.weekly_target_hours || 0), 0))
@@ -122,6 +128,7 @@ function resetForm() {
   form.description = ''
   form.weekly_target_hours = 0
   form.confirm_overload = false
+  form.public_to_group = false
 }
 
 function openCreate() {
@@ -136,6 +143,7 @@ function openEdit(p: Plan) {
   form.description = p.description || ''
   form.weekly_target_hours = p.weekly_target_hours || 0
   form.confirm_overload = false
+  form.public_to_group = !!p.public_to_group
   showModal.value = true
 }
 
@@ -152,6 +160,7 @@ async function save() {
         title: form.title,
         description: form.description,
         weekly_target_hours: form.weekly_target_hours,
+        public_to_group: form.public_to_group,
       })
       uni.showToast({ title: '已保存', icon: 'success' })
     } else {
