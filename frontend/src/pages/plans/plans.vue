@@ -56,6 +56,7 @@
           <button class="action" @click="togglePause(p)">{{ p.status === 'paused' ? '恢复' : '暂停' }}</button>
           <button class="action" @click="openEdit(p)">编辑目标</button>
           <button class="action" @click="shift(p)">平移任务</button>
+          <button class="action" @click="batchShift(p)">批量平移</button>
           <button class="action" @click="invite(p)">邀请</button>
           <button class="action danger" @click="del(p)">删除</button>
         </view>
@@ -202,6 +203,30 @@ async function shift(p: Plan) {
   }
   try {
     await PlanApi.shift(p.id, days)
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '平移失败', icon: 'none' })
+  }
+}
+
+async function batchShift(p: Plan) {
+  const daysRes = await new Promise<any>(resolve => {
+    uni.showModal({ title: '批量平移', editable: true, placeholderText: '输入平移天数，例如 3 或 -1', success: resolve })
+  })
+  if (!daysRes.confirm) return
+  const days = Number(daysRes.content || 0)
+  if (!days) {
+    uni.showToast({ title: '请输入非 0 天数', icon: 'none' })
+    return
+  }
+  const startRes = await new Promise<any>(resolve => {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+    uni.showModal({ title: '起始日期', editable: true, placeholderText: tomorrow, success: resolve })
+  })
+  if (!startRes.confirm) return
+  try {
+    await PlanApi.shift(p.id, days, startRes.content || new Date(Date.now() + 86400000).toISOString().slice(0, 10))
+    uni.showToast({ title: '已批量平移', icon: 'success' })
     await load()
   } catch (e: any) {
     uni.showToast({ title: e?.message || '平移失败', icon: 'none' })

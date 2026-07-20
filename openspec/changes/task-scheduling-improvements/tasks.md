@@ -34,10 +34,10 @@
 
 ## 5. Batch Operations
 
-- [ ] 5.1 Support shifting future tasks by a number of days
-- [ ] 5.2 Preserve planned time ranges during batch shift
-- [ ] 5.3 Add frontend batch shift action for future tasks
-- [ ] 5.4 Default batch shift start date to tomorrow and only move unfinished tasks
+- [x] 5.1 Support shifting future tasks by a number of days
+- [x] 5.2 Preserve planned time ranges during batch shift
+- [x] 5.3 Add frontend batch shift action for future tasks
+- [x] 5.4 Default batch shift start date to tomorrow and only move unfinished tasks
 
 ## 6. Completion And Check-In
 

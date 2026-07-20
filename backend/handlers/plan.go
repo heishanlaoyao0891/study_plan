@@ -40,7 +40,8 @@ type updatePlanReq struct {
 }
 
 type shiftPlanReq struct {
-	Days int `json:"days" binding:"required"`
+	Days      int    `json:"days" binding:"required"`
+	StartDate string `json:"start_date"`
 }
 
 type invitePlanReq struct {
@@ -220,6 +221,14 @@ func ShiftPlan(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid request: days required")
 		return
 	}
+	startDate := req.StartDate
+	if startDate == "" {
+		startDate = time.Now().AddDate(0, 0, 1).Format(dateLayout)
+	}
+	if _, err := time.Parse(dateLayout, startDate); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid start_date, expect YYYY-MM-DD")
+		return
+	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		if plan.StartDate != "" {
 			if t, e := time.Parse(dateLayout, plan.StartDate); e == nil {
@@ -234,7 +243,7 @@ func ShiftPlan(c *gin.Context) {
 		if e := tx.Save(plan).Error; e != nil {
 			return e
 		}
-		return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ?", req.Days, plan.ID, uid).Error
+		return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", req.Days, plan.ID, uid, models.TaskStatusCompleted, startDate).Error
 	})
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "shift plan failed: "+err.Error())
