@@ -37,7 +37,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Verify backend build
-- [ ] 5.2 Verify mini program build with production `VITE_API_BASE`
-- [ ] 5.3 Verify local mock-mode login and local production-mode configuration checks
-- [ ] 5.4 Update Tencent Cloud deployment guide
+- [x] 5.1 Verify backend build
+- [x] 5.2 Verify mini program build with production `VITE_API_BASE`
+- [x] 5.3 Verify local mock-mode login and local production-mode configuration checks
+- [x] 5.4 Update Tencent Cloud deployment guide
