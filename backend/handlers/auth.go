@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -11,7 +12,9 @@ import (
 	"gorm.io/gorm"
 
 	"study_plan_backend/api"
+	"study_plan_backend/config"
 	"study_plan_backend/db"
+	"study_plan_backend/middleware"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
 )
@@ -30,6 +33,15 @@ type loginResp struct {
 type adminLoginReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+}
+
+type bindPhoneReq struct {
+	Code        string `json:"code"`
+	PhoneNumber string `json:"phone_number"`
+}
+
+type updateAvatarReq struct {
+	AvatarURL string `json:"avatar_url" binding:"required"`
 }
 
 type adminLoginFailure struct {
@@ -173,6 +185,83 @@ func AdminLogin(c *gin.Context) {
 	clearAdminLoginFailure(key)
 	recordAdminAudit(cred.User.ID, nil, "admin_login", "")
 	api.OK(c, loginResp{Token: token, User: cred.User})
+}
+
+func CurrentUser(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	api.OK(c, user)
+}
+
+func BindPhoneNumber(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req bindPhoneReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	phone := strings.TrimSpace(req.PhoneNumber)
+	if req.Code != "" {
+		wxPhone, err := services.GetPhoneNumber(req.Code)
+		if err != nil {
+			api.Fail(c, http.StatusBadGateway, "wechat phone binding failed: "+err.Error())
+			return
+		}
+		phone = wxPhone
+	} else if !config.App.WeChatLoginMock {
+		api.Fail(c, http.StatusBadRequest, "wechat phone binding code is required")
+		return
+	}
+	if phone == "" {
+		api.Fail(c, http.StatusBadRequest, "phone binding code is required")
+		return
+	}
+	now := time.Now()
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	if err := db.DB.Model(&user).Updates(map[string]interface{}{"phone_number": phone, "phone_verified_at": &now}).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "bind phone failed: "+err.Error())
+		return
+	}
+	user.PhoneNumber = phone
+	user.PhoneVerifiedAt = &now
+	api.OK(c, user)
+}
+
+func UpdateAvatar(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req updateAvatarReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	avatarURL := strings.TrimSpace(req.AvatarURL)
+	if avatarURL == "" {
+		api.Fail(c, http.StatusBadRequest, "avatar_url is required")
+		return
+	}
+	if parsed, err := url.Parse(avatarURL); err != nil || parsed.Scheme == "" {
+		api.Fail(c, http.StatusBadRequest, "avatar_url must be a URL or object-storage HTTPS URL")
+		return
+	}
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	if err := db.DB.Model(&user).Update("avatar_url", avatarURL).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "update avatar failed: "+err.Error())
+		return
+	}
+	user.AvatarURL = avatarURL
+	api.OK(c, user)
 }
 
 func isAdminLoginLocked(key string) bool {

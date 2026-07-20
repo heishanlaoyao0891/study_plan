@@ -14,6 +14,7 @@ import (
 
 const CtxUserIDKey = "user_id"
 const CtxRoleKey = "role"
+const CtxUserKey = "user"
 
 // Auth 校验 JWT，并把 user_id / role 写入 context
 func Auth() gin.HandlerFunc {
@@ -54,6 +55,28 @@ func Auth() gin.HandlerFunc {
 		}
 		c.Set(CtxUserIDKey, user.ID)
 		c.Set(CtxRoleKey, user.Role)
+		c.Set(CtxUserKey, user)
+		c.Next()
+	}
+}
+
+func RequirePhoneBound() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get(CtxRoleKey)
+		if role == models.RoleAdmin {
+			c.Next()
+			return
+		}
+		value, ok := c.Get(CtxUserKey)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "user not found"})
+			return
+		}
+		user, ok := value.(models.User)
+		if !ok || user.PhoneNumber == "" || user.PhoneVerifiedAt == nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "phone number binding required", "phone_required": true})
+			return
+		}
 		c.Next()
 	}
 }

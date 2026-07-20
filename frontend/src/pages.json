@@ -6,6 +6,7 @@
     { "path": "pages/stats/stats", "style": { "navigationBarTitleText": "统计" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
+    { "path": "pages/bind/bind", "style": { "navigationBarTitleText": "绑定手机号", "navigationStyle": "default" } },
     { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
   ],
   "globalStyle": {

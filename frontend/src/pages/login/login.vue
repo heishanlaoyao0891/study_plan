@@ -54,7 +54,8 @@ function saveApiBase() {
 function afterLogin(resp: LoginResp) {
   setToken(resp.token)
   uni.showToast({ title: '登录成功', icon: 'success' })
-  setTimeout(() => uni.reLaunch({ url: '/pages/checkin/checkin' }), 300)
+  const url = resp.user.phone_number && resp.user.phone_verified_at ? '/pages/checkin/checkin' : '/pages/bind/bind'
+  setTimeout(() => uni.reLaunch({ url }), 300)
 }
 
 async function onLogin() {

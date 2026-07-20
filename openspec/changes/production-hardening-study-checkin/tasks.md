@@ -6,15 +6,15 @@
 
 ## 2. Real WeChat Login
 
-- [ ] 2.1 Implement `jscode2session` request using `WECHAT_APPID` and `WECHAT_SECRET`
-- [ ] 2.2 Handle WeChat API errors with clear API responses
-- [ ] 2.3 Keep local mock login for development only
-- [ ] 2.4 Implement optional avatar update after user selection/authorization
-- [ ] 2.5 Implement required phone number binding after user authorization
-- [ ] 2.6 Block study features until phone number is verified and bound
+- [x] 2.1 Implement `jscode2session` request using `WECHAT_APPID` and `WECHAT_SECRET`
+- [x] 2.2 Handle WeChat API errors with clear API responses
+- [x] 2.3 Keep local mock login for development only
+- [x] 2.4 Implement optional avatar update after user selection/authorization
+- [x] 2.5 Implement required phone number binding after user authorization
+- [x] 2.6 Block study features until phone number is verified and bound
 - [ ] 2.7 Verify WeChat phone-number capability cost/quota in the WeChat console before release
-- [ ] 2.8 Store avatar as URL or object-storage key, not database binary data
-- [ ] 2.9 Support object-storage compatible avatar storage configuration for COS or self-hosted MinIO
+- [x] 2.8 Store avatar as URL or object-storage key, not database binary data
+- [x] 2.9 Support object-storage compatible avatar storage configuration for COS or self-hosted MinIO
 
 ## 3. Subscription Messages
 

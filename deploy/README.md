@@ -25,7 +25,11 @@ AI_PROVIDER=mock
 AI_API_KEY=<optional-ai-key>
 AI_BASE_URL=<optional-ai-base-url>
 AI_KEY_ENCRYPTION_SECRET=<optional-server-side-secret>
+AVATAR_STORAGE=minio
+AVATAR_BASE_URL=https://assets.example.com/avatars
 ```
+
+Before release, verify the WeChat phone-number component capability, account qualification, cost, and quota in the WeChat Mini Program console.
 
 3. Run the backend behind a process manager such as `systemd`, listening on `127.0.0.1:8080`.
 

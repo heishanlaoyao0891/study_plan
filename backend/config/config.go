@@ -19,6 +19,8 @@ type Config struct {
 	AdminUsername   string // PC 管理台初始管理员用户名
 	AdminPassword   string // PC 管理台初始管理员密码
 	AIKeySecret     string // AI API Key 服务端加密密钥
+	AvatarStorage   string // local/cos/minio/object-url
+	AvatarBaseURL   string // 头像对象存储公开 HTTPS base URL
 }
 
 var App *Config
@@ -36,6 +38,8 @@ func Load() *Config {
 		AdminUsername:   getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),
 		AIKeySecret:     getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
+		AvatarStorage:   getEnv("AVATAR_STORAGE", "local"),
+		AvatarBaseURL:   getEnv("AVATAR_BASE_URL", ""),
 	}
 	return App
 }

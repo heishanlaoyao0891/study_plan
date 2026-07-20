@@ -7,6 +7,8 @@ export interface User {
   openid: string
   nickname: string
   avatar_url: string
+  phone_number?: string
+  phone_verified_at?: string
   weekly_hours: number
   slack_balance: number
   role: 'user' | 'admin'
@@ -65,6 +67,15 @@ export interface CreateCheckinReq {
 export const AuthApi = {
   login(code: string, nickname = '', avatar_url = '') {
     return api.post<LoginResp>('/api/auth/login', { code, nickname, avatar_url }, { auth: false })
+  },
+  me() {
+    return api.get<User>('/api/auth/me')
+  },
+  bindPhone(code: string, phone_number = '') {
+    return api.post<User>('/api/auth/phone', { code, phone_number })
+  },
+  updateAvatar(avatar_url: string) {
+    return api.put<User>('/api/auth/avatar', { avatar_url })
   },
 }
 

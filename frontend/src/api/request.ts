@@ -81,6 +81,9 @@ export async function request<T = any>(path: string, options: RequestOptions = {
         }
         if (status === 403) {
           const data = res.data || {}
+          if (data.phone_required) {
+            uni.reLaunch({ url: '/pages/bind/bind' })
+          }
           return reject({ code: 403, message: data.message || '无权访问', raw: data } as ApiError)
         }
         if (status >= 400) {
@@ -89,6 +92,9 @@ export async function request<T = any>(path: string, options: RequestOptions = {
         }
         const body: ApiResp<T> = res.data || {}
         if (body.code !== 0) {
+          if ((body as any).phone_required) {
+            uni.reLaunch({ url: '/pages/bind/bind' })
+          }
           return reject({ code: body.code, message: body.message || '业务错误' } as ApiError)
         }
         resolve(body.data as T)
