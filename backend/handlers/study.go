@@ -215,11 +215,48 @@ func CompleteTask(c *gin.Context) {
 	}
 	task.Status = models.TaskStatusCompleted
 	task.NeedsDecision = false
-	if err := db.DB.Save(task).Error; err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(task).Error; err != nil {
+			return err
+		}
+		return autoCompleteCheckinIfPlanDateDone(tx, uid, task.PlanID, task.Date)
+	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "complete task failed: "+err.Error())
 		return
 	}
 	api.OK(c, task)
+}
+
+func autoCompleteCheckinIfPlanDateDone(tx *gorm.DB, uid, planID uint, date string) error {
+	var remaining int64
+	if err := tx.Model(&models.DailyTask{}).
+		Where("user_id = ? AND plan_id = ? AND date = ? AND status <> ?", uid, planID, date, models.TaskStatusCompleted).
+		Count(&remaining).Error; err != nil {
+		return err
+	}
+	if remaining > 0 {
+		return nil
+	}
+
+	var checkin models.Checkin
+	err := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, planID, date).First(&checkin).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		checkin = models.Checkin{UserID: uid, PlanID: planID, Date: date, Completed: true}
+		if err := tx.Create(&checkin).Error; err != nil {
+			return err
+		}
+		return awardSlackIfNeeded(tx, uid, &checkin)
+	}
+	if err != nil {
+		return err
+	}
+	if !checkin.Completed {
+		if err := tx.Model(&checkin).Update("completed", true).Error; err != nil {
+			return err
+		}
+		checkin.Completed = true
+	}
+	return awardSlackIfNeeded(tx, uid, &checkin)
 }
 
 func UpdateTask(c *gin.Context) {

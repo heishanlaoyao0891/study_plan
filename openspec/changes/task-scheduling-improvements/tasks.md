@@ -41,11 +41,11 @@
 
 ## 6. Completion And Check-In
 
-- [ ] 6.1 Auto-complete plan/date check-in when all tasks for that plan/date are completed
-- [ ] 6.2 Keep check-in reward behavior idempotent when auto-completed from tasks
+- [x] 6.1 Auto-complete plan/date check-in when all tasks for that plan/date are completed
+- [x] 6.2 Keep check-in reward behavior idempotent when auto-completed from tasks
 
 ## 7. Verification
 
-- [ ] 7.1 Verify backend build
-- [ ] 7.2 Verify mini program build
+- [x] 7.1 Verify backend build
+- [x] 7.2 Verify mini program build
 - [ ] 7.3 Add focused tests for postpone, makeup, midnight boundary, batch shift, and auto-check-in rules
