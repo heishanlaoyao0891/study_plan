@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,6 +19,11 @@ type generatePlanReq struct {
 	Days        int      `json:"days"`
 	StartDate   string   `json:"start_date"`
 	SkipDates   []string `json:"skip_dates"`
+	Refinement  string   `json:"refinement"`
+}
+
+type commitAIPlanReq struct {
+	Preview services.PlanPreview `json:"preview" binding:"required"`
 }
 
 func GeneratePlan(c *gin.Context) {
@@ -40,7 +44,7 @@ func GeneratePlan(c *gin.Context) {
 	if req.HoursPerDay <= 0 {
 		req.HoursPerDay = 1
 	}
-	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, SkipDates: req.SkipDates})
+	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, SkipDates: req.SkipDates, Refinement: req.Refinement})
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "build planning context failed: "+err.Error())
 		return
@@ -50,31 +54,29 @@ func GeneratePlan(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "fallback preview validation failed: "+err.Error())
 		return
 	}
-	start := time.Now()
-	if req.StartDate != "" {
-		if t, err := time.Parse(dateLayout, req.StartDate); err == nil {
-			start = t
-		}
+	api.OK(c, gin.H{"preview": preview, "mode": "fallback"})
+}
+
+func CommitAIPlan(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req commitAIPlanReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
 	}
-	skip := map[string]bool{}
-	for _, d := range req.SkipDates {
-		skip[d] = true
+	input := services.PlanGenerationInput{UserID: uid, Goal: req.Preview.Title, Days: len(req.Preview.Tasks)}
+	if err := services.ValidatePlanPreview(req.Preview, input); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid preview: "+err.Error())
+		return
 	}
-	plan := models.Plan{UserID: uid, Title: preview.Title, Description: preview.Rationale, Status: models.PlanStatusActive, WeeklyTargetHours: req.HoursPerDay * 7, AIGenerated: true}
+	plan := models.Plan{UserID: uid, Title: req.Preview.Title, Description: req.Preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: int(req.Preview.EstimatedTotalHours), AIGenerated: true}
 	var tasks []models.DailyTask
-	txErr := db.DB.Transaction(func(tx *gorm.DB) error {
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
-		day := 0
-		for len(tasks) < len(preview.Tasks) {
-			date := start.AddDate(0, 0, day).Format(dateLayout)
-			day++
-			if skip[date] {
-				continue
-			}
-			previewTask := preview.Tasks[len(tasks)]
-			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Description: previewTask.Description, Status: models.TaskStatusPending}
+		for i, previewTask := range req.Preview.Tasks {
+			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Description: previewTask.Description, SortOrder: i, PlannedStart: previewTask.PlannedStart, PlannedEnd: previewTask.PlannedEnd, EstimatedMinutes: previewTask.EstimatedMinutes, Difficulty: previewTask.Difficulty, Status: models.TaskStatusPending}
 			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
@@ -82,11 +84,11 @@ func GeneratePlan(c *gin.Context) {
 		}
 		return nil
 	})
-	if txErr != nil {
-		api.Fail(c, http.StatusInternalServerError, "generate plan failed: "+txErr.Error())
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "commit ai plan failed: "+err.Error())
 		return
 	}
-	api.OK(c, gin.H{"plan": plan, "tasks": tasks, "mode": "fallback", "rationale": preview.Rationale})
+	api.OK(c, gin.H{"plan": plan, "tasks": tasks})
 }
 
 func RegeneratePlan(c *gin.Context) { GeneratePlan(c) }

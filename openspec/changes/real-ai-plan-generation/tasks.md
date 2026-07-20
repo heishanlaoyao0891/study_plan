@@ -26,11 +26,11 @@
 
 ## 4. Preview And Commit
 
-- [ ] 4.1 Change generation to return editable preview
-- [ ] 4.2 Add commit endpoint to persist accepted preview
-- [ ] 4.3 Update frontend AI page with preview editing before save
-- [ ] 4.4 Support regeneration with user refinements
-- [ ] 4.5 Allow editing title, description, date, time, estimated minutes, and difficulty in preview
+- [x] 4.1 Change generation to return editable preview
+- [x] 4.2 Add commit endpoint to persist accepted preview
+- [x] 4.3 Update frontend AI page with preview editing before save
+- [x] 4.4 Support regeneration with user refinements
+- [x] 4.5 Allow editing title, description, date, time, estimated minutes, and difficulty in preview
 
 ## 5. Reliability And Cost
 

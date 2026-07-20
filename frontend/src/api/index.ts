@@ -196,8 +196,14 @@ export const StatsApi = {
 }
 
 export const AIApi = {
-  generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[] }) {
+  generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[]; refinement?: string }) {
     return api.post<any>('/api/ai/generate-plan', data)
+  },
+  regeneratePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[]; refinement?: string }) {
+    return api.post<any>('/api/ai/regenerate', data)
+  },
+  commitPlan(preview: any) {
+    return api.post<any>('/api/ai/commit-plan', { preview })
   },
 }
 

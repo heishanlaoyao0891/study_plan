@@ -72,6 +72,7 @@ func main() {
 		// AI 计划
 		bound.POST("/ai/generate-plan", handlers.GeneratePlan)
 		bound.POST("/ai/regenerate", handlers.RegeneratePlan)
+		bound.POST("/ai/commit-plan", handlers.CommitAIPlan)
 		bound.PUT("/ai/plan/:id/edit", handlers.EditAIPlan)
 
 		// 打卡

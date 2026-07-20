@@ -9,19 +9,23 @@ const (
 )
 
 type DailyTask struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	PlanID       uint       `gorm:"index;not null" json:"plan_id"`
-	UserID       uint       `gorm:"index;not null" json:"user_id"`
-	Date         string     `gorm:"size:10;not null;index" json:"date"`
-	Title        string     `gorm:"size:128;not null" json:"title"`
-	Description  string     `gorm:"size:1024" json:"description"`
-	Status       string     `gorm:"size:24;default:pending;not null" json:"status"`
-	SortOrder    int        `gorm:"default:0" json:"sort_order"`
-	ActualStart  *time.Time `json:"actual_start,omitempty"`
-	ActualEnd    *time.Time `json:"actual_end,omitempty"`
-	StudyMinutes int        `gorm:"default:0" json:"study_minutes"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	PlanID           uint       `gorm:"index;not null" json:"plan_id"`
+	UserID           uint       `gorm:"index;not null" json:"user_id"`
+	Date             string     `gorm:"size:10;not null;index" json:"date"`
+	Title            string     `gorm:"size:128;not null" json:"title"`
+	Description      string     `gorm:"size:1024" json:"description"`
+	Status           string     `gorm:"size:24;default:pending;not null" json:"status"`
+	SortOrder        int        `gorm:"default:0" json:"sort_order"`
+	PlannedStart     string     `gorm:"size:5" json:"planned_start,omitempty"`
+	PlannedEnd       string     `gorm:"size:5" json:"planned_end,omitempty"`
+	EstimatedMinutes int        `gorm:"default:0" json:"estimated_minutes"`
+	Difficulty       string     `gorm:"size:16" json:"difficulty,omitempty"`
+	ActualStart      *time.Time `json:"actual_start,omitempty"`
+	ActualEnd        *time.Time `json:"actual_end,omitempty"`
+	StudyMinutes     int        `gorm:"default:0" json:"study_minutes"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 func (DailyTask) TableName() string { return "daily_tasks" }
