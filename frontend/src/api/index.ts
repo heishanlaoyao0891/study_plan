@@ -204,21 +204,3 @@ export const NotificationApi = {
     return api.get<any>(`/api/notifications/due${date ? `?date=${date}` : ''}`)
   },
 }
-
-export const AdminApi = {
-  users() {
-    return api.get<any>('/api/admin/users')
-  },
-  ban(id: number, duration_hours: number, reason: string) {
-    return api.post<any>(`/api/admin/users/${id}/ban`, { duration_hours, reason })
-  },
-  unban(id: number) {
-    return api.post<any>(`/api/admin/users/${id}/unban`, {})
-  },
-  slackConfigs() {
-    return api.get<any[]>('/api/admin/slack-config')
-  },
-  saveSlackConfig(data: { checkin_minutes: number; streak_bonus?: number; quality_bonus?: number }) {
-    return api.put<any>('/api/admin/slack-config', data)
-  },
-}

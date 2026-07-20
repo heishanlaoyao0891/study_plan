@@ -5,7 +5,6 @@
     { "path": "pages/slack/slack", "style": { "navigationBarTitleText": "躺平币" } },
     { "path": "pages/stats/stats", "style": { "navigationBarTitleText": "统计" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
-    { "path": "pages/admin/admin", "style": { "navigationBarTitleText": "管理员" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
     { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
   ],
