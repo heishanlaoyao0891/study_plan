@@ -23,15 +23,15 @@
 
 ## 4. Admin MVP Features
 
-- [ ] 4.1 Implement overview dashboard with key counts
-- [ ] 4.2 Implement user list with search/filter
-- [ ] 4.3 Implement user detail summary with role/status visibility
-- [ ] 4.4 Implement ban/unban with duration and reason
-- [ ] 4.5 Implement global slack configuration editor
-- [ ] 4.6 Implement per-user slack configuration editor
-- [ ] 4.7 Implement AI model configuration editor
-- [ ] 4.8 Implement WeChat subscription message configuration editor
-- [ ] 4.9 Implement audit log list
+- [x] 4.1 Implement overview dashboard with key counts
+- [x] 4.2 Implement user list with search/filter
+- [x] 4.3 Implement user detail summary with role/status visibility
+- [x] 4.4 Implement ban/unban with duration and reason
+- [x] 4.5 Implement global slack configuration editor
+- [x] 4.6 Implement per-user slack configuration editor
+- [x] 4.7 Implement AI model configuration editor
+- [x] 4.8 Implement WeChat subscription message configuration editor
+- [x] 4.9 Implement audit log list
 
 ## 5. Audit And Backend Support
 
