@@ -68,6 +68,18 @@ func main() {
 		bound.PUT("/plans/:id/shift", handlers.ShiftPlan)
 		bound.POST("/plans/:id/invite", handlers.InvitePlanMember)
 		bound.POST("/plans/:id/join", handlers.JoinPlan)
+		bound.POST("/groups", handlers.CreateStudyGroup)
+		bound.GET("/groups/current", handlers.CurrentStudyGroup)
+		bound.PUT("/groups/:id", handlers.UpdateStudyGroup)
+		bound.POST("/groups/:id/leave", handlers.LeaveStudyGroup)
+		bound.POST("/groups/:id/end", handlers.EndStudyGroup)
+		bound.POST("/groups/:id/transfer", handlers.TransferGroupLeader)
+		bound.POST("/groups/:id/members/:userId/remove", handlers.RemoveStudyGroupMember)
+		bound.POST("/groups/:id/invitations", handlers.CreateStudyGroupInvitation)
+		bound.POST("/groups/:id/invitations/revoke", handlers.RevokeStudyGroupInvitation)
+		bound.POST("/groups/join", handlers.JoinStudyGroupByCode)
+		bound.GET("/groups/current/members", handlers.GroupMembers)
+		bound.GET("/groups/current/leaderboard", handlers.GroupLeaderboard)
 
 		// AI 计划
 		bound.POST("/ai/generate-plan", handlers.GeneratePlan)

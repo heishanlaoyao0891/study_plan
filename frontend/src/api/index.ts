@@ -37,6 +37,38 @@ export interface Plan {
   updated_at: string
 }
 
+export interface StudyGroup {
+  id: number
+  name: string
+  leader_user_id: number
+  status: 'active' | 'ended'
+  end_date?: string
+  ended_at?: string
+}
+
+export interface StudyGroupMember {
+  id: number
+  group_id: number
+  user_id: number
+  role: 'leader' | 'member'
+  status: 'active' | 'left' | 'removed'
+  joined_at: string
+  nickname?: string
+  avatar_url?: string
+}
+
+export interface GroupMemberView {
+  user_id: number
+  nickname: string
+  avatar_url?: string
+  role: 'leader' | 'member'
+  level: number
+  streak: number
+  study_minutes: number
+  completion_rate: number
+  today_completed: boolean
+}
+
 export interface CreatePlanReq {
   title: string
   description?: string
@@ -120,6 +152,45 @@ export const PlanApi = {
   },
   reorderTasks(id: number, task_ids: number[]) {
     return api.put<any>(`/api/plans/${id}/tasks/reorder`, { task_ids })
+  },
+}
+
+export const GroupApi = {
+  current() {
+    return api.get<{ group: StudyGroup | null; member: StudyGroupMember | null }>('/api/groups/current')
+  },
+  create(data: { name: string; end_date?: string }) {
+    return api.post<{ group: StudyGroup; member: StudyGroupMember }>('/api/groups', data)
+  },
+  update(id: number, data: { name?: string; end_date?: string }) {
+    return api.put<StudyGroup>(`/api/groups/${id}`, data)
+  },
+  leave(id: number) {
+    return api.post<any>(`/api/groups/${id}/leave`, {})
+  },
+  end(id: number) {
+    return api.post<any>(`/api/groups/${id}/end`, {})
+  },
+  transfer(id: number, user_id: number) {
+    return api.post<any>(`/api/groups/${id}/transfer`, { user_id })
+  },
+  remove(id: number, userId: number) {
+    return api.post<any>(`/api/groups/${id}/members/${userId}/remove`, {})
+  },
+  join(code: string) {
+    return api.post<any>('/api/groups/join', { code })
+  },
+  invite(id: number, days = 7) {
+    return api.post<any>(`/api/groups/${id}/invitations?days=${days}`, {})
+  },
+  revokeInvite(id: number) {
+    return api.post<any>(`/api/groups/${id}/invitations/revoke`, {})
+  },
+  members() {
+    return api.get<GroupMemberView[]>('/api/groups/current/members')
+  },
+  leaderboard(scope: 'weekly' | 'all' = 'weekly') {
+    return api.get<{ scope: string; rows: GroupMemberView[] }>(`/api/groups/current/leaderboard?scope=${scope}`)
   },
 }
 
