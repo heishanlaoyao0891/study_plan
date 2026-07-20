@@ -27,7 +27,7 @@ import { AdminApi, type AIConfig } from '@/api'
 const error = ref('')
 const status = ref('')
 const apiKey = ref('')
-const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, daily_generation_limit: 20, enabled: true })
+const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, daily_generation_limit: 5, enabled: true })
 
 onMounted(async () => {
   try {

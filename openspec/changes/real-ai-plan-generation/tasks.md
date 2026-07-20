@@ -43,7 +43,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Verify backend build
-- [ ] 6.2 Verify mini program build
-- [ ] 6.3 Verify admin console AI config/test flow if admin console is present
-- [ ] 6.4 Add focused API tests for schema validation and fallback planner
+- [x] 6.1 Verify backend build
+- [x] 6.2 Verify mini program build
+- [x] 6.3 Verify admin console AI config/test flow if admin console is present
+- [x] 6.4 Add focused API tests for schema validation and fallback planner
