@@ -21,7 +21,7 @@ type WeChatSession struct {
 const weChatLoginURL = "https://api.weixin.qq.com/sns/jscode2session"
 
 // Code2Session 用小程序 code 换取 openid
-// 当未配置 AppID 时走 mock 模式：直接把 code 当作 openid 返回（方便本地开发调试）
+// 仅当 WECHAT_LOGIN_MOCK=true 时走 mock 模式，生产环境必须调用微信 code2session。
 func Code2Session(code string) (*WeChatSession, error) {
 	cfg := config.App
 
@@ -31,6 +31,9 @@ func Code2Session(code string) (*WeChatSession, error) {
 			OpenID:     fmt.Sprintf("mock_%s", code),
 			SessionKey: "mock_session_key",
 		}, nil
+	}
+	if cfg.WeChatAppID == "" || cfg.WeChatSecret == "" {
+		return nil, errors.New("wechat appid or secret is not configured")
 	}
 
 	url := fmt.Sprintf("%s?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code",

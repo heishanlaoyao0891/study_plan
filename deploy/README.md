@@ -9,9 +9,10 @@ cd backend
 go build -o study_plan_backend .
 ```
 
-2. Create `.env` from `backend/.env.example` and set production values:
+2. Create `.env` from `backend/.env.production.example` and set production values:
 
 ```bash
+APP_ENV=production
 PORT=8080
 DB_PATH=/var/lib/study-plan/study_plan.db
 JWT_SECRET=<strong-random-secret>

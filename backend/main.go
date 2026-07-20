@@ -22,6 +22,9 @@ func main() {
 	// 加载 .env（可选）
 	_ = godotenv.Load()
 	config.Load()
+	if err := config.App.Validate(); err != nil {
+		log.Fatalf("config validation failed: %v", err)
+	}
 
 	if err := db.Init(); err != nil {
 		log.Fatalf("init db: %v", err)

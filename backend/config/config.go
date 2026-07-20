@@ -1,11 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
+	AppEnv          string // local/development/production
 	Port            string // 服务端口
 	DBPath          string // SQLite 数据库文件路径
 	JWTSecret       string // JWT 签名密钥
@@ -22,6 +25,7 @@ var App *Config
 
 func Load() *Config {
 	App = &Config{
+		AppEnv:          getEnv("APP_ENV", "development"),
 		Port:            getEnv("PORT", "8080"),
 		DBPath:          getEnv("DB_PATH", "study_plan.db"),
 		JWTSecret:       getEnv("JWT_SECRET", "study_plan_default_secret_change_me"),
@@ -33,10 +37,37 @@ func Load() *Config {
 		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),
 		AIKeySecret:     getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
 	}
-	if App.WeChatAppID == "" || App.WeChatSecret == "" || App.WeChatLoginMock {
-		App.WeChatLoginMock = true
-	}
 	return App
+}
+
+func (c *Config) IsProduction() bool {
+	return strings.EqualFold(c.AppEnv, "production")
+}
+
+func (c *Config) Validate() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	missing := make([]string, 0)
+	if c.JWTSecret == "" || c.JWTSecret == "study_plan_default_secret_change_me" || c.JWTSecret == "change-me-before-deploy" {
+		missing = append(missing, "JWT_SECRET")
+	}
+	if c.DBPath == "" {
+		missing = append(missing, "DB_PATH")
+	}
+	if c.WeChatAppID == "" {
+		missing = append(missing, "WECHAT_APPID")
+	}
+	if c.WeChatSecret == "" {
+		missing = append(missing, "WECHAT_SECRET")
+	}
+	if c.WeChatLoginMock {
+		missing = append(missing, "WECHAT_LOGIN_MOCK=false")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing or invalid production configuration: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func getEnv(key, def string) string {
