@@ -45,7 +45,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Verify backend build
-- [ ] 6.2 Verify mini program build after removing admin surface
-- [ ] 6.3 Verify admin console build
-- [ ] 6.4 Validate OpenSpec change
+- [x] 6.1 Verify backend build
+- [x] 6.2 Verify mini program build after removing admin surface
+- [x] 6.3 Verify admin console build
+- [x] 6.4 Validate OpenSpec change
