@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"study_plan_backend/db"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
+	"study_plan_backend/services"
 )
 
 type generatePlanReq struct {
@@ -40,6 +40,12 @@ func GeneratePlan(c *gin.Context) {
 	if req.HoursPerDay <= 0 {
 		req.HoursPerDay = 1
 	}
+	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, SkipDates: req.SkipDates})
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "build planning context failed: "+err.Error())
+		return
+	}
+	preview := services.FallbackPlanPreview(ctx)
 	start := time.Now()
 	if req.StartDate != "" {
 		if t, err := time.Parse(dateLayout, req.StartDate); err == nil {
@@ -50,20 +56,21 @@ func GeneratePlan(c *gin.Context) {
 	for _, d := range req.SkipDates {
 		skip[d] = true
 	}
-	plan := models.Plan{UserID: uid, Title: req.Goal, Description: "AI mock 生成计划", Status: models.PlanStatusActive, WeeklyTargetHours: req.HoursPerDay * 7, AIGenerated: true}
+	plan := models.Plan{UserID: uid, Title: preview.Title, Description: preview.Rationale, Status: models.PlanStatusActive, WeeklyTargetHours: req.HoursPerDay * 7, AIGenerated: true}
 	var tasks []models.DailyTask
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
+	txErr := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
 		day := 0
-		for len(tasks) < req.Days {
+		for len(tasks) < len(preview.Tasks) {
 			date := start.AddDate(0, 0, day).Format(dateLayout)
 			day++
 			if skip[date] {
 				continue
 			}
-			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: date, Title: fmt.Sprintf("Day %d：%s", len(tasks)+1, req.Goal), Description: fmt.Sprintf("学习 %s 的第 %d 天任务，建议投入 %d 小时。", req.Goal, len(tasks)+1, req.HoursPerDay), Status: models.TaskStatusPending}
+			previewTask := preview.Tasks[len(tasks)]
+			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Description: previewTask.Description, Status: models.TaskStatusPending}
 			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
@@ -71,11 +78,11 @@ func GeneratePlan(c *gin.Context) {
 		}
 		return nil
 	})
-	if err != nil {
-		api.Fail(c, http.StatusInternalServerError, "generate plan failed: "+err.Error())
+	if txErr != nil {
+		api.Fail(c, http.StatusInternalServerError, "generate plan failed: "+txErr.Error())
 		return
 	}
-	api.OK(c, gin.H{"plan": plan, "tasks": tasks, "mode": "mock"})
+	api.OK(c, gin.H{"plan": plan, "tasks": tasks, "mode": "fallback", "rationale": preview.Rationale})
 }
 
 func RegeneratePlan(c *gin.Context) { GeneratePlan(c) }

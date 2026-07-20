@@ -8,13 +8,13 @@
 
 ## 2. Planning Agent
 
-- [ ] 2.1 Build controlled planning prompt from product-specific inputs
-- [ ] 2.2 Include user historical completion rate and study efficiency in agent context
-- [ ] 2.3 Add deterministic rule-based fallback planner
-- [ ] 2.4 Return planning rationale with generated preview
-- [ ] 2.5 Define allowlisted planning tools for learning profile, active load, task outcomes, and schedule conflict checks
-- [ ] 2.6 Implement planning tools as backend-owned Go functions scoped to the authenticated user
-- [ ] 2.7 If an Agent framework is introduced, wrap only the allowlisted tools and keep final validation in backend code
+- [x] 2.1 Build controlled planning prompt from product-specific inputs
+- [x] 2.2 Include user historical completion rate and study efficiency in agent context
+- [x] 2.3 Add deterministic rule-based fallback planner
+- [x] 2.4 Return planning rationale with generated preview
+- [x] 2.5 Define allowlisted planning tools for learning profile, active load, task outcomes, and schedule conflict checks
+- [x] 2.6 Implement planning tools as backend-owned Go functions scoped to the authenticated user
+- [x] 2.7 If an Agent framework is introduced, wrap only the allowlisted tools and keep final validation in backend code
 
 ## 3. Structured Plan Output
 
