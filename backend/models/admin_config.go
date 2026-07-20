@@ -79,3 +79,28 @@ type AIGenerationUsage struct {
 }
 
 func (AIGenerationUsage) TableName() string { return "ai_generation_usage" }
+
+type OpsContent struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Kind      string    `gorm:"uniqueIndex;size:32;not null" json:"kind"`
+	Title     string    `gorm:"size:128;not null" json:"title"`
+	Body      string    `gorm:"type:text" json:"body"`
+	UpdatedBy *uint     `json:"updated_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (OpsContent) TableName() string { return "ops_contents" }
+
+type FeedbackReport struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"user_id"`
+	Category  string    `gorm:"size:32;not null" json:"category"`
+	Content   string    `gorm:"size:1024;not null" json:"content"`
+	Contact   string    `gorm:"size:128" json:"contact"`
+	Status    string    `gorm:"size:24;default:open;index" json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (FeedbackReport) TableName() string { return "feedback_reports" }

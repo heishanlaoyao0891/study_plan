@@ -49,6 +49,7 @@
 
       <view class="panel">
         <view class="panel-title">排行榜</view>
+        <view class="hint">用于小组内互相鼓励，不代表能力评价。</view>
         <view class="tabs"><button @click="loadLeaderboard('weekly')">本周</button><button @click="loadLeaderboard('all')">全部</button></view>
         <view class="rank" v-for="(row, index) in leaderboard" :key="row.user_id">
           <view>#{{ index + 1 }} {{ row.nickname || `用户 #${row.user_id}` }}</view>

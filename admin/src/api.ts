@@ -89,6 +89,24 @@ export interface SuspiciousRecordsResp {
   sessions: Array<{ id: number; task_id: number; duration_min: number; review_note?: string }>
 }
 
+export interface OpsContent {
+  id: number
+  kind: string
+  title: string
+  body: string
+  updated_at: string
+}
+
+export interface FeedbackReport {
+  id: number
+  user_id: number
+  category: string
+  content: string
+  contact?: string
+  status: string
+  created_at: string
+}
+
 export interface AdminLoginResp {
   token: string
   user: AdminUser
@@ -176,5 +194,14 @@ export const AdminApi = {
   },
   suspiciousRecords() {
     return request<SuspiciousRecordsResp>('/api/admin/suspicious-records')
+  },
+  opsContents() {
+    return request<OpsContent[]>('/api/admin/ops-contents')
+  },
+  saveOpsContent(kind: string, data: { title: string; body: string }) {
+    return request<OpsContent>(`/api/admin/ops-contents/${kind}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  feedback() {
+    return request<FeedbackReport[]>('/api/admin/feedback')
   },
 }

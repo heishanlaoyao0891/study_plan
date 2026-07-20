@@ -50,6 +50,8 @@ func AutoMigrate() error {
 		&models.NotificationDeliveryLog{},
 		&models.NotificationSubscription{},
 		&models.AIGenerationUsage{},
+		&models.OpsContent{},
+		&models.FeedbackReport{},
 	); err != nil {
 		return err
 	}

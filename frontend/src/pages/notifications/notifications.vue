@@ -2,7 +2,7 @@
   <view class="page">
     <view class="panel">
       <view class="title">提醒设置</view>
-      <view class="desc">微信订阅消息需要用户主动授权。当前后端为占位接口，正式发布前接入模板 ID。</view>
+      <view class="desc">微信订阅消息需要你主动授权，可随时取消。正式发布前需配置模板 ID。</view>
       <button class="primary" @click="subscribe">订阅提醒</button>
       <button class="ghost" @click="unsubscribe">取消订阅</button>
     </view>

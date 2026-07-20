@@ -6,6 +6,8 @@ import AIConfigView from './views/AIConfigView.vue'
 import AuditLogsView from './views/AuditLogsView.vue'
 import LoginView from './views/LoginView.vue'
 import OverviewView from './views/OverviewView.vue'
+import OpsContentView from './views/OpsContentView.vue'
+import FeedbackView from './views/FeedbackView.vue'
 import SlackConfigView from './views/SlackConfigView.vue'
 import SubscriptionConfigView from './views/SubscriptionConfigView.vue'
 import SuspiciousRecordsView from './views/SuspiciousRecordsView.vue'
@@ -28,6 +30,8 @@ export const router = createRouter({
         { path: 'suspicious-records', name: 'suspicious-records', component: SuspiciousRecordsView },
         { path: 'ai-config', name: 'ai-config', component: AIConfigView },
         { path: 'subscription-config', name: 'subscription-config', component: SubscriptionConfigView },
+        { path: 'ops-content', name: 'ops-content', component: OpsContentView },
+        { path: 'feedback', name: 'feedback', component: FeedbackView },
         { path: 'audit-logs', name: 'audit-logs', component: AuditLogsView },
       ],
     },

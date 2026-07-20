@@ -12,6 +12,8 @@
         <router-link to="/suspicious-records">Suspicious Records</router-link>
         <router-link to="/ai-config">AI Config</router-link>
         <router-link to="/subscription-config">Subscriptions</router-link>
+        <router-link to="/ops-content">Ops Content</router-link>
+        <router-link to="/feedback">Feedback</router-link>
         <router-link to="/audit-logs">Audit Logs</router-link>
       </nav>
       <button class="ghost" type="button" @click="logout">Sign out</button>

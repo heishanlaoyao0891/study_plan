@@ -211,6 +211,15 @@ export const RecoveryApi = {
   },
 }
 
+export const OpsApi = {
+  content(kind: 'privacy' | 'agreement' | 'announcement' | 'version') {
+    return api.get<{ kind: string; title: string; body: string; updated_at: string }>(`/api/ops/content/${kind}`)
+  },
+  feedback(data: { category?: string; content: string; contact?: string }) {
+    return api.post<any>('/api/feedback', data)
+  },
+}
+
 export const CheckinApi = {
   listByDate(date?: string) {
     const q = date ? `?date=${date}` : ''

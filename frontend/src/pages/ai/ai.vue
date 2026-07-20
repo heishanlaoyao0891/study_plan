@@ -2,14 +2,14 @@
   <view class="page">
     <view class="panel">
       <view class="title">AI 生成学习计划</view>
-      <view class="desc">生成的是可编辑预览，确认后再保存为计划。</view>
+      <view class="desc">生成的是可编辑建议，确认后再保存为计划。</view>
       <view class="field"><text>学习目标</text><input v-model="goal" placeholder="例如：学习 Go 语言" /></view>
       <view class="grid">
         <view class="field"><text>每天小时</text><input v-model.number="hours" type="number" /></view>
         <view class="field"><text>计划天数</text><input v-model.number="days" type="number" /></view>
       </view>
       <view class="field"><text>追加说明</text><textarea v-model="refinement" placeholder="例如：周末少一点，工作日晚间安排" /></view>
-      <button class="primary" @click="generate">生成预览</button>
+      <button class="primary" @click="generate">生成建议</button>
       <button class="secondary" v-if="preview" @click="commit">确认保存</button>
     </view>
 

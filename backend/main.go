@@ -135,6 +135,9 @@ func main() {
 
 		bound.GET("/recovery/preview", handlers.RecoveryPreview)
 		bound.POST("/recovery/apply", handlers.ApplyRecovery)
+
+		bound.GET("/ops/content/:kind", handlers.GetOpsContent)
+		bound.POST("/feedback", handlers.SubmitFeedback)
 	}
 
 	// 管理员
@@ -155,6 +158,9 @@ func main() {
 		admin.GET("/subscription-config", handlers.GetSubscriptionMessageConfig)
 		admin.PUT("/subscription-config", handlers.UpdateSubscriptionMessageConfig)
 		admin.GET("/audit-logs", handlers.ListAuditLogs)
+		admin.GET("/ops-contents", handlers.AdminListOpsContents)
+		admin.PUT("/ops-contents/:kind", handlers.AdminSaveOpsContent)
+		admin.GET("/feedback", handlers.AdminListFeedback)
 	}
 
 	addr := ":" + config.App.Port
