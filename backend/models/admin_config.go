@@ -57,3 +57,14 @@ type NotificationDeliveryLog struct {
 }
 
 func (NotificationDeliveryLog) TableName() string { return "notification_delivery_logs" }
+
+type NotificationSubscription struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	UserID       uint      `gorm:"uniqueIndex:idx_user_reminder;not null" json:"user_id"`
+	ReminderType string    `gorm:"uniqueIndex:idx_user_reminder;size:32;not null" json:"reminder_type"`
+	Subscribed   bool      `gorm:"default:true" json:"subscribed"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (NotificationSubscription) TableName() string { return "notification_subscriptions" }

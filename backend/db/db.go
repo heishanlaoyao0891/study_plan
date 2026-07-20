@@ -44,6 +44,7 @@ func AutoMigrate() error {
 		&models.AIConfig{},
 		&models.SubscriptionMessageConfig{},
 		&models.NotificationDeliveryLog{},
+		&models.NotificationSubscription{},
 	); err != nil {
 		return err
 	}

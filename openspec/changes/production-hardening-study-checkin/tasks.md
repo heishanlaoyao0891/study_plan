@@ -18,10 +18,10 @@
 
 ## 3. Subscription Messages
 
-- [ ] 3.1 Add notification template configuration
-- [ ] 3.2 Persist notification delivery attempts and failures
-- [ ] 3.3 Implement sender for study start, completion, 23:30 decision, and missed check-in reminders
-- [ ] 3.4 Only send reminders when user has subscribed to the template and admin has enabled that reminder type
+- [x] 3.1 Add notification template configuration
+- [x] 3.2 Persist notification delivery attempts and failures
+- [x] 3.3 Implement sender for study start, completion, 23:30 decision, and missed check-in reminders
+- [x] 3.4 Only send reminders when user has subscribed to the template and admin has enabled that reminder type
 
 ## 4. Logs, Backups, And Archive Sync
 

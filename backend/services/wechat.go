@@ -37,6 +37,14 @@ type weChatPhoneResp struct {
 	} `json:"phone_info"`
 }
 
+type weChatSubscriptionSendReq struct {
+	ToUser           string         `json:"touser"`
+	TemplateID       string         `json:"template_id"`
+	Page             string         `json:"page,omitempty"`
+	Data             map[string]any `json:"data"`
+	MiniProgramState string         `json:"miniprogram_state,omitempty"`
+}
+
 const weChatLoginURL = "https://api.weixin.qq.com/sns/jscode2session"
 const weChatAccessTokenURL = "https://api.weixin.qq.com/cgi-bin/token"
 const weChatPhoneURL = "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s"
@@ -143,4 +151,50 @@ func getWeChatAccessToken() (string, error) {
 		return "", fmt.Errorf("wechat access token failed: errcode=%d errmsg=%s", result.ErrCode, result.ErrMsg)
 	}
 	return result.AccessToken, nil
+}
+
+func SendSubscriptionMessage(openid, templateID, message string) error {
+	cfg := config.App
+	if cfg.WeChatLoginMock {
+		return nil
+	}
+	token, err := getWeChatAccessToken()
+	if err != nil {
+		return err
+	}
+	payload := weChatSubscriptionSendReq{
+		ToUser:     openid,
+		TemplateID: templateID,
+		Page:       "/pages/checkin/checkin",
+		Data: map[string]any{
+			"thing1": map[string]string{"value": message},
+		},
+		MiniProgramState: "formal",
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=%s", token), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	if result.ErrCode != 0 {
+		return fmt.Errorf("wechat subscription send failed: errcode=%d errmsg=%s", result.ErrCode, result.ErrMsg)
+	}
+	return nil
 }
