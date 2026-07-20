@@ -24,6 +24,7 @@
     </view>
 
     <view class="quick-row">
+      <button class="quick" @click="goSchedule">日程</button>
       <button class="quick" @click="goAI">AI 生成</button>
       <button class="quick" @click="goNotifications">提醒</button>
     </view>
@@ -227,6 +228,7 @@ async function invite(p: Plan) {
 }
 
 function statusText(s: string) { return s === 'paused' ? '暂停' : s === 'archived' ? '归档' : '进行' }
+function goSchedule() { uni.navigateTo({ url: '/pages/schedule/schedule' }) }
 function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 onShow(load)
@@ -250,7 +252,7 @@ onShow(load)
 .stat-box { padding: 24rpx 12rpx; border-radius: 14rpx; background: #fff; border: 1rpx solid #e9edf5; text-align: center; }
 .stat-value { color: #111827; font-size: 34rpx; font-weight: 800; }
 .stat-label { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
-.quick-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14rpx; margin-top: 18rpx; }
+.quick-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 18rpx; }
 .quick { margin: 0; height: 68rpx; line-height: 68rpx; border-radius: 12rpx; background: #eef4ff; color: #2264d1; font-size: 25rpx; }
 .plan-list { margin-top: 24rpx; display: flex; flex-direction: column; gap: 18rpx; }
 .plan-card { padding: 28rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }

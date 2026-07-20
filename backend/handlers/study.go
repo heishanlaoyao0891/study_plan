@@ -16,8 +16,9 @@ import (
 )
 
 type makeupTaskReq struct {
-	EndTime string `json:"end_time" binding:"required"`
-	Reason  string `json:"reason"`
+	ActualStart string `json:"actual_start"`
+	ActualEnd   string `json:"actual_end" binding:"required"`
+	Reason      string `json:"reason"`
 }
 
 type createTaskReq struct {
@@ -48,8 +49,10 @@ type reorderTaskReq struct {
 }
 
 type postponeTaskReq struct {
-	Date   string `json:"date" binding:"required"`
-	Reason string `json:"reason"`
+	Date         string `json:"date" binding:"required"`
+	PlannedStart string `json:"planned_start"`
+	PlannedEnd   string `json:"planned_end"`
+	Reason       string `json:"reason"`
 }
 
 func ListPlanTasks(c *gin.Context) {
@@ -99,6 +102,22 @@ func CreatePlanTask(c *gin.Context) {
 		return
 	}
 	api.OK(c, task)
+}
+
+func GetTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	var plan models.Plan
+	if err := db.DB.First(&plan, task.PlanID).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query plan failed: "+err.Error())
+		return
+	}
+	var history []models.PostponeRecord
+	_ = db.DB.Where("task_id = ?", task.ID).Order("id DESC").Find(&history).Error
+	api.OK(c, gin.H{"task": task, "plan": plan, "history": history})
 }
 
 func StartTask(c *gin.Context) {
@@ -319,6 +338,12 @@ func PostponeTask(c *gin.Context) {
 			return err
 		}
 		task.Date = req.Date
+		if req.PlannedStart != "" {
+			task.PlannedStart = req.PlannedStart
+		}
+		if req.PlannedEnd != "" {
+			task.PlannedEnd = req.PlannedEnd
+		}
 		task.Status = models.TaskStatusPending
 		task.NeedsDecision = false
 		return tx.Save(task).Error
@@ -340,26 +365,36 @@ func MakeupTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
-	end, err := time.Parse(time.RFC3339, req.EndTime)
+	end, err := parseTaskDateTime(req.ActualEnd)
 	if err != nil {
-		if t, e := time.Parse("2006-01-02 15:04", req.EndTime); e == nil {
-			end = t
-		} else {
-			api.Fail(c, http.StatusBadRequest, "invalid end_time, use RFC3339 or yyyy-mm-dd hh:mm")
+		api.Fail(c, http.StatusBadRequest, "invalid actual_end, use RFC3339 or yyyy-mm-dd hh:mm")
+		return
+	}
+	start := end.Add(-time.Duration(defaultPlannedMinutes()) * time.Minute)
+	if task.ActualStart != nil {
+		start = *task.ActualStart
+	}
+	if req.ActualStart != "" {
+		start, err = parseTaskDateTime(req.ActualStart)
+		if err != nil {
+			api.Fail(c, http.StatusBadRequest, "invalid actual_start, use RFC3339 or yyyy-mm-dd hh:mm")
 			return
 		}
 	}
-	if task.ActualStart == nil {
-		task.ActualStart = &end
-	}
-	if end.Before(*task.ActualStart) {
-		api.Fail(c, http.StatusBadRequest, "end_time before actual_start")
+	if !end.After(start) {
+		api.Fail(c, http.StatusBadRequest, "actual_end must be later than actual_start")
 		return
 	}
-	minutes := int(end.Sub(*task.ActualStart).Minutes())
-	if minutes < 1 {
-		minutes = 1
+	if end.After(time.Now()) {
+		api.Fail(c, http.StatusBadRequest, "actual_end cannot be in the future")
+		return
 	}
+	minutes := int(end.Sub(start).Minutes())
+	if minutes > 8*60 {
+		api.Fail(c, http.StatusBadRequest, "corrected session cannot exceed 8 hours")
+		return
+	}
+	task.ActualStart = &start
 	task.ActualEnd = &end
 	task.StudyMinutes = minutes
 	task.Status = models.TaskStatusPending
@@ -427,3 +462,10 @@ func defaultPlannedStart() string      { return "20:00" }
 func defaultPlannedEnd() string        { return "21:00" }
 func defaultPlannedMinutes() int       { return 60 }
 func defaultPlannedDifficulty() string { return "medium" }
+
+func parseTaskDateTime(value string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02 15:04", value)
+}

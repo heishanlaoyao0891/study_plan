@@ -8,10 +8,10 @@
 
 ## 2. Calendar And Detail UI
 
-- [ ] 2.1 Add task detail page
-- [ ] 2.2 Add future 7-day schedule list view
-- [ ] 2.3 Add quick actions for start, complete, postpone, and makeup
-- [ ] 2.4 Future 7-day list includes today plus the next 6 days
+- [x] 2.1 Add task detail page
+- [x] 2.2 Add future 7-day schedule list view
+- [x] 2.3 Add quick actions for start, complete, postpone, and makeup
+- [x] 2.4 Future 7-day list includes today plus the next 6 days
 
 ## 3. Postpone And Makeup
 

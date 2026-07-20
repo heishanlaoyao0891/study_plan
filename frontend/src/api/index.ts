@@ -54,6 +54,10 @@ export interface CheckinInfo {
   task_status: 'pending' | 'in_progress' | 'completed'
   date: string
   study_minutes: number
+  planned_start?: string
+  planned_end?: string
+  estimated_minutes?: number
+  needs_decision?: boolean
   completed: boolean
 }
 
@@ -133,6 +137,9 @@ export const CheckinApi = {
 }
 
 export const StudyTaskApi = {
+  get(id: number) {
+    return api.get<any>(`/api/tasks/${id}`)
+  },
   start(id: number) {
     return api.put<any>(`/api/tasks/${id}/start`)
   },
@@ -148,11 +155,11 @@ export const StudyTaskApi = {
   remove(id: number) {
     return api.delete<any>(`/api/tasks/${id}`)
   },
-  postpone(id: number, date: string, reason = '') {
-    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason })
+  postpone(id: number, date: string, reason = '', planned_start = '', planned_end = '') {
+    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason, planned_start, planned_end })
   },
-  makeup(id: number, end_time: string, reason = '') {
-    return api.put<any>(`/api/tasks/${id}/makeup`, { end_time, reason })
+  makeup(id: number, actual_end: string, reason = '', actual_start = '') {
+    return api.put<any>(`/api/tasks/${id}/makeup`, { actual_start, actual_end, reason })
   },
   pendingDecision(date?: string) {
     return api.get<any[]>(`/api/tasks/pending-decision${date ? `?date=${date}` : ''}`)
