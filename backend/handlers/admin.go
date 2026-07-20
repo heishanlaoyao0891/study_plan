@@ -424,7 +424,7 @@ func firstAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 20, Enabled: true}
+		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
 		err = db.DB.Create(&cfg).Error
 	}
 	return cfg, err

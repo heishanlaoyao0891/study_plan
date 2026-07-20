@@ -30,11 +30,23 @@ func GeneratePlan(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	var cfg models.AIConfig
 	if err := db.DB.Order("id ASC").First(&cfg).Error; err == nil && !cfg.Enabled {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "disabled", "AI generation is disabled")
 		api.Fail(c, http.StatusForbidden, "AI generation is disabled")
+		return
+	}
+	canUse, usedToday, err := services.CanUseAIGeneration(uid, cfg.DailyGenerationLimit)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai usage failed: "+err.Error())
+		return
+	}
+	if !canUse {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "limit_exceeded", "daily generation limit exceeded")
+		api.Fail(c, http.StatusTooManyRequests, "daily AI generation limit exceeded")
 		return
 	}
 	var req generatePlanReq
 	if err := c.ShouldBindJSON(&req); err != nil {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
@@ -46,15 +58,18 @@ func GeneratePlan(c *gin.Context) {
 	}
 	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, SkipDates: req.SkipDates, Refinement: req.Refinement})
 	if err != nil {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
 		api.Fail(c, http.StatusInternalServerError, "build planning context failed: "+err.Error())
 		return
 	}
 	preview := services.FallbackPlanPreview(ctx)
 	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
 		api.Fail(c, http.StatusInternalServerError, "fallback preview validation failed: "+err.Error())
 		return
 	}
-	api.OK(c, gin.H{"preview": preview, "mode": "fallback"})
+	services.RecordAIGenerationUsage(uid, cfg.Provider, "success", "fallback preview generated")
+	api.OK(c, gin.H{"preview": preview, "mode": "fallback", "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
 }
 
 func CommitAIPlan(c *gin.Context) {
@@ -95,4 +110,11 @@ func RegeneratePlan(c *gin.Context) { GeneratePlan(c) }
 
 func EditAIPlan(c *gin.Context) {
 	api.OK(c, gin.H{"message": "AI plan edit is covered by normal plan/task APIs in MVP"})
+}
+
+func maxPositive(v, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }

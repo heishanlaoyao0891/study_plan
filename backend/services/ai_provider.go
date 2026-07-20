@@ -53,24 +53,30 @@ func (p *OpenAICompatibleProvider) Test() error {
 		"max_tokens":  16,
 	}
 	body, _ := json.Marshal(reqBody)
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(p.Config.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := strings.TrimSpace(decodeAIKey(p.Config)); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
 	client := &http.Client{Timeout: time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30)) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(p.Config.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if key := strings.TrimSpace(decodeAIKey(p.Config)); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			lastErr = fmt.Errorf("provider returned http %d", resp.StatusCode)
+			continue
+		}
+		return nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("provider returned http %d", resp.StatusCode)
-	}
-	return nil
+	return lastErr
 }
 
 func decodeAIKey(cfg models.AIConfig) string {
@@ -130,7 +136,7 @@ func loadAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if err != nil {
-		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 20, Enabled: true}
+		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
 		if createErr := db.DB.Create(&cfg).Error; createErr != nil {
 			return cfg, createErr
 		}

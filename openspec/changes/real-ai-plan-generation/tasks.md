@@ -34,12 +34,12 @@
 
 ## 5. Reliability And Cost
 
-- [ ] 5.1 Add timeout and retry behavior
-- [ ] 5.2 Add per-user generation limits with default 5/day
-- [ ] 5.3 Make generation limit configurable from PC admin console
-- [ ] 5.4 Add clear fallback errors when provider is unavailable
-- [ ] 5.5 Track generation usage and provider failures
-- [ ] 5.6 Ensure fallback planner produces a legal preview without provider access
+- [x] 5.1 Add timeout and retry behavior
+- [x] 5.2 Add per-user generation limits with default 5/day
+- [x] 5.3 Make generation limit configurable from PC admin console
+- [x] 5.4 Add clear fallback errors when provider is unavailable
+- [x] 5.5 Track generation usage and provider failures
+- [x] 5.6 Ensure fallback planner produces a legal preview without provider access
 
 ## 6. Verification
 

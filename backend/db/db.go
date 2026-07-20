@@ -45,6 +45,7 @@ func AutoMigrate() error {
 		&models.SubscriptionMessageConfig{},
 		&models.NotificationDeliveryLog{},
 		&models.NotificationSubscription{},
+		&models.AIGenerationUsage{},
 	); err != nil {
 		return err
 	}
@@ -82,7 +83,7 @@ func ensureDefaultAdminConfigs() error {
 		return err
 	}
 	if count == 0 {
-		if err := DB.Create(&models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 20, Enabled: true}).Error; err != nil {
+		if err := DB.Create(&models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}).Error; err != nil {
 			return err
 		}
 	}

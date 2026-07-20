@@ -19,7 +19,7 @@ type AIConfig struct {
 	ModelName             string    `gorm:"size:128" json:"model_name"`
 	BaseURL               string    `gorm:"size:512" json:"base_url"`
 	RequestTimeoutSeconds int       `gorm:"default:30" json:"request_timeout_seconds"`
-	DailyGenerationLimit  int       `gorm:"default:20" json:"daily_generation_limit"`
+	DailyGenerationLimit  int       `gorm:"default:5" json:"daily_generation_limit"`
 	Enabled               bool      `gorm:"default:true" json:"enabled"`
 	APIKeyCiphertext      string    `gorm:"size:2048" json:"-"`
 	APIKeyEncrypted       bool      `gorm:"default:false" json:"-"`
@@ -68,3 +68,14 @@ type NotificationSubscription struct {
 }
 
 func (NotificationSubscription) TableName() string { return "notification_subscriptions" }
+
+type AIGenerationUsage struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"user_id"`
+	Provider  string    `gorm:"size:32" json:"provider"`
+	Status    string    `gorm:"size:32;index;not null" json:"status"`
+	Message   string    `gorm:"size:512" json:"message,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (AIGenerationUsage) TableName() string { return "ai_generation_usage" }
