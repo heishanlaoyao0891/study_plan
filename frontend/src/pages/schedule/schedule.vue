@@ -70,13 +70,25 @@ async function postpone(task: any) {
   const res = await modalInput('推迟任务', `${tomorrow} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
   if (!res) return
   const parsed = parsePostpone(res)
-  await StudyTaskApi.postpone(task.id, parsed.date, '手动推迟', parsed.start, parsed.end)
-  await load()
+  try {
+    await StudyTaskApi.postpone(task.id, parsed.date, '手动推迟', parsed.start, parsed.end)
+    await load()
+  } catch (e: any) {
+    if (e?.code === 409) {
+      const ok = await confirmConflict()
+      if (!ok) return
+      await StudyTaskApi.postpone(task.id, parsed.date, '手动推迟', parsed.start, parsed.end, true)
+      await load()
+    } else {
+      throw e
+    }
+  }
 }
 async function makeup(task: any) {
   const res = await modalInput('补录结束时间', `${task.date} ${task.planned_end || '21:00'}`)
   if (!res) return
-  await StudyTaskApi.makeup(task.id, res, '手动补录')
+  const parsed = parseMakeup(task, res)
+  await StudyTaskApi.makeup(task.id, parsed.end, '手动补录', parsed.start)
   await load()
 }
 
@@ -89,6 +101,20 @@ function parsePostpone(value: string) {
   const [date, range = '20:00-21:00'] = value.trim().split(/\s+/)
   const [start = '20:00', end = '21:00'] = range.split('-')
   return { date, start, end }
+}
+function parseMakeup(task: any, value: string) {
+  const raw = value.trim()
+  if (raw.includes('-')) {
+    const [date, range = task.planned_end || '21:00-22:00'] = raw.split(/\s+/)
+    const [startTime = task.planned_start || '20:00', endTime = task.planned_end || '21:00'] = range.split('-')
+    return { start: `${date} ${startTime}`, end: `${date} ${endTime}` }
+  }
+  return { start: `${task.date} ${task.planned_start || '20:00'}`, end: raw }
+}
+function confirmConflict() {
+  return new Promise<boolean>(resolve => {
+    uni.showModal({ title: '时间冲突', content: '目标时段已存在其他任务，仍然推迟吗？', success: res => resolve(!!res.confirm) })
+  })
 }
 function dateKey(date: Date) { return date.toISOString().slice(0, 10) }
 function dayLabel(day: string) { return day === days[0] ? `${day} 今天` : day }

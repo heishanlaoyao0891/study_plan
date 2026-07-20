@@ -50,14 +50,26 @@ async function postpone() {
   const res = await modalInput('推迟任务', `${task.date} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
   if (!res) return
   const parsed = parsePostpone(res)
-  await StudyTaskApi.postpone(taskId.value, parsed.date, '手动推迟', parsed.start, parsed.end)
-  await load()
+  try {
+    await StudyTaskApi.postpone(taskId.value, parsed.date, '手动推迟', parsed.start, parsed.end)
+    await load()
+  } catch (e: any) {
+    if (e?.code === 409) {
+      const ok = await confirmConflict()
+      if (!ok) return
+      await StudyTaskApi.postpone(taskId.value, parsed.date, '手动推迟', parsed.start, parsed.end, true)
+      await load()
+    } else {
+      throw e
+    }
+  }
 }
 async function makeup() {
   const task = detail.value.task
-  const res = await modalInput('补录结束时间', `${task.date} ${task.planned_end || '21:00'}`)
+  const res = await modalInput('补录结束时间', `${task.date} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
   if (!res) return
-  await StudyTaskApi.makeup(taskId.value, res, '手动补录')
+  const parsed = parseMakeup(task, res)
+  await StudyTaskApi.makeup(taskId.value, parsed.end, '手动补录', parsed.start)
   await load()
 }
 function modalInput(title: string, placeholderText: string) {
@@ -69,6 +81,20 @@ function parsePostpone(value: string) {
   const [date, range = '20:00-21:00'] = value.trim().split(/\s+/)
   const [start = '20:00', end = '21:00'] = range.split('-')
   return { date, start, end }
+}
+function parseMakeup(task: any, value: string) {
+  const raw = value.trim()
+  if (raw.includes('-')) {
+    const [date, range = task.planned_end || '21:00-22:00'] = raw.split(/\s+/)
+    const [startTime = task.planned_start || '20:00', endTime = task.planned_end || '21:00'] = range.split('-')
+    return { start: `${date} ${startTime}`, end: `${date} ${endTime}` }
+  }
+  return { start: `${task.date} ${task.planned_start || '20:00'}`, end: raw }
+}
+function confirmConflict() {
+  return new Promise<boolean>(resolve => {
+    uni.showModal({ title: '时间冲突', content: '目标时段已存在其他任务，仍然推迟吗？', success: res => resolve(!!res.confirm) })
+  })
 }
 function statusText(status: string) { return status === 'completed' ? '已完成' : status === 'in_progress' ? '学习中' : '待执行' }
 </script>

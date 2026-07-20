@@ -163,11 +163,12 @@ async function complete(item: CheckinInfo) {
 
 async function makeup(task: any) {
   const res = await new Promise<any>(resolve => {
-    uni.showModal({ title: '补录结束时间', editable: true, placeholderText: `${todayStr} 23:30`, success: resolve })
+    uni.showModal({ title: '补录结束时间', editable: true, placeholderText: `${todayStr} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`, success: resolve })
   })
   if (!res.confirm) return
   try {
-    await StudyTaskApi.makeup(task.id, res.content || `${todayStr} 23:30`, '手动补录')
+    const parsed = parseMakeup(task, res.content || `${todayStr} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
+    await StudyTaskApi.makeup(task.id, parsed.end, '手动补录', parsed.start)
     await load()
   } catch (e: any) {
     uni.showToast({ title: e?.message || '补录失败', icon: 'none' })
@@ -190,6 +191,16 @@ async function postpone(task: any) {
 
 function statusText(item: CheckinInfo) {
   return item.task_status === 'in_progress' ? '学习中' : item.study_minutes > 0 ? '已记录学习' : '等待开始'
+}
+
+function parseMakeup(task: any, value: string) {
+  const raw = value.trim()
+  if (raw.includes('-')) {
+    const [date, range = task.planned_end || '21:00-22:00'] = raw.split(/\s+/)
+    const [startTime = task.planned_start || '20:00', endTime = task.planned_end || '21:00'] = range.split('-')
+    return { start: `${date} ${startTime}`, end: `${date} ${endTime}` }
+  }
+  return { start: `${task.date} ${task.planned_start || '20:00'}`, end: raw }
 }
 
 function goPlans() {

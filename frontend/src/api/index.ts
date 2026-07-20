@@ -155,8 +155,8 @@ export const StudyTaskApi = {
   remove(id: number) {
     return api.delete<any>(`/api/tasks/${id}`)
   },
-  postpone(id: number, date: string, reason = '', planned_start = '', planned_end = '') {
-    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason, planned_start, planned_end })
+  postpone(id: number, date: string, reason = '', planned_start = '', planned_end = '', confirm_conflict = false) {
+    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason, planned_start, planned_end, confirm_conflict })
   },
   makeup(id: number, actual_end: string, reason = '', actual_start = '') {
     return api.put<any>(`/api/tasks/${id}/makeup`, { actual_start, actual_end, reason })

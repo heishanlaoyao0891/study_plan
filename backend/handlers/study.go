@@ -49,10 +49,11 @@ type reorderTaskReq struct {
 }
 
 type postponeTaskReq struct {
-	Date         string `json:"date" binding:"required"`
-	PlannedStart string `json:"planned_start"`
-	PlannedEnd   string `json:"planned_end"`
-	Reason       string `json:"reason"`
+	Date            string `json:"date" binding:"required"`
+	PlannedStart    string `json:"planned_start"`
+	PlannedEnd      string `json:"planned_end"`
+	ConfirmConflict bool   `json:"confirm_conflict"`
+	Reason          string `json:"reason"`
 }
 
 func ListPlanTasks(c *gin.Context) {
@@ -332,18 +333,31 @@ func PostponeTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
 		return
 	}
+	plannedStart := task.PlannedStart
+	plannedEnd := task.PlannedEnd
+	if req.PlannedStart != "" {
+		plannedStart = req.PlannedStart
+	}
+	if req.PlannedEnd != "" {
+		plannedEnd = req.PlannedEnd
+	}
+	conflicts, err := findTaskSlotConflicts(uid, task.ID, req.Date, plannedStart, plannedEnd)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query task conflicts failed: "+err.Error())
+		return
+	}
+	if len(conflicts) > 0 && !req.ConfirmConflict {
+		api.Fail(c, http.StatusConflict, "schedule conflict, confirm_conflict required")
+		return
+	}
 	record := models.PostponeRecord{TaskID: task.ID, UserID: uid, PlanID: task.PlanID, OldDate: task.Date, NewDate: req.Date, Reason: req.Reason}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
 		task.Date = req.Date
-		if req.PlannedStart != "" {
-			task.PlannedStart = req.PlannedStart
-		}
-		if req.PlannedEnd != "" {
-			task.PlannedEnd = req.PlannedEnd
-		}
+		task.PlannedStart = plannedStart
+		task.PlannedEnd = plannedEnd
 		task.Status = models.TaskStatusPending
 		task.NeedsDecision = false
 		return tx.Save(task).Error
@@ -352,6 +366,18 @@ func PostponeTask(c *gin.Context) {
 		return
 	}
 	api.OK(c, gin.H{"task": task, "record": record})
+}
+
+func findTaskSlotConflicts(uid, taskID uint, date, plannedStart, plannedEnd string) ([]models.DailyTask, error) {
+	if plannedStart == "" || plannedEnd == "" {
+		return nil, nil
+	}
+	var conflicts []models.DailyTask
+	err := db.DB.Where(
+		"user_id = ? AND id <> ? AND date = ? AND status <> ? AND planned_start < ? AND planned_end > ?",
+		uid, taskID, date, models.TaskStatusCompleted, plannedEnd, plannedStart,
+	).Find(&conflicts).Error
+	return conflicts, err
 }
 
 func MakeupTask(c *gin.Context) {

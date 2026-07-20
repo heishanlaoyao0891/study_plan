@@ -15,13 +15,13 @@
 
 ## 3. Postpone And Makeup
 
-- [ ] 3.1 Improve postpone API to include target date and planned start/end time
-- [ ] 3.2 Improve frontend date/time picker interaction
-- [ ] 3.3 Add postpone history display
-- [ ] 3.4 Improve makeup API to allow editing actual start and actual end time
-- [ ] 3.5 Recalculate study minutes after makeup start/end edits
-- [ ] 3.6 Enforce makeup constraints: end after start, no future end, max 8 hours per corrected session
-- [ ] 3.7 Warn but allow confirmed postpone into conflicting planned time
+- [x] 3.1 Improve postpone API to include target date and planned start/end time
+- [x] 3.2 Improve frontend date/time picker interaction
+- [x] 3.3 Add postpone history display
+- [x] 3.4 Improve makeup API to allow editing actual start and actual end time
+- [x] 3.5 Recalculate study minutes after makeup start/end edits
+- [x] 3.6 Enforce makeup constraints: end after start, no future end, max 8 hours per corrected session
+- [x] 3.7 Warn but allow confirmed postpone into conflicting planned time
 
 ## 4. Midnight Boundary Handling
 
