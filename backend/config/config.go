@@ -8,38 +8,48 @@ import (
 )
 
 type Config struct {
-	AppEnv          string // local/development/production
-	Port            string // 服务端口
-	DBPath          string // SQLite 数据库文件路径
-	JWTSecret       string // JWT 签名密钥
-	JWTExpireHours  int    // JWT 过期小时数
-	WeChatAppID     string // 微信小程序 AppID
-	WeChatSecret    string // 微信小程序 AppSecret
-	WeChatLoginMock bool   // 是否使用 mock 模式（无 AppID 时直接用 code 当作 openid）
-	AdminUsername   string // PC 管理台初始管理员用户名
-	AdminPassword   string // PC 管理台初始管理员密码
-	AIKeySecret     string // AI API Key 服务端加密密钥
-	AvatarStorage   string // local/cos/minio/object-url
-	AvatarBaseURL   string // 头像对象存储公开 HTTPS base URL
+	AppEnv                 string // local/development/production
+	Port                   string // 服务端口
+	DBPath                 string // SQLite 数据库文件路径
+	JWTSecret              string // JWT 签名密钥
+	JWTExpireHours         int    // JWT 过期小时数
+	WeChatAppID            string // 微信小程序 AppID
+	WeChatSecret           string // 微信小程序 AppSecret
+	WeChatLoginMock        bool   // 是否使用 mock 模式（无 AppID 时直接用 code 当作 openid）
+	AdminUsername          string // PC 管理台初始管理员用户名
+	AdminPassword          string // PC 管理台初始管理员密码
+	AIKeySecret            string // AI API Key 服务端加密密钥
+	AvatarStorage          string // local/cos/minio/object-url
+	AvatarBaseURL          string // 头像对象存储公开 HTTPS base URL
+	ArchiveEnabled         bool   // 是否启用 MySQL 归档同步
+	ArchiveDriver          string // mysql
+	ArchiveDSN             string // 归档库 DSN
+	ArchiveIntervalMinutes int
+	ArchiveTables          string
 }
 
 var App *Config
 
 func Load() *Config {
 	App = &Config{
-		AppEnv:          getEnv("APP_ENV", "development"),
-		Port:            getEnv("PORT", "8080"),
-		DBPath:          getEnv("DB_PATH", "study_plan.db"),
-		JWTSecret:       getEnv("JWT_SECRET", "study_plan_default_secret_change_me"),
-		JWTExpireHours:  getEnvInt("JWT_EXPIRE_HOURS", 24*7),
-		WeChatAppID:     getEnv("WECHAT_APPID", ""),
-		WeChatSecret:    getEnv("WECHAT_SECRET", ""),
-		WeChatLoginMock: getEnvBool("WECHAT_LOGIN_MOCK", false),
-		AdminUsername:   getEnv("ADMIN_USERNAME", ""),
-		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),
-		AIKeySecret:     getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
-		AvatarStorage:   getEnv("AVATAR_STORAGE", "local"),
-		AvatarBaseURL:   getEnv("AVATAR_BASE_URL", ""),
+		AppEnv:                 getEnv("APP_ENV", "development"),
+		Port:                   getEnv("PORT", "8080"),
+		DBPath:                 getEnv("DB_PATH", "study_plan.db"),
+		JWTSecret:              getEnv("JWT_SECRET", "study_plan_default_secret_change_me"),
+		JWTExpireHours:         getEnvInt("JWT_EXPIRE_HOURS", 24*7),
+		WeChatAppID:            getEnv("WECHAT_APPID", ""),
+		WeChatSecret:           getEnv("WECHAT_SECRET", ""),
+		WeChatLoginMock:        getEnvBool("WECHAT_LOGIN_MOCK", false),
+		AdminUsername:          getEnv("ADMIN_USERNAME", ""),
+		AdminPassword:          getEnv("ADMIN_PASSWORD", ""),
+		AIKeySecret:            getEnv("AI_KEY_ENCRYPTION_SECRET", ""),
+		AvatarStorage:          getEnv("AVATAR_STORAGE", "local"),
+		AvatarBaseURL:          getEnv("AVATAR_BASE_URL", ""),
+		ArchiveEnabled:         getEnvBool("ARCHIVE_ENABLED", false),
+		ArchiveDriver:          getEnv("ARCHIVE_DRIVER", "mysql"),
+		ArchiveDSN:             getEnv("ARCHIVE_DSN", ""),
+		ArchiveIntervalMinutes: getEnvInt("ARCHIVE_INTERVAL_MINUTES", 5),
+		ArchiveTables:          getEnv("ARCHIVE_TABLES", "users,plans,daily_tasks,checkins,study_sessions,slack_records"),
 	}
 	return App
 }

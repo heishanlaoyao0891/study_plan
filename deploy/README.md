@@ -27,6 +27,11 @@ AI_BASE_URL=<optional-ai-base-url>
 AI_KEY_ENCRYPTION_SECRET=<optional-server-side-secret>
 AVATAR_STORAGE=minio
 AVATAR_BASE_URL=https://assets.example.com/avatars
+ARCHIVE_ENABLED=false
+ARCHIVE_DRIVER=mysql
+ARCHIVE_DSN=<mysql-user>:<mysql-password>@tcp(<mysql-host>:3306)/study_plan_archive?charset=utf8mb4&parseTime=True&loc=Local
+ARCHIVE_INTERVAL_MINUTES=5
+ARCHIVE_TABLES=users,plans,daily_tasks,checkins,study_sessions,slack_records
 ```
 
 Before release, verify the WeChat phone-number component capability, account qualification, cost, and quota in the WeChat Mini Program console.
@@ -34,6 +39,32 @@ Before release, verify the WeChat phone-number component capability, account qua
 3. Run the backend behind a process manager such as `systemd`, listening on `127.0.0.1:8080`.
 
 4. Put Nginx or another reverse proxy in front of it. `deploy/nginx.study-plan.conf` contains a minimal HTTP proxy example. Production mini programs require HTTPS, so terminate TLS before exposing the API domain to WeChat.
+
+### SQLite backup
+
+Use the backup script before risky changes and at least once per day in production.
+
+```bash
+cd backend
+powershell -File scripts/backup-sqlite.ps1 -Source study_plan.db -BackupDir backups
+```
+
+Restore by stopping the backend, replacing the database file with the latest backup copy, then starting the backend again.
+
+### Archive sync
+
+When `ARCHIVE_ENABLED=true`, the backend copies selected SQLite tables to a MySQL archive database every `ARCHIVE_INTERVAL_MINUTES` minutes. SQLite remains the source of truth.
+
+Archive failures are written to backend logs and do not block normal study, check-in, or slack operations.
+
+### Tencent Cloud release checks
+
+- Serve the API and admin console behind HTTPS.
+- Add the HTTPS API domain to WeChat legal request domains.
+- Confirm `WECHAT_LOGIN_MOCK=false` in production.
+- Confirm the WeChat phone-number component account qualification, cost, and quota before release.
+- Schedule a daily SQLite backup and run a manual backup before deployments.
+- If using same-server MinIO in Docker for avatars, mount persistent volumes and include those volumes in the server backup plan.
 
 ## Mini Program
 
@@ -68,3 +99,4 @@ npm run build
 - Personal mini programs can publish this app without WeChat Pay because the product uses slack-time points, not real-money payments.
 - Real AI integration is currently represented by provider configuration and mock generation. Replace the mock provider before production AI billing is needed.
 - SQLite is suitable for personal/friends usage. Move to MySQL/PostgreSQL before wider public usage.
+- If MinIO is used for avatars, keep it behind HTTPS and private to the backend. The mini program should only receive public or signed URLs.

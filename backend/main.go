@@ -16,6 +16,7 @@ import (
 	"study_plan_backend/db"
 	"study_plan_backend/handlers"
 	"study_plan_backend/middleware"
+	"study_plan_backend/services"
 )
 
 func main() {
@@ -29,11 +30,12 @@ func main() {
 	if err := db.Init(); err != nil {
 		log.Fatalf("init db: %v", err)
 	}
+	services.StartArchiveSync()
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/health"}}))
+	r.Use(middleware.StructuredLogger())
 	r.Use(cors())
 
 	r.GET("/health", func(c *gin.Context) {

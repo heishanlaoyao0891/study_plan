@@ -25,15 +25,15 @@
 
 ## 4. Logs, Backups, And Archive Sync
 
-- [ ] 4.1 Add structured request and error logs
-- [ ] 4.2 Add SQLite backup command or script
-- [ ] 4.3 Document restore procedure
-- [ ] 4.4 Add archive sync configuration for optional MySQL archival
-- [ ] 4.5 Implement archive job that copies selected SQLite tables to MySQL when enabled
-- [ ] 4.6 Log archive failures without blocking normal app operations
-- [ ] 4.7 Default enabled archive interval to 5 minutes
-- [ ] 4.8 Document daily SQLite backup and manual pre-deploy backup command
-- [ ] 4.9 Document same-server Docker MinIO deployment option on Tencent Cloud
+- [x] 4.1 Add structured request and error logs
+- [x] 4.2 Add SQLite backup command or script
+- [x] 4.3 Document restore procedure
+- [x] 4.4 Add archive sync configuration for optional MySQL archival
+- [x] 4.5 Implement archive job that copies selected SQLite tables to MySQL when enabled
+- [x] 4.6 Log archive failures without blocking normal app operations
+- [x] 4.7 Default enabled archive interval to 5 minutes
+- [x] 4.8 Document daily SQLite backup and manual pre-deploy backup command
+- [x] 4.9 Document same-server Docker MinIO deployment option on Tencent Cloud
 
 ## 5. Verification
 
