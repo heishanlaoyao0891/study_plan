@@ -15,6 +15,8 @@ go build -o study_plan_backend .
 PORT=8080
 DB_PATH=/var/lib/study-plan/study_plan.db
 JWT_SECRET=<strong-random-secret>
+ADMIN_USERNAME=<admin-username>
+ADMIN_PASSWORD=<initial-admin-password>
 WECHAT_APPID=<mini-program-appid>
 WECHAT_SECRET=<mini-program-secret>
 WECHAT_LOGIN_MOCK=false

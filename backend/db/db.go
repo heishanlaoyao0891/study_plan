@@ -2,8 +2,10 @@ package db
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glebarez/sqlite"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -37,6 +39,7 @@ func AutoMigrate() error {
 		&models.Checkin{},
 		&models.SlackConfig{},
 		&models.SlackRecord{},
+		&models.AdminCredential{},
 	); err != nil {
 		return err
 	}
@@ -58,7 +61,51 @@ func AutoMigrate() error {
 		return err
 	}
 	if count == 0 {
-		return DB.Create(&models.SlackConfig{CheckinMinutes: 10}).Error
+		if err := DB.Create(&models.SlackConfig{CheckinMinutes: 10}).Error; err != nil {
+			return err
+		}
 	}
-	return nil
+	return bootstrapAdminCredential()
+}
+
+func bootstrapAdminCredential() error {
+	username := strings.TrimSpace(config.App.AdminUsername)
+	password := config.App.AdminPassword
+	if username == "" || password == "" {
+		return nil
+	}
+
+	var existing models.AdminCredential
+	if err := DB.Where("username = ?", username).First(&existing).Error; err == nil {
+		return nil
+	} else if err != gorm.ErrRecordNotFound {
+		return err
+	}
+
+	openid := "admin:" + username
+	var user models.User
+	if err := DB.Where("open_id = ?", openid).First(&user).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		user = models.User{OpenID: openid, Nickname: username, Role: models.RoleAdmin}
+		if err := DB.Create(&user).Error; err != nil {
+			return err
+		}
+	} else if user.Role != models.RoleAdmin {
+		user.Role = models.RoleAdmin
+		if err := DB.Save(&user).Error; err != nil {
+			return err
+		}
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return DB.Create(&models.AdminCredential{
+		UserID:       user.ID,
+		Username:     username,
+		PasswordHash: string(hash),
+	}).Error
 }

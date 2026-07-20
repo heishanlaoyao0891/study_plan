@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"study_plan_backend/api"
@@ -14,15 +17,35 @@ import (
 )
 
 type loginReq struct {
-	Code       string `json:"code" binding:"required"`
-	Nickname   string `json:"nickname"`
-	AvatarURL  string `json:"avatar_url"`
+	Code      string `json:"code" binding:"required"`
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatar_url"`
 }
 
 type loginResp struct {
 	Token string      `json:"token"`
 	User  models.User `json:"user"`
 }
+
+type adminLoginReq struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type adminLoginFailure struct {
+	Count     int
+	LockedTil time.Time
+}
+
+var adminLoginFailures = struct {
+	sync.Mutex
+	items map[string]adminLoginFailure
+}{items: map[string]adminLoginFailure{}}
+
+const (
+	adminLoginMaxFailures = 5
+	adminLoginWindow      = 15 * time.Minute
+)
 
 // Login 微信登录
 func Login(c *gin.Context) {
@@ -44,10 +67,10 @@ func Login(c *gin.Context) {
 	if err == gorm.ErrRecordNotFound {
 		// 新用户：自动注册；首名注册用户设为 admin
 		user = models.User{
-			OpenID:       s.OpenID,
-			Nickname:     req.Nickname,
-			AvatarURL:    req.AvatarURL,
-			Role:         models.RoleUser,
+			OpenID:    s.OpenID,
+			Nickname:  req.Nickname,
+			AvatarURL: req.AvatarURL,
+			Role:      models.RoleUser,
 		}
 		// 检查是否已有用户
 		var count int64
@@ -103,4 +126,83 @@ func Login(c *gin.Context) {
 		return
 	}
 	api.OK(c, loginResp{Token: token, User: user})
+}
+
+func AdminLogin(c *gin.Context) {
+	var req adminLoginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	key := c.ClientIP() + ":" + strings.ToLower(username)
+	if isAdminLoginLocked(key) {
+		api.Fail(c, http.StatusTooManyRequests, "too many login attempts, try again later")
+		return
+	}
+
+	var cred models.AdminCredential
+	if err := db.DB.Preload("User").Where("username = ?", username).First(&cred).Error; err != nil {
+		recordAdminLoginFailure(key)
+		api.Fail(c, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(cred.PasswordHash), []byte(req.Password)); err != nil {
+		recordAdminLoginFailure(key)
+		api.Fail(c, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	if cred.User.Role != models.RoleAdmin {
+		recordAdminLoginFailure(key)
+		api.Fail(c, http.StatusForbidden, "admin only")
+		return
+	}
+	if cred.User.BannedUntil != nil && cred.User.BannedUntil.After(time.Now()) {
+		recordAdminLoginFailure(key)
+		api.Fail(c, http.StatusForbidden, "user banned")
+		return
+	}
+
+	token, err := services.SignToken(cred.User.ID, cred.User.OpenID, cred.User.Role)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
+		return
+	}
+	now := time.Now()
+	db.DB.Model(&cred).Update("last_login_at", &now)
+	clearAdminLoginFailure(key)
+	api.OK(c, loginResp{Token: token, User: cred.User})
+}
+
+func isAdminLoginLocked(key string) bool {
+	adminLoginFailures.Lock()
+	defer adminLoginFailures.Unlock()
+	failure, ok := adminLoginFailures.items[key]
+	if !ok {
+		return false
+	}
+	if !failure.LockedTil.IsZero() && failure.LockedTil.After(time.Now()) {
+		return true
+	}
+	if !failure.LockedTil.IsZero() {
+		delete(adminLoginFailures.items, key)
+	}
+	return false
+}
+
+func recordAdminLoginFailure(key string) {
+	adminLoginFailures.Lock()
+	defer adminLoginFailures.Unlock()
+	failure := adminLoginFailures.items[key]
+	failure.Count++
+	if failure.Count >= adminLoginMaxFailures {
+		failure.LockedTil = time.Now().Add(adminLoginWindow)
+	}
+	adminLoginFailures.items[key] = failure
+}
+
+func clearAdminLoginFailure(key string) {
+	adminLoginFailures.Lock()
+	defer adminLoginFailures.Unlock()
+	delete(adminLoginFailures.items, key)
 }

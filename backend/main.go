@@ -40,6 +40,7 @@ func main() {
 	apiGroup := r.Group("/api")
 	// 认证
 	apiGroup.POST("/auth/login", handlers.Login)
+	apiGroup.POST("/admin/auth/login", handlers.AdminLogin)
 
 	// 需要登录
 	auth := apiGroup.Group("", middleware.Auth())

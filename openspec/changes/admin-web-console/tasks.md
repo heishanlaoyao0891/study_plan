@@ -15,11 +15,11 @@
 
 ## 3. Admin Credential Backend
 
-- [ ] 3.1 Add admin credential model or configured bootstrap admin
-- [ ] 3.2 Store admin passwords using a secure password hash
-- [ ] 3.3 Add admin username/password login endpoint
-- [ ] 3.4 Add login failure handling and basic rate limiting
-- [ ] 3.5 Bootstrap initial admin credentials from environment variables
+- [x] 3.1 Add admin credential model or configured bootstrap admin
+- [x] 3.2 Store admin passwords using a secure password hash
+- [x] 3.3 Add admin username/password login endpoint
+- [x] 3.4 Add login failure handling and basic rate limiting
+- [x] 3.5 Bootstrap initial admin credentials from environment variables
 
 ## 4. Admin MVP Features
 
