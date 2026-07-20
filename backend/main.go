@@ -130,6 +130,7 @@ func main() {
 		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)
 		admin.GET("/ai-config", handlers.GetAIConfig)
 		admin.PUT("/ai-config", handlers.UpdateAIConfig)
+		admin.POST("/ai-config/test", handlers.TestAIProvider)
 		admin.GET("/subscription-config", handlers.GetSubscriptionMessageConfig)
 		admin.PUT("/subscription-config", handlers.UpdateSubscriptionMessageConfig)
 		admin.GET("/audit-logs", handlers.ListAuditLogs)

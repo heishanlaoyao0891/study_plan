@@ -57,6 +57,7 @@ h3 { font-size: 18px; }
 .primary:disabled { cursor: default; opacity: .62; }
 .ghost { color: #334155; background: #edf1f5; }
 .error { margin: 0; color: #b42318; font-size: 14px; }
+.status { margin: 0; color: #176b52; font-size: 14px; font-weight: 700; }
 
 .shell { min-height: 100vh; display: grid; grid-template-columns: 264px 1fr; }
 .sidebar {

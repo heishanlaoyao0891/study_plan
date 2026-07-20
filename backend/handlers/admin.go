@@ -21,6 +21,7 @@ import (
 	"study_plan_backend/db"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
+	"study_plan_backend/services"
 )
 
 type banReq struct {
@@ -329,6 +330,40 @@ func UpdateAIConfig(c *gin.Context) {
 	}
 	recordAdminAudit(adminID, nil, "update_ai_config", "")
 	api.OK(c, aiConfigResp(cfg))
+}
+
+func TestAIProvider(c *gin.Context) {
+	var req aiConfigReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	cfg, err := firstAIConfig()
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai config failed: "+err.Error())
+		return
+	}
+	if req.Provider != "" {
+		cfg.Provider = req.Provider
+	}
+	if req.ModelName != "" {
+		cfg.ModelName = req.ModelName
+	}
+	if req.BaseURL != "" {
+		cfg.BaseURL = req.BaseURL
+	}
+	if req.RequestTimeoutSeconds > 0 {
+		cfg.RequestTimeoutSeconds = req.RequestTimeoutSeconds
+	}
+	if req.APIKey != "" {
+		cfg.APIKeyCiphertext = req.APIKey
+		cfg.APIKeyEncrypted = false
+	}
+	if err := services.ProviderTestError(cfg); err != nil {
+		api.OK(c, gin.H{"ok": false, "message": err.Error()})
+		return
+	}
+	api.OK(c, gin.H{"ok": true, "message": "provider test passed"})
 }
 
 func GetSubscriptionMessageConfig(c *gin.Context) {

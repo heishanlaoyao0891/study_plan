@@ -156,6 +156,9 @@ export const AdminApi = {
   saveAIConfig(data: AIConfig & { api_key?: string }) {
     return request<AIConfig>('/api/admin/ai-config', { method: 'PUT', body: JSON.stringify(data) })
   },
+  testAIConfig(data: Partial<AIConfig> & { api_key?: string }) {
+    return request<{ ok: boolean; message: string }>('/api/admin/ai-config/test', { method: 'POST', body: JSON.stringify(data) })
+  },
   subscriptionConfig() {
     return request<SubscriptionConfig>('/api/admin/subscription-config')
   },
