@@ -1,0 +1,83 @@
+services:
+  backend:
+    container_name: study-plan-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      PORT: 8080
+      DB_PATH: /data/study_plan.db
+    volumes:
+      - study-plan-data:/data
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    container_name: study-plan-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE: ${FRONTEND_API_BASE:-/api}
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    restart: unless-stopped
+
+  admin:
+    container_name: study-plan-admin
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+      args:
+        VITE_ADMIN_API_BASE: ${ADMIN_API_BASE:-}
+    depends_on:
+      - backend
+    ports:
+      - "${ADMIN_PORT:-8081}:80"
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: study-plan-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.production}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env.production}
+    volumes:
+      - study-plan-minio-data:/data
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: study-plan-minio-init
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.production}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env.production}
+      MINIO_BUCKET: ${MINIO_BUCKET:-study-plan-assets}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 2; done &&
+      mc mb --ignore-existing local/$$MINIO_BUCKET &&
+      mc anonymous set download local/$$MINIO_BUCKET
+      "
+    restart: "no"
+
+volumes:
+  study-plan-data:
+  study-plan-minio-data:
