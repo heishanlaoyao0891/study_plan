@@ -1,8 +1,9 @@
 FROM golang:1.22-alpine AS build
 
 WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+RUN go mod download -x
 
 COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/study-plan-backend .

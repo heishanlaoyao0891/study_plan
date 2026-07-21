@@ -5,7 +5,7 @@ ENV VITE_API_BASE=${VITE_API_BASE}
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --registry=https://registry.npmmirror.com
 
 COPY frontend/ ./
 RUN npm run build:h5

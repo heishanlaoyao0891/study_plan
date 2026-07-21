@@ -5,7 +5,7 @@ ENV VITE_ADMIN_API_BASE=${VITE_ADMIN_API_BASE}
 
 WORKDIR /app
 COPY admin/package.json admin/package-lock.json ./
-RUN npm ci
+RUN npm ci --registry=https://registry.npmmirror.com
 
 COPY admin/ ./
 RUN npm run build
