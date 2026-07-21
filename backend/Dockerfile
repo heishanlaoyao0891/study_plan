@@ -10,15 +10,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/study-p
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 appuser
+RUN apk add --no-cache ca-certificates tzdata su-exec && adduser -D -H -u 10001 appuser
 WORKDIR /app
 COPY --from=build /out/study-plan-backend /app/study-plan-backend
+COPY backend/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV APP_ENV=production \
     PORT=8080 \
     DB_PATH=/data/study_plan.db
 
-VOLUME ["/data"]
 EXPOSE 8080
-USER appuser
-ENTRYPOINT ["/app/study-plan-backend"]
+VOLUME ["/data"]
+USER root
+ENTRYPOINT ["/entrypoint.sh"]
