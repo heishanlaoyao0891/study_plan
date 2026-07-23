@@ -1,7 +1,9 @@
 FROM node:20-alpine AS build
 
 ARG VITE_API_BASE=/api
+ARG VITE_ENABLE_DEV_LOGIN=false
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_ENABLE_DEV_LOGIN=${VITE_ENABLE_DEV_LOGIN}
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./

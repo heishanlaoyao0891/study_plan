@@ -18,6 +18,7 @@ There are also several core-flow rough edges discovered during review: manually 
 - Establish a cute mini-program visual language for the main user flow, prioritizing check-in, plans, stats, slack time, login/onboarding, and task schedule.
 - Fix high-friction functional issues in the core study path so UI polish does not hide broken behavior.
 - Keep the change scoped to presentation and existing behavior cleanup; do not introduce a new business module.
+- Support a distinct Tencent Cloud staging environment so mock login can be used for testing without weakening production validation.
 
 ## Non-Goals
 

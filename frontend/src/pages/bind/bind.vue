@@ -36,7 +36,7 @@ import { AuthApi, type User } from '@/api'
 const user = ref<User | null>(null)
 const errMsg = ref('')
 const devPhone = ref('13800000000')
-const isDev = import.meta.env.DEV
+const isDev = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 
 async function load() {
   try {

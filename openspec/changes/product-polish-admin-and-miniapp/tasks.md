@@ -31,3 +31,9 @@
 - [x] Fix group-page conditional rendering around current group vs history.
 - [x] Add user-facing error handling for high-frequency task and group actions.
 - [x] Verify backend tests still pass.
+
+## 5. Staging Login
+
+- [x] Distinguish `staging`/`test` from strict `production` configuration validation.
+- [x] Allow an explicit test build to show the mock-login entry.
+- [x] Add staging environment examples for Tencent Cloud testing.

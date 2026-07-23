@@ -66,6 +66,10 @@ func (c *Config) IsProduction() bool {
 	return strings.EqualFold(c.AppEnv, "production")
 }
 
+func (c *Config) IsStaging() bool {
+	return strings.EqualFold(c.AppEnv, "staging") || strings.EqualFold(c.AppEnv, "test")
+}
+
 func (c *Config) Validate() error {
 	if !c.IsProduction() {
 		return nil

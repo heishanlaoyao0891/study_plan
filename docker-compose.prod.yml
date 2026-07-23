@@ -7,7 +7,7 @@ services:
     env_file:
       - .env.production
     environment:
-      APP_ENV: production
+      APP_ENV: ${APP_ENV:-production}
       PORT: 8080
       DB_PATH: /data/study_plan.db
     volumes:
@@ -28,6 +28,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_BASE: ${FRONTEND_API_BASE:-/api}
+        VITE_ENABLE_DEV_LOGIN: ${FRONTEND_ENABLE_DEV_LOGIN:-false}
     depends_on:
       - backend
     ports:

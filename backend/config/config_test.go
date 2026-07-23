@@ -24,3 +24,14 @@ func TestLoadRespectsExplicitWechatMockSetting(t *testing.T) {
 		t.Fatal("expected explicit WECHAT_LOGIN_MOCK=false to be respected")
 	}
 }
+
+func TestStagingEnvironmentIsNotProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "staging")
+	cfg := Load()
+	if cfg.IsProduction() {
+		t.Fatal("staging must not be treated as production")
+	}
+	if !cfg.IsStaging() {
+		t.Fatal("expected staging environment to be recognized")
+	}
+}

@@ -43,7 +43,7 @@ import { setToken, setApiBase, getApiBase } from '@/api/request'
 
 const errMsg = ref('')
 const showDev = ref(false)
-const isDev = import.meta.env.DEV
+const isDev = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 const apiBase = ref(getApiBase())
 const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
 

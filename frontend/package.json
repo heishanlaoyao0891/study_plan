@@ -30,6 +30,7 @@
     "build:mp-toutiao": "uni build -p mp-toutiao",
     "build:mp-harmony": "uni build -p mp-harmony",
     "build:mp-weixin": "uni build -p mp-weixin",
+    "build:mp-weixin:test": "uni build -p mp-weixin --mode test",
     "build:mp-xhs": "uni build -p mp-xhs",
     "build:quickapp-webview": "uni build -p quickapp-webview",
     "build:quickapp-webview-huawei": "uni build -p quickapp-webview-huawei",
