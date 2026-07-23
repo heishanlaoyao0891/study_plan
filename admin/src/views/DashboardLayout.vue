@@ -2,27 +2,27 @@
   <div class="shell">
     <aside class="sidebar">
       <div>
-        <p class="eyebrow">Study Plan</p>
-        <h1>Admin Console</h1>
+        <p class="eyebrow">学习打卡</p>
+        <h1>运营管理台</h1>
       </div>
       <nav class="nav-list">
-        <router-link to="/">Overview</router-link>
-        <router-link to="/users">Users</router-link>
-        <router-link to="/slack-config">Slack Config</router-link>
-        <router-link to="/suspicious-records">Suspicious Records</router-link>
-        <router-link to="/ai-config">AI Config</router-link>
-        <router-link to="/subscription-config">Subscriptions</router-link>
-        <router-link to="/ops-content">Ops Content</router-link>
-        <router-link to="/feedback">Feedback</router-link>
-        <router-link to="/audit-logs">Audit Logs</router-link>
+        <router-link to="/">运营总览</router-link>
+        <router-link to="/users">用户管理</router-link>
+        <router-link to="/slack-config">躺平币配置</router-link>
+        <router-link to="/suspicious-records">异常记录</router-link>
+        <router-link to="/ai-config">AI 配置</router-link>
+        <router-link to="/subscription-config">订阅消息</router-link>
+        <router-link to="/ops-content">运营内容</router-link>
+        <router-link to="/feedback">用户反馈</router-link>
+        <router-link to="/audit-logs">审计日志</router-link>
       </nav>
-      <button class="ghost" type="button" @click="logout">Sign out</button>
+      <button class="ghost" type="button" @click="logout">退出登录</button>
     </aside>
 
     <section class="content">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Signed in</p>
+          <p class="eyebrow">当前管理员</p>
           <strong>{{ authSession.user?.nickname || authSession.user?.openid || 'Admin' }}</strong>
         </div>
       </header>

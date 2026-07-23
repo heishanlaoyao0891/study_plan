@@ -18,7 +18,7 @@
       <button class="ghost-btn" @click="enterApp">进入应用</button>
     </view>
 
-    <view class="panel dev">
+    <view class="panel dev" v-if="isDev">
       <view class="section-title">本地调试</view>
       <input class="field-input" v-model="devPhone" placeholder="13800000000" />
       <button class="dark-btn" @click="bindDevPhone">绑定调试手机号</button>
@@ -36,6 +36,7 @@ import { AuthApi, type User } from '@/api'
 const user = ref<User | null>(null)
 const errMsg = ref('')
 const devPhone = ref('13800000000')
+const isDev = import.meta.env.DEV
 
 async function load() {
   try {

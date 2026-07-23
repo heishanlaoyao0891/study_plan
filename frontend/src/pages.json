@@ -18,13 +18,13 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "学习打卡",
-    "navigationBarBackgroundColor": "#F6F7FB",
-    "backgroundColor": "#F6F7FB"
+    "navigationBarTitleText": "学习花园",
+    "navigationBarBackgroundColor": "#FFF0F7",
+    "backgroundColor": "#FFF7F2"
   },
   "tabBar": {
     "color": "#8A92A6",
-    "selectedColor": "#2264D1",
+    "selectedColor": "#FF6F91",
     "backgroundColor": "#FFFFFF",
     "borderStyle": "black",
     "list": [

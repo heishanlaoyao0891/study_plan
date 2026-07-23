@@ -3,17 +3,17 @@
     <view class="topbar">
       <view class="brand-mark">学</view>
       <view>
-        <view class="brand-name">Study Plan</view>
-        <view class="brand-sub">计划、打卡、奖励闭环</view>
+        <view class="brand-name">学习花园</view>
+        <view class="brand-sub">把每天的小努力养成会发光的习惯</view>
       </view>
     </view>
 
     <view class="panel hero">
-      <view class="hero-kicker">Personal Learning Console</view>
-      <view class="hero-title">把学习计划变成每天能完成的动作</view>
-      <view class="hero-copy">先记录，后优化。MVP 当前支持手动计划、今日打卡和基础登录。</view>
+      <view class="hero-kicker">今日份学习魔法</view>
+      <view class="hero-title">把大目标养成每天会发芽的小任务</view>
+      <view class="hero-copy">计划、打卡、AI 拆解、小组陪伴和甜甜休息券，都放在一个轻盈的小花园里。</view>
       <button class="primary-btn" @click="onLogin">微信登录</button>
-      <button class="secondary-btn" @click="showDev = !showDev">{{ showDev ? '收起调试' : '本地调试' }}</button>
+      <button class="secondary-btn" v-if="isDev" @click="showDev = !showDev">{{ showDev ? '收起调试' : '本地调试' }}</button>
     </view>
 
     <view class="panel dev" v-if="showDev">
@@ -43,6 +43,7 @@ import { setToken, setApiBase, getApiBase } from '@/api/request'
 
 const errMsg = ref('')
 const showDev = ref(false)
+const isDev = import.meta.env.DEV
 const apiBase = ref(getApiBase())
 const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
 
@@ -90,12 +91,7 @@ async function mockLogin() {
 </script>
 
 <style lang="scss">
-.page {
-  min-height: 100vh;
-  box-sizing: border-box;
-  padding: 44rpx 32rpx;
-  background: #f6f7fb;
-}
+.page { min-height: 100vh; box-sizing: border-box; padding: 44rpx 32rpx; background: linear-gradient(180deg, #fff0f7 0%, #fffaf0 48%, #f7fbff 100%); }
 .topbar {
   display: flex;
   align-items: center;
@@ -108,8 +104,8 @@ async function mockLogin() {
   height: 72rpx;
   align-items: center;
   justify-content: center;
-  border-radius: 18rpx;
-  background: #111827;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #ff8fab, #ffc36a);
   color: #fff;
   font-size: 34rpx;
   font-weight: 700;
@@ -119,12 +115,12 @@ async function mockLogin() {
 .panel {
   background: #fff;
   border: 1rpx solid #e9edf5;
-  border-radius: 16rpx;
-  box-shadow: 0 10rpx 30rpx rgba(19, 35, 78, 0.06);
+  border-radius: 30rpx;
+  box-shadow: 0 18rpx 42rpx rgba(255, 143, 171, 0.16);
 }
 .hero { padding: 44rpx 36rpx 36rpx; }
 .hero-kicker {
-  color: #2264d1;
+  color: #ff6f91;
   font-size: 22rpx;
   font-weight: 700;
   text-transform: uppercase;
@@ -151,8 +147,8 @@ async function mockLogin() {
   border-radius: 12rpx;
   font-size: 29rpx;
 }
-.primary-btn { background: #2264d1; color: #fff; }
-.secondary-btn { margin-top: 20rpx; background: #eef4ff; color: #2264d1; }
+.primary-btn { background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; }
+.secondary-btn { margin-top: 20rpx; background: #fff0f6; color: #ff6f91; }
 .dev { margin-top: 24rpx; padding: 30rpx; }
 .section-title { color: #111827; font-size: 30rpx; font-weight: 700; margin-bottom: 24rpx; }
 .field { margin-bottom: 22rpx; }

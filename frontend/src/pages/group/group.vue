@@ -16,7 +16,7 @@
       <button class="secondary" @click="joinGroup">加入小组</button>
     </view>
 
-    <view class="panel" v-if="history.length">
+    <view class="panel" v-if="!group && history.length">
       <view class="panel-title">历史小组</view>
       <view class="rank" v-for="item in history" :key="item.id">
         <view>{{ item.name }}</view>
@@ -24,7 +24,7 @@
       </view>
     </view>
 
-    <view v-else>
+    <view v-if="group">
       <view class="panel">
         <view class="panel-title">邀请</view>
         <view class="invite-code" v-if="inviteCode">{{ inviteCode }}</view>
@@ -95,14 +95,22 @@ async function load() {
 }
 
 async function createGroup() {
-  await GroupApi.create({ name: groupName.value || '学习小组' })
-  await load()
+  try {
+    await GroupApi.create({ name: groupName.value || '学习小组' })
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '创建失败', icon: 'none' })
+  }
 }
 
 async function joinGroup() {
   if (!joinCode.value.trim()) return
-  await GroupApi.join(joinCode.value.trim())
-  await load()
+  try {
+    await GroupApi.join(joinCode.value.trim())
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '加入失败', icon: 'none' })
+  }
 }
 
 async function createInvite() {

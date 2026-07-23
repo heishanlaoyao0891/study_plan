@@ -45,10 +45,17 @@ onShow(load)
 
 async function load() {
   if (!taskId.value) return
-  detail.value = await StudyTaskApi.get(taskId.value)
+  try { detail.value = await StudyTaskApi.get(taskId.value) }
+  catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
 }
-async function start() { await StudyTaskApi.start(taskId.value); await load() }
-async function complete() { await StudyTaskApi.complete(taskId.value); await load() }
+async function start() {
+  try { await StudyTaskApi.start(taskId.value); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '开始失败', icon: 'none' }) }
+}
+async function complete() {
+  try { await StudyTaskApi.complete(taskId.value); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '完成失败', icon: 'none' }) }
+}
 async function postpone() {
   const task = detail.value.task
   const res = await modalInput('推迟任务', `${task.date} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
@@ -64,7 +71,7 @@ async function postpone() {
       await StudyTaskApi.postpone(taskId.value, parsed.date, '手动推迟', parsed.start, parsed.end, true)
       await load()
     } else {
-      throw e
+      uni.showToast({ title: e?.message || '推迟失败', icon: 'none' })
     }
   }
 }
@@ -73,13 +80,13 @@ async function makeup() {
   const res = await modalInput('补录结束时间', `${task.date} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
   if (!res) return
   const parsed = parseMakeup(task, res)
-  await StudyTaskApi.makeup(taskId.value, parsed.end, '手动补录', parsed.start)
-  await load()
+  try { await StudyTaskApi.makeup(taskId.value, parsed.end, '手动补录', parsed.start); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '补录失败', icon: 'none' }) }
 }
 async function togglePublic() {
   const current = !!detail.value.task.public_to_group
-  await StudyTaskApi.update(taskId.value, { public_to_group: !current })
-  await load()
+  try { await StudyTaskApi.update(taskId.value, { public_to_group: !current }); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '更新失败', icon: 'none' }) }
 }
 function modalInput(title: string, placeholderText: string) {
   return new Promise<string | null>(resolve => {

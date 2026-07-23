@@ -1,4 +1,4 @@
-import { authSession } from './auth'
+import { authSession, clearSession } from './auth'
 
 const apiBase = (import.meta.env.VITE_ADMIN_API_BASE || '').replace(/\/$/, '')
 
@@ -124,12 +124,19 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     headers,
   })
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
+    if (res.status === 401 || res.status === 403) {
+      clearSession()
+      if (window.location.pathname !== '/login') {
+        window.location.replace(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+      }
+      throw new Error('登录已过期，请重新登录')
+    }
+    throw new Error(`请求失败：HTTP ${res.status}`)
   }
 
   const body = (await res.json()) as ApiEnvelope<T>
   if (body.code !== 0) {
-    throw new Error(body.message || 'Request failed')
+    throw new Error(body.message || '请求失败')
   }
   return body.data as T
 }

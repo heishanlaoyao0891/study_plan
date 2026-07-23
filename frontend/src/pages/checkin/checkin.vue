@@ -1,20 +1,23 @@
 <template>
   <view class="checkin-page">
     <view class="hero">
+      <view class="bubble one" />
+      <view class="bubble two" />
       <view>
+        <view class="kicker">今天也要轻轻闪光</view>
         <view class="date-text">{{ todayText }}</view>
-        <view class="subtitle">{{ todayStr }}</view>
+        <view class="subtitle">完成一点点，也很了不起 · {{ todayStr }}</view>
       </view>
       <view class="streak-box">
         <view class="streak-num">{{ streak ?? 0 }}</view>
-        <view class="streak-label">连续天数</view>
+        <view class="streak-label">连胜天数</view>
       </view>
     </view>
 
     <view class="wallet-panel">
       <view>
-        <view class="wallet-label">可用躺平时间</view>
-        <view class="wallet-desc">完成打卡自动累积，仅用于休息时间记录</view>
+        <view class="wallet-label">甜甜休息券</view>
+        <view class="wallet-desc">完成学习后自动兑换，放心休息也有仪式感</view>
       </view>
       <view class="wallet-value">{{ slackBalance }}<text> 分钟</text></view>
     </view>
@@ -45,14 +48,14 @@
     </view>
 
     <view class="toolbar">
-      <view class="toolbar-title">今日任务</view>
+      <view class="toolbar-title">今日小任务</view>
       <button class="mini-btn" @click="load">刷新</button>
     </view>
 
     <view class="empty" v-if="!loading && checkins.length === 0">
-      <view class="empty-title">还没有学习目标</view>
-      <view class="empty-desc">先创建一个目标，系统会为它生成每天要执行的任务。</view>
-      <button class="primary-btn" @click="goPlans">创建计划</button>
+      <view class="empty-title">今天还没有小任务</view>
+      <view class="empty-desc">先许下一个学习愿望，我来帮你把它拆成每天能完成的小步。</view>
+      <button class="primary-btn" @click="goPlans">去种下计划</button>
     </view>
 
     <view class="list" v-else>
@@ -153,7 +156,6 @@ async function stop(item: CheckinInfo) {
 async function complete(item: CheckinInfo) {
   try {
     await StudyTaskApi.complete(item.task_id)
-    await CheckinApi.toggle({ plan_id: item.plan_id, date: todayStr, completed: true })
     await load()
     uni.showToast({ title: '完成并累积躺平时间', icon: 'success' })
   } catch (e: any) {
@@ -216,55 +218,64 @@ onShow(load)
   min-height: 100vh;
   box-sizing: border-box;
   padding: 28rpx 28rpx 60rpx;
-  background: #f6f7fb;
+  background: linear-gradient(180deg, #fff0f7 0%, #fffaf0 42%, #f7fbff 100%);
 }
 .hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 34rpx 34rpx;
-  border-radius: 18rpx;
-  background: #111827;
+  border-radius: 34rpx;
+  background: linear-gradient(135deg, #ff8fab 0%, #ffc36a 100%);
   color: #fff;
+  box-shadow: 0 20rpx 44rpx rgba(255, 143, 171, .28);
 }
+.bubble { position: absolute; border-radius: 999rpx; background: rgba(255,255,255,.28); }
+.bubble.one { width: 170rpx; height: 170rpx; right: -52rpx; top: -60rpx; }
+.bubble.two { width: 96rpx; height: 96rpx; left: 300rpx; bottom: -42rpx; }
+.kicker { position: relative; display: inline-flex; padding: 8rpx 18rpx; border-radius: 999rpx; background: rgba(255,255,255,.24); font-size: 22rpx; font-weight: 800; }
 .date-text { font-size: 44rpx; font-weight: 800; }
-.subtitle { margin-top: 8rpx; color: #aeb7c8; font-size: 24rpx; }
+.subtitle { margin-top: 8rpx; color: rgba(255,255,255,.88); font-size: 24rpx; }
 .streak-box {
   width: 150rpx;
   padding: 18rpx 0;
-  border-radius: 14rpx;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.26);
   text-align: center;
 }
 .streak-num { font-size: 44rpx; font-weight: 800; }
-.streak-label { color: #aeb7c8; font-size: 22rpx; }
+.streak-label { color: rgba(255,255,255,.86); font-size: 22rpx; }
 .wallet-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 18rpx;
   padding: 26rpx 30rpx;
-  border-radius: 16rpx;
+  border-radius: 28rpx;
   background: #fff;
-  border: 1rpx solid #e9edf5;
+  border: 1rpx solid #ffe0ea;
+  box-shadow: 0 14rpx 32rpx rgba(255, 143, 171, .12);
 }
-.wallet-label { color: #111827; font-size: 29rpx; font-weight: 800; }
+.wallet-label { color: #4b2b3f; font-size: 29rpx; font-weight: 800; }
 .wallet-desc { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
-.wallet-value { color: #0f766e; font-size: 38rpx; font-weight: 800; }
+.wallet-value { color: #ff6f91; font-size: 38rpx; font-weight: 900; }
 .wallet-value text { font-size: 22rpx; font-weight: 600; }
 .progress-panel {
   margin-top: 24rpx;
   padding: 30rpx;
-  border-radius: 16rpx;
+  border-radius: 28rpx;
   background: #fff;
-  border: 1rpx solid #e9edf5;
+  border: 1rpx solid #ffe0ea;
+  box-shadow: 0 14rpx 32rpx rgba(255, 180, 92, .12);
 }
 .progress-head { display: flex; align-items: center; justify-content: space-between; }
-.progress-title { color: #111827; font-size: 31rpx; font-weight: 700; }
+.progress-title { color: #4b2b3f; font-size: 31rpx; font-weight: 800; }
 .progress-desc { margin-top: 8rpx; color: #7b8498; font-size: 24rpx; }
-.progress-percent { color: #2264d1; font-size: 42rpx; font-weight: 800; }
+.progress-percent { color: #ff7aa2; font-size: 42rpx; font-weight: 900; }
 .progress-track { margin-top: 28rpx; height: 16rpx; border-radius: 99rpx; background: #edf2f8; overflow: hidden; }
-.progress-fill { height: 100%; border-radius: 99rpx; background: #2264d1; transition: width .2s ease; }
+.progress-fill { height: 100%; border-radius: 99rpx; background: linear-gradient(90deg, #ff8fab, #ffc36a); transition: width .2s ease; }
 .decision-panel { margin-top: 20rpx; padding: 26rpx; border-radius: 16rpx; background: #fff7e6; border: 1rpx solid #ffe1a6; }
 .decision-title { color: #7a4b00; font-size: 29rpx; font-weight: 800; margin-bottom: 14rpx; }
 .decision { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; padding: 14rpx 0; }
@@ -273,19 +284,20 @@ onShow(load)
 .decision-actions { display: flex; gap: 8rpx; width: 170rpx; }
 .decision-actions button { margin: 0; flex: 1; height: 52rpx; line-height: 52rpx; border-radius: 8rpx; background: #fff; color: #9a5b00; font-size: 21rpx; padding: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin: 34rpx 4rpx 18rpx; }
-.toolbar-title { color: #111827; font-size: 32rpx; font-weight: 800; }
-.mini-btn { margin: 0; width: 120rpx; height: 56rpx; line-height: 56rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 24rpx; }
+.toolbar-title { color: #4b2b3f; font-size: 32rpx; font-weight: 900; }
+.mini-btn { margin: 0; width: 120rpx; height: 56rpx; line-height: 56rpx; border-radius: 999rpx; background: #fff0f6; color: #ff6f91; font-size: 24rpx; }
 .list { display: flex; flex-direction: column; gap: 18rpx; }
 .item {
   display: flex;
   align-items: center;
   min-height: 118rpx;
   padding: 0 26rpx;
-  border-radius: 16rpx;
+  border-radius: 26rpx;
   background: #fff;
-  border: 1rpx solid #e9edf5;
+  border: 1rpx solid #ffe0ea;
+  box-shadow: 0 10rpx 26rpx rgba(255, 143, 171, .10);
 }
-.item.done { border-color: #bdd7ff; background: #f7fbff; }
+.item.done { border-color: #ffc7d8; background: #fff7fb; }
 .item.disabled { opacity: .55; }
 .state-dot {
   width: 38rpx;
@@ -297,29 +309,29 @@ onShow(load)
   justify-content: center;
   margin-right: 24rpx;
 }
-.done .state-dot { border-color: #2264d1; }
+.done .state-dot { border-color: #ff7aa2; }
 .state-inner { width: 18rpx; height: 18rpx; border-radius: 50%; background: transparent; }
-.done .state-inner { background: #2264d1; }
+.done .state-inner { background: #ff7aa2; }
 .item-main { flex: 1; min-width: 0; }
 .item-title { color: #111827; font-size: 30rpx; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
-.state-text { color: #2264d1; font-size: 25rpx; font-weight: 700; }
+.state-text { color: #ff6f91; font-size: 25rpx; font-weight: 700; }
 .button-stack { display: flex; flex-direction: column; gap: 8rpx; width: 112rpx; }
 .task-btn {
   margin: 0;
   height: 48rpx;
   line-height: 48rpx;
-  border-radius: 9rpx;
-  background: #eef4ff;
-  color: #2264d1;
+  border-radius: 999rpx;
+  background: #fff0f6;
+  color: #ff6f91;
   font-size: 22rpx;
   padding: 0;
 }
 .task-btn.warn { background: #fff7e6; color: #9a5b00; }
-.task-btn.done-btn { background: #2264d1; color: #fff; }
-.empty { margin-top: 22rpx; padding: 56rpx 34rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.task-btn.done-btn { background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; }
+.empty { margin-top: 22rpx; padding: 56rpx 34rpx; border-radius: 28rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 14rpx 32rpx rgba(255, 143, 171, .10); }
 .empty-title { color: #111827; font-size: 32rpx; font-weight: 800; }
 .empty-desc { margin-top: 12rpx; color: #7b8498; font-size: 26rpx; line-height: 1.5; }
-.primary-btn { margin-top: 32rpx; background: #2264d1; color: #fff; border-radius: 12rpx; }
+.primary-btn { margin-top: 32rpx; background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; border-radius: 999rpx; }
 .loading { text-align: center; color: #7b8498; margin-top: 34rpx; }
 </style>

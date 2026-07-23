@@ -63,8 +63,14 @@ async function load() {
 }
 
 function openTask(task: any) { uni.navigateTo({ url: `/pages/task/task?id=${task.id}` }) }
-async function start(task: any) { await StudyTaskApi.start(task.id); await load() }
-async function complete(task: any) { await StudyTaskApi.complete(task.id); await load() }
+async function start(task: any) {
+  try { await StudyTaskApi.start(task.id); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '开始失败', icon: 'none' }) }
+}
+async function complete(task: any) {
+  try { await StudyTaskApi.complete(task.id); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '完成失败', icon: 'none' }) }
+}
 async function postpone(task: any) {
   const tomorrow = dateKey(new Date(Date.now() + 86400000))
   const res = await modalInput('推迟任务', `${tomorrow} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
@@ -80,7 +86,7 @@ async function postpone(task: any) {
       await StudyTaskApi.postpone(task.id, parsed.date, '手动推迟', parsed.start, parsed.end, true)
       await load()
     } else {
-      throw e
+      uni.showToast({ title: e?.message || '推迟失败', icon: 'none' })
     }
   }
 }
@@ -88,8 +94,8 @@ async function makeup(task: any) {
   const res = await modalInput('补录结束时间', `${task.date} ${task.planned_end || '21:00'}`)
   if (!res) return
   const parsed = parseMakeup(task, res)
-  await StudyTaskApi.makeup(task.id, parsed.end, '手动补录', parsed.start)
-  await load()
+  try { await StudyTaskApi.makeup(task.id, parsed.end, '手动补录', parsed.start); await load() }
+  catch (e: any) { uni.showToast({ title: e?.message || '补录失败', icon: 'none' }) }
 }
 
 function modalInput(title: string, placeholderText: string) {

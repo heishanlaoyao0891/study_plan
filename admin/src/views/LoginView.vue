@@ -2,23 +2,23 @@
   <main class="login-page">
     <form class="login-panel" @submit.prevent="submit">
       <div>
-        <p class="eyebrow">Study Plan Admin</p>
-        <h1>Admin sign in</h1>
+        <p class="eyebrow">学习打卡运营台</p>
+        <h1>管理员登录</h1>
       </div>
 
       <label class="field">
-        <span>Username</span>
+        <span>账号</span>
         <input v-model.trim="username" autocomplete="username" required />
       </label>
 
       <label class="field">
-        <span>Password</span>
+        <span>密码</span>
         <input v-model="password" autocomplete="current-password" required type="password" />
       </label>
 
       <p v-if="error" class="error">{{ error }}</p>
       <button class="primary" :disabled="loading" type="submit">
-        {{ loading ? 'Signing in...' : 'Sign in' }}
+        {{ loading ? '登录中...' : '登录' }}
       </button>
     </form>
   </main>
@@ -46,7 +46,7 @@ async function submit() {
     saveSession(session.token, session.user)
     await router.replace(String(route.query.redirect || '/'))
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Sign in failed'
+    error.value = err instanceof Error ? err.message : '登录失败'
   } finally {
     loading.value = false
   }

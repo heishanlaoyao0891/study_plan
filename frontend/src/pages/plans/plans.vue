@@ -1,25 +1,26 @@
 <template>
   <view class="plans-page">
     <view class="summary">
+      <view class="summary-spark">✦</view>
       <view>
-        <view class="summary-label">学习目标</view>
-        <view class="summary-title">{{ activeCount }} 个进行中</view>
+        <view class="summary-label">学习愿望花园</view>
+        <view class="summary-title">{{ activeCount }} 个正在发芽</view>
       </view>
-      <button class="add-btn" @click="openCreate">新建</button>
+      <button class="add-btn" @click="openCreate">种计划</button>
     </view>
 
     <view class="stats-row">
       <view class="stat-box">
         <view class="stat-value">{{ plans.length }}</view>
-        <view class="stat-label">目标计划</view>
+        <view class="stat-label">全部愿望</view>
       </view>
       <view class="stat-box">
         <view class="stat-value">{{ totalWeeklyHours }}</view>
-        <view class="stat-label">周目标工时</view>
+        <view class="stat-label">周目标小时</view>
       </view>
       <view class="stat-box">
         <view class="stat-value">{{ pausedCount }}</view>
-        <view class="stat-label">已暂停目标</view>
+        <view class="stat-label">休眠中</view>
       </view>
     </view>
 
@@ -82,6 +83,16 @@
           <text class="label">每周目标小时</text>
           <input class="input" v-model.number="form.weekly_target_hours" type="number" placeholder="例如：7" />
         </view>
+        <view class="grid-fields">
+          <view class="field">
+            <text class="label">开始日期</text>
+            <input class="input" v-model="form.start_date" placeholder="YYYY-MM-DD" />
+          </view>
+          <view class="field">
+            <text class="label">结束日期</text>
+            <input class="input" v-model="form.end_date" placeholder="YYYY-MM-DD" />
+          </view>
+        </view>
         <view class="confirm-row" v-if="!editing">
           <label class="confirm-label">
             <checkbox :checked="!!form.confirm_overload" @click="form.confirm_overload = !form.confirm_overload" />
@@ -114,7 +125,7 @@ const plans = ref<Plan[]>([])
 const loading = ref(false)
 const showModal = ref(false)
 const editing = ref<Plan | null>(null)
-const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 0, confirm_overload: false, public_to_group: false })
+const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 7, start_date: '', end_date: '', confirm_overload: false, public_to_group: false })
 const activeCount = computed(() => plans.value.filter(p => p.status === 'active').length)
 const pausedCount = computed(() => plans.value.filter(p => p.status === 'paused').length)
 const totalWeeklyHours = computed(() => plans.value.filter(p => p.status === 'active').reduce((sum, p) => sum + (p.weekly_target_hours || 0), 0))
@@ -127,9 +138,13 @@ async function load() {
 }
 
 function resetForm() {
+  const start = new Date()
+  const end = new Date(Date.now() + 6 * 86400000)
   form.title = ''
   form.description = ''
-  form.weekly_target_hours = 0
+  form.weekly_target_hours = 7
+  form.start_date = start.toISOString().slice(0, 10)
+  form.end_date = end.toISOString().slice(0, 10)
   form.confirm_overload = false
   form.public_to_group = false
 }
@@ -145,6 +160,8 @@ function openEdit(p: Plan) {
   form.title = p.title
   form.description = p.description || ''
   form.weekly_target_hours = p.weekly_target_hours || 0
+  form.start_date = p.start_date || ''
+  form.end_date = p.end_date || ''
   form.confirm_overload = false
   form.public_to_group = !!p.public_to_group
   showModal.value = true
@@ -163,6 +180,8 @@ async function save() {
         title: form.title,
         description: form.description,
         weekly_target_hours: form.weekly_target_hours,
+        start_date: form.start_date,
+        end_date: form.end_date,
         public_to_group: form.public_to_group,
       })
       uni.showToast({ title: '已保存', icon: 'success' })
@@ -277,31 +296,35 @@ onShow(load)
 </script>
 
 <style lang="scss">
-.plans-page { min-height: 100vh; box-sizing: border-box; padding: 28rpx 28rpx 60rpx; background: #f6f7fb; }
+.plans-page { min-height: 100vh; box-sizing: border-box; padding: 28rpx 28rpx 60rpx; background: linear-gradient(180deg, #fff0f7 0%, #fffaf0 44%, #f7fbff 100%); }
 .summary {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 34rpx;
-  border-radius: 18rpx;
-  background: #fff;
-  border: 1rpx solid #e9edf5;
+  border-radius: 34rpx;
+  background: linear-gradient(135deg, #fff, #fff7fb);
+  border: 1rpx solid #ffe0ea;
+  box-shadow: 0 18rpx 42rpx rgba(255, 143, 171, .14);
 }
-.summary-label { color: #2264d1; font-size: 22rpx; font-weight: 800; }
-.summary-title { margin-top: 10rpx; color: #111827; font-size: 42rpx; font-weight: 800; }
-.add-btn { margin: 0; width: 132rpx; height: 70rpx; line-height: 70rpx; background: #2264d1; color: #fff; border-radius: 12rpx; font-size: 27rpx; }
+.summary-spark { position: absolute; right: 36rpx; top: -6rpx; color: #ffc36a; font-size: 88rpx; opacity: .34; }
+.summary-label { color: #ff6f91; font-size: 22rpx; font-weight: 900; }
+.summary-title { margin-top: 10rpx; color: #4b2b3f; font-size: 42rpx; font-weight: 900; }
+.add-btn { margin: 0; width: 150rpx; height: 70rpx; line-height: 70rpx; background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; border-radius: 999rpx; font-size: 27rpx; font-weight: 800; }
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 18rpx; }
-.stat-box { padding: 24rpx 12rpx; border-radius: 14rpx; background: #fff; border: 1rpx solid #e9edf5; text-align: center; }
-.stat-value { color: #111827; font-size: 34rpx; font-weight: 800; }
+.stat-box { padding: 24rpx 12rpx; border-radius: 24rpx; background: #fff; border: 1rpx solid #ffe0ea; text-align: center; box-shadow: 0 10rpx 24rpx rgba(255, 143, 171, .08); }
+.stat-value { color: #4b2b3f; font-size: 34rpx; font-weight: 900; }
 .stat-label { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
 .quick-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 18rpx; }
-.quick { margin: 0; height: 68rpx; line-height: 68rpx; border-radius: 12rpx; background: #eef4ff; color: #2264d1; font-size: 25rpx; }
+.quick { margin: 0; height: 68rpx; line-height: 68rpx; border-radius: 999rpx; background: #fff0f6; color: #ff6f91; font-size: 25rpx; font-weight: 700; }
 .plan-list { margin-top: 24rpx; display: flex; flex-direction: column; gap: 18rpx; }
-.plan-card { padding: 28rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.plan-card { padding: 28rpx; border-radius: 28rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 12rpx 30rpx rgba(255, 143, 171, .10); }
 .plan-card.paused { opacity: .62; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
 .plan-title { flex: 1; min-width: 0; color: #111827; font-size: 32rpx; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-pill { min-width: 76rpx; text-align: center; padding: 8rpx 0; border-radius: 99rpx; color: #2264d1; background: #eef4ff; font-size: 22rpx; font-weight: 700; }
+.status-pill { min-width: 76rpx; text-align: center; padding: 8rpx 0; border-radius: 99rpx; color: #ff6f91; background: #fff0f6; font-size: 22rpx; font-weight: 800; }
 .status-pill.paused { color: #9a5b00; background: #fff7e6; }
 .plan-desc { margin-top: 14rpx; color: #606a80; font-size: 25rpx; line-height: 1.5; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; margin-top: 22rpx; }
@@ -309,16 +332,17 @@ onShow(load)
 .metric-num { color: #111827; font-size: 30rpx; font-weight: 800; }
 .metric-label { margin-top: 6rpx; color: #7b8498; font-size: 22rpx; }
 .actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10rpx; margin-top: 22rpx; }
-.action { margin: 0; height: 64rpx; line-height: 64rpx; border-radius: 10rpx; background: #f3f6fb; color: #384257; font-size: 24rpx; }
+.action { margin: 0; height: 64rpx; line-height: 64rpx; border-radius: 999rpx; background: #fff7e6; color: #7a4b00; font-size: 23rpx; }
 .action.danger { color: #cf1322; background: #fff1f0; }
 .empty { margin-top: 24rpx; padding: 54rpx 34rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
 .empty-title { color: #111827; font-size: 32rpx; font-weight: 800; }
 .empty-desc { margin-top: 12rpx; color: #7b8498; font-size: 26rpx; line-height: 1.5; }
-.primary-btn { margin-top: 32rpx; background: #2264d1; color: #fff; border-radius: 12rpx; }
+.primary-btn { margin-top: 32rpx; background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; border-radius: 999rpx; }
 .modal { position: fixed; inset: 0; z-index: 99; background: rgba(17,24,39,.46); display: flex; align-items: flex-end; }
 .modal-body { width: 100%; box-sizing: border-box; padding: 34rpx 30rpx 42rpx; border-radius: 24rpx 24rpx 0 0; background: #fff; }
 .modal-title { color: #111827; font-size: 34rpx; font-weight: 800; margin-bottom: 28rpx; }
 .field { margin-bottom: 22rpx; }
+.grid-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }
 .label { display: block; color: #606a80; font-size: 24rpx; margin-bottom: 10rpx; }
 .input, .textarea { box-sizing: border-box; width: 100%; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; color: #111827; font-size: 27rpx; }
 .input { height: 80rpx; padding: 0 20rpx; }

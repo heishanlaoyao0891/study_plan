@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="report-card">
-      <view class="report-title">本周概览</view>
+      <view class="report-title">本周成长小报</view>
       <view class="report-grid">
         <view class="metric"><view class="num">{{ weekly.total_study_minutes || 0 }}</view><view class="label">学习分钟</view></view>
         <view class="metric"><view class="num">{{ weekly.completed_checkins || 0 }}</view><view class="label">完成打卡</view></view>
@@ -85,24 +85,24 @@ onShow(load)
 </script>
 
 <style lang="scss">
-.page { min-height: 100vh; padding: 28rpx; box-sizing: border-box; background: #f6f7fb; }
-.report-card { padding: 34rpx; border-radius: 18rpx; background: #111827; color: #fff; }
+.page { min-height: 100vh; padding: 28rpx; box-sizing: border-box; background: linear-gradient(180deg, #fff0f7 0%, #fffaf0 42%, #f7fbff 100%); }
+.report-card { padding: 34rpx; border-radius: 34rpx; background: linear-gradient(135deg, #ff8fab, #ffc36a); color: #fff; box-shadow: 0 20rpx 44rpx rgba(255, 143, 171, .24); }
 .report-title { font-size: 32rpx; font-weight: 800; }
 .report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16rpx; margin-top: 28rpx; }
-.metric { padding: 22rpx 10rpx; border-radius: 14rpx; background: rgba(255,255,255,.08); text-align: center; }
+.metric { padding: 22rpx 10rpx; border-radius: 24rpx; background: rgba(255,255,255,.24); text-align: center; }
 .num { font-size: 34rpx; font-weight: 800; }
 .label { margin-top: 8rpx; color: #aeb7c8; font-size: 21rpx; }
-.eff-card { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
-.suggest-card { display: flex; justify-content: space-between; gap: 20rpx; margin-top: 18rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.eff-card { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; padding: 30rpx; border-radius: 28rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 12rpx 30rpx rgba(255, 143, 171, .10); }
+.suggest-card { display: flex; justify-content: space-between; gap: 20rpx; margin-top: 18rpx; padding: 30rpx; border-radius: 28rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 12rpx 30rpx rgba(255, 180, 92, .10); }
 .suggest-title { color: #111827; font-size: 29rpx; font-weight: 800; }
 .suggest-sub { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
 .suggest-text { max-width: 260rpx; color: #0f766e; font-size: 24rpx; font-weight: 700; text-align: right; }
 .eff-title { color: #111827; font-size: 29rpx; font-weight: 800; }
 .eff-sub { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
-.eff-rate { color: #0f766e; font-size: 44rpx; font-weight: 800; }
+.eff-rate { color: #ff6f91; font-size: 44rpx; font-weight: 900; }
 .section-title { margin: 34rpx 0 16rpx; color: #111827; font-size: 30rpx; font-weight: 800; }
-.row { display: flex; justify-content: space-between; align-items: center; padding: 26rpx; margin-bottom: 14rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 26rpx; margin-bottom: 14rpx; border-radius: 26rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 10rpx 24rpx rgba(255, 143, 171, .08); }
 .row-title { color: #111827; font-size: 28rpx; font-weight: 700; }
 .row-sub { margin-top: 6rpx; color: #7b8498; font-size: 22rpx; }
-.row-num { color: #2264d1; font-size: 28rpx; font-weight: 800; }
+.row-num { color: #ff6f91; font-size: 28rpx; font-weight: 900; }
 </style>

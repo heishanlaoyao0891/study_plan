@@ -33,6 +33,7 @@ type Config struct {
 var App *Config
 
 func Load() *Config {
+	_, mockExplicit := os.LookupEnv("WECHAT_LOGIN_MOCK")
 	App = &Config{
 		AppEnv:                 getEnv("APP_ENV", "development"),
 		Port:                   getEnv("PORT", "8080"),
@@ -54,6 +55,9 @@ func Load() *Config {
 		ArchiveDSN:             getEnv("ARCHIVE_DSN", ""),
 		ArchiveIntervalMinutes: getEnvInt("ARCHIVE_INTERVAL_MINUTES", 5),
 		ArchiveTables:          getEnv("ARCHIVE_TABLES", "users,plans,daily_tasks,checkins,study_sessions,slack_records"),
+	}
+	if !mockExplicit && !App.IsProduction() && (App.WeChatAppID == "" || App.WeChatSecret == "") {
+		App.WeChatLoginMock = true
 	}
 	return App
 }
