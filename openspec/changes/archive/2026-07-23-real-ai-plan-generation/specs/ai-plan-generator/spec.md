@@ -1,8 +1,5 @@
-# ai-plan-generator Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change study-checkin-miniapp. Update Purpose after archive.
-## Requirements
 ### Requirement: AI generates a study plan from user description
 The system SHALL accept a natural language learning goal and generate a structured daily task plan through a configured AI planning agent, validating the model output before it can be persisted.
 
@@ -17,27 +14,6 @@ The system SHALL accept a natural language learning goal and generate a structur
 #### Scenario: Invalid AI output rejected
 - **WHEN** AI returns malformed JSON, missing required fields, or tasks on skipped dates
 - **THEN** system rejects the output with a clear error and does not persist tasks
-
-### Requirement: AI asks for user availability before generating
-The system SHALL collect user's daily available hours and time slots before AI generation.
-
-#### Scenario: Provide availability
-- **WHEN** user starts AI plan generation
-- **THEN** system prompts user for: daily available hours, preferred time slot (e.g. 20:00-22:00), start date, and dates to skip
-
-### Requirement: AI estimates total duration based on goal
-The system SHALL estimate the total study duration for the goal and distribute it across days.
-
-#### Scenario: Estimate and distribute
-- **WHEN** AI receives a goal like "learn Go"
-- **THEN** AI estimates total hours needed (e.g. 60h) and generates daily tasks spread across days based on daily available hours
-
-### Requirement: AI considers historical learning ability
-The system SHALL optionally use user's historical study data to adjust plan difficulty and pace.
-
-#### Scenario: Personalized pace
-- **WHEN** AI generates plan and user has historical data
-- **THEN** AI adjusts daily task density based on user's past completion rate
 
 ### Requirement: User can edit AI-generated plan
 The system SHALL allow users to modify, add, delete, or reorder tasks in an AI-generated preview before committing it.
@@ -58,12 +34,7 @@ The system SHALL allow users to modify, add, delete, or reorder tasks in an AI-g
 - **WHEN** user requests regeneration with additional instructions
 - **THEN** system calls AI again using the original inputs plus refinements
 
-### Requirement: Plan creation respects user's availability
-The system SHALL skip dates the user marks as unavailable when generating tasks.
-
-#### Scenario: Skip unavailable dates
-- **WHEN** user marks certain dates as unavailable
-- **THEN** AI does not create tasks on those dates
+## ADDED Requirements
 
 ### Requirement: AI usage is controlled
 The system SHALL enforce limits for AI generation requests to prevent accidental cost or abuse.
@@ -123,4 +94,3 @@ The system SHALL provide safe fallback behavior when the model provider fails or
 #### Scenario: Provider unavailable
 - **WHEN** provider times out or rejects the request
 - **THEN** system retries according to policy and may return a deterministic fallback preview or a clear unavailable error
-

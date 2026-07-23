@@ -1,8 +1,5 @@
-# notification Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change study-checkin-miniapp. Update Purpose after archive.
-## Requirements
 ### Requirement: User receives reminder when study time arrives
 The system SHALL send a WeChat subscription message at the scheduled start time of each task when the user has an active subscription and the template is configured.
 
@@ -50,15 +47,3 @@ The system SHALL remind users who have not started their scheduled study after t
 #### Scenario: No checkin message delivered
 - **WHEN** it is 30 minutes past scheduled_start and user has not started and has subscribed
 - **THEN** system sends a missed check-in reminder and records the delivery result
-
-### Requirement: User can subscribe to reminders
-The system SHALL allow users to subscribe to WeChat subscription messages.
-
-#### Scenario: Subscribe
-- **WHEN** user sends POST /api/notifications/subscribe with template ID
-- **THEN** system records the subscription
-
-#### Scenario: Unsubscribe
-- **WHEN** user sends DELETE /api/notifications/subscribe
-- **THEN** system removes the subscription record
-

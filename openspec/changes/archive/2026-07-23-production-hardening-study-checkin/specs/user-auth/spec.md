@@ -1,8 +1,5 @@
-# user-auth Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change study-checkin-miniapp. Update Purpose after archive.
-## Requirements
 ### Requirement: User can login with WeChat
 The system SHALL authenticate users via WeChat login (code → openid exchange) in production, and SHALL allow mock login only when explicitly enabled for local development.
 
@@ -26,34 +23,7 @@ The system SHALL authenticate users via WeChat login (code → openid exchange) 
 - **WHEN** `WECHAT_LOGIN_MOCK=true` and user logs in locally
 - **THEN** system may create a deterministic mock openid for local testing
 
-### Requirement: API requests require authentication
-The system SHALL reject unauthenticated API requests.
-
-#### Scenario: Request without token
-- **WHEN** client sends a request without Authorization header
-- **THEN** system returns 401 Unauthorized
-
-#### Scenario: Request with invalid token
-- **WHEN** client sends a request with an expired or invalid JWT
-- **THEN** system returns 401 Unauthorized
-
-### Requirement: User has a role
-The system SHALL support user roles (normal user, admin). There is exactly one admin.
-
-#### Scenario: Admin role
-- **WHEN** admin user logs in
-- **THEN** JWT contains role=admin for accessing admin endpoints
-
-### Requirement: Banned users cannot authenticate
-The system SHALL check ban status during login.
-
-#### Scenario: Banned user blocked
-- **WHEN** a user with banned_until > now attempts to log in
-- **THEN** system returns 403 Forbidden with banned_reason and banned_until timestamp
-
-#### Scenario: Ban expired
-- **WHEN** a user with banned_until < now attempts to log in
-- **THEN** system clears banned_until and allows normal login
+## ADDED Requirements
 
 ### Requirement: Phone binding is configurable after WeChat login
 The system SHALL allow phone number binding after WeChat login, and SHALL only require it before accessing study features when `PHONE_BINDING_REQUIRED=true`.
@@ -92,40 +62,3 @@ The system SHALL store avatar binary data outside the relational database and pe
 #### Scenario: Avatar stored in MinIO
 - **WHEN** deployment is configured to use self-hosted MinIO for avatar storage
 - **THEN** backend uploads avatar files to MinIO and returns only an HTTPS URL or object key to the mini program
-
-### Requirement: User can view masked phone number
-The system SHALL show the bound phone number in masked form in account settings.
-
-#### Scenario: View masked phone
-- **WHEN** user opens account settings
-- **THEN** system shows phone number as masked text such as `138****5678`
-
-### Requirement: User can rebind phone number
-The system SHALL allow users to replace their bound phone number through WeChat phone authorization.
-
-#### Scenario: Rebind phone
-- **WHEN** user completes phone authorization for a new phone number
-- **THEN** system replaces the old bound phone number and records the account event
-
-### Requirement: User can deactivate account with data choice
-The system SHALL let users deactivate their mini program account and choose whether to retain or delete historical data.
-
-#### Scenario: Deactivate and retain data
-- **WHEN** user chooses to deactivate while retaining data
-- **THEN** system preserves user plans, tasks, check-ins, sessions, slack records, and group history for future restoration
-
-#### Scenario: Deactivate and delete data
-- **WHEN** user chooses to deactivate and delete data
-- **THEN** system deletes or anonymizes personal and learning data according to the documented deletion policy
-
-#### Scenario: Restore retained account
-- **WHEN** user logs in again with the same verified identity after retaining data
-- **THEN** system restores the user's retained account data
-
-### Requirement: Privacy policy explains data usage
-The system SHALL provide privacy policy content covering phone number, avatar storage, learning records, AI usage, group-visible metrics, notifications, admin access, and account deletion choices.
-
-#### Scenario: User opens privacy policy
-- **WHEN** user opens the privacy policy entry
-- **THEN** system displays what data is collected, why it is used, and how the user can deactivate or delete data
-

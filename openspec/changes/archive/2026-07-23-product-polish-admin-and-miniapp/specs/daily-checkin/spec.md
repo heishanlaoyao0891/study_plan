@@ -1,25 +1,4 @@
-# daily-checkin Specification
-
-## Purpose
-TBD - created by archiving change study-checkin-miniapp. Update Purpose after archive.
-## Requirements
-### Requirement: User can view today's checkin status
-The system SHALL return the completion status of all plans for a given date.
-
-#### Scenario: View today's checkins
-- **WHEN** user requests GET /api/checkins?date=2026-07-17
-- **THEN** system returns each plan with its completed status for that date
-
-### Requirement: User can toggle checkin for a plan
-The system SHALL allow users to mark a plan as completed for a given date.
-
-#### Scenario: Complete a plan
-- **WHEN** user sends POST /api/checkins with plan_id and date
-- **THEN** system marks the plan as completed for that date
-
-#### Scenario: Uncheck a plan
-- **WHEN** user sends POST /api/checkins with plan_id, date, and completed=false
-- **THEN** system removes or sets the checkin as not completed
+## MODIFIED Requirements
 
 ### Requirement: Checkin requires all tasks done
 The system SHALL treat task completion as the source of truth for completing the related daily check-in.
@@ -49,6 +28,8 @@ The system SHALL award slack minutes once per completed daily check-in.
 - **THEN** the system awards configured slack minutes once
 - **AND** repeated client refreshes or duplicate UI actions do not award duplicate slack time
 
+## ADDED Requirements
+
 ### Requirement: Mini program check-in experience is delightful
 The system SHALL make the daily check-in page feel warm, cute, and rewarding while preserving clear task controls.
 
@@ -56,4 +37,3 @@ The system SHALL make the daily check-in page feel warm, cute, and rewarding whi
 - **WHEN** the user opens the check-in tab
 - **THEN** the page shows a cute first impression, clear progress, friendly empty states, and distinctive primary action buttons
 - **AND** the user can still quickly start, stop, and complete study tasks
-
