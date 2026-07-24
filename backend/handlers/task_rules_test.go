@@ -1,16 +1,25 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"study_plan_backend/config"
 	"study_plan_backend/db"
+	"study_plan_backend/middleware"
 	"study_plan_backend/models"
 )
 
@@ -92,7 +101,7 @@ func TestCloseOvernightTasks(t *testing.T) {
 	}
 }
 
-func TestAutoCompleteCheckinRewardsOnce(t *testing.T) {
+func TestTaskCompletionDoesNotCheckinAndExplicitRewardIsIdempotent(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "u1", Nickname: "u1"}
 	if err := db.DB.Create(&user).Error; err != nil {
@@ -106,14 +115,19 @@ func TestAutoCompleteCheckinRewardsOnce(t *testing.T) {
 	if err := db.DB.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DB.Transaction(func(tx *gorm.DB) error {
-		return autoCompleteCheckinIfPlanDateDone(tx, user.ID, plan.ID, task.Date)
-	}); err != nil {
+	var count int64
+	if err := db.DB.Model(&models.Checkin{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("task completion must not create checkin: count=%d err=%v", count, err)
+	}
+	checkin := models.Checkin{UserID: user.ID, PlanID: plan.ID, Date: task.Date, Completed: true}
+	if err := db.DB.Create(&checkin).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DB.Transaction(func(tx *gorm.DB) error {
-		return autoCompleteCheckinIfPlanDateDone(tx, user.ID, plan.ID, task.Date)
-	}); err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error { return awardSlackIfNeeded(tx, user.ID, &checkin) }); err != nil {
+		t.Fatal(err)
+	}
+	checkin.Rewarded = false
+	if err := db.DB.Transaction(func(tx *gorm.DB) error { return awardSlackIfNeeded(tx, user.ID, &checkin) }); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.DB.First(&user, user.ID).Error; err != nil {
@@ -122,12 +136,72 @@ func TestAutoCompleteCheckinRewardsOnce(t *testing.T) {
 	if user.SlackBalance != 10 {
 		t.Fatalf("expected 10 slack minutes, got %d", user.SlackBalance)
 	}
-	var checkin models.Checkin
 	if err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", user.ID, plan.ID, task.Date).First(&checkin).Error; err != nil {
 		t.Fatal(err)
 	}
 	if !checkin.Completed || !checkin.Rewarded {
 		t.Fatalf("unexpected checkin state: %+v", checkin)
+	}
+}
+
+func TestPausePreservesAccumulatedTimeAndAchievedOvertime(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "timer", Nickname: "timer"}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P"}
+	db.DB.Create(&plan)
+	task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "A", Objective: "finish lesson one", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusInProgress, StudySeconds: 3500}
+	if err := db.DB.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-200 * time.Second)
+	if err := db.DB.Create(&models.StudySession{TaskID: task.ID, UserID: user.ID, StartTime: start}).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err := buildTaskTimerView(task, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.TimerState != "achieved" || view.OvertimeSeconds < 90 {
+		t.Fatalf("unexpected achieved view: %+v", view)
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		_, err := closeActiveSession(tx, &task, user.ID, time.Now())
+		task.Status = models.TaskStatusPending
+		if err != nil {
+			return err
+		}
+		return tx.Save(&task).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if task.Status == models.TaskStatusCompleted || task.StudySeconds < 3690 {
+		t.Fatalf("pause must preserve incomplete accumulated state: %+v", task)
+	}
+}
+
+func TestScheduleResolutionUsesDateThenWeekdayThenDefault(t *testing.T) {
+	plan := models.Plan{DefaultPlannedStart: "20:00", DefaultPlannedEnd: "21:00", StudyWeekdays: []int{1}}
+	day, _ := time.Parse(dateLayout, "2026-07-20")
+	rows := []models.PlanScheduleOverride{{Weekday: 1, PlannedStart: "19:00", PlannedEnd: "20:00"}, {Date: "2026-07-20", PlannedStart: "18:00", PlannedEnd: "19:30"}}
+	start, end := resolvePlanSchedule(plan, rows, day)
+	if start != "18:00" || end != "19:30" {
+		t.Fatalf("date override should win, got %s-%s", start, end)
+	}
+	if planStudiesOn(plan, day.AddDate(0, 0, 1)) {
+		t.Fatal("unselected weekday must not generate a task")
+	}
+}
+
+func TestValidationLimits(t *testing.T) {
+	if validateObjective("Read", "Read") == nil {
+		t.Fatal("objective repeating title must be rejected")
+	}
+	if validMotivationContent(strings.Repeat("学", 33), "今日寄语") {
+		t.Fatal("over-limit motivation must be rejected")
+	}
+	if !validMotivationContent(strings.Repeat("学", 32), "今日寄语") {
+		t.Fatal("bounded motivation should pass")
 	}
 }
 
@@ -214,4 +288,247 @@ func TestMarkStudyReviewFlags(t *testing.T) {
 	if !task.Suspicious || !session.Suspicious {
 		t.Fatalf("expected both records to be flagged: task=%+v session=%+v", task, session)
 	}
+}
+
+func TestTaskStateActionsAreIdempotentAndGuarded(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "state", Nickname: "state"}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P", Status: models.PlanStatusActive}
+	db.DB.Create(&plan)
+	task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "Read", Objective: "finish chapter one", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusPending, StudySeconds: 3600}
+	if err := db.DB.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if code := callTaskHandler(t, CompleteTask, user.ID, task.ID, nil); code != 0 {
+		t.Fatalf("empty-body complete failed with code %d", code)
+	}
+	if err := db.DB.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	completedAt := *task.ActualEnd
+	if code := callTaskHandler(t, CompleteTask, user.ID, task.ID, nil); code != 0 {
+		t.Fatalf("repeated complete failed with code %d", code)
+	}
+	db.DB.First(&task, task.ID)
+	if !task.ActualEnd.Equal(completedAt) {
+		t.Fatal("repeated complete must preserve the original completion time")
+	}
+	if code := callTaskHandler(t, PauseTask, user.ID, task.ID, nil); code != http.StatusConflict {
+		t.Fatalf("expected completed pause conflict, got %d", code)
+	}
+}
+
+func TestUpdateTaskCannotBypassStateOrInvalidateObjective(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "update", Nickname: "update"}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P"}
+	db.DB.Create(&plan)
+	task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "Read", Objective: "finish chapter one", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusPending}
+	db.DB.Create(&task)
+
+	if code := callTaskHandler(t, UpdateTask, user.ID, task.ID, gin.H{"status": models.TaskStatusCompleted}); code != http.StatusBadRequest {
+		t.Fatalf("expected status update rejection, got %d", code)
+	}
+	if code := callTaskHandler(t, UpdateTask, user.ID, task.ID, gin.H{"title": "finish chapter one"}); code != http.StatusBadRequest {
+		t.Fatalf("expected final objective validation failure, got %d", code)
+	}
+	if code := callTaskHandler(t, UpdateTask, user.ID, task.ID, gin.H{"planned_end": "19:00"}); code != http.StatusBadRequest {
+		t.Fatalf("expected invalid planned range rejection, got %d", code)
+	}
+	task.Status = models.TaskStatusInProgress
+	db.DB.Save(&task)
+	if code := callTaskHandler(t, PostponeTask, user.ID, task.ID, gin.H{"date": "2026-07-21"}); code != http.StatusConflict {
+		t.Fatalf("expected running postpone rejection, got %d", code)
+	}
+}
+
+func TestMakeupDateTimeUsesShanghaiDateAndStoresSeconds(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "makeup", Nickname: "makeup", SlackBalance: 200}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P"}
+	db.DB.Create(&plan)
+	task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2020-01-02", Title: "Read", Objective: "finish chapter one", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusPending}
+	db.DB.Create(&task)
+
+	code := callTaskHandler(t, MakeupTask, user.ID, task.ID, gin.H{"actual_date": "2020-01-02", "actual_start": "20:00", "actual_end": "20:01"})
+	if code != 0 {
+		t.Fatalf("makeup failed with code %d", code)
+	}
+	db.DB.First(&task, task.ID)
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	if task.StudySeconds != 60 || task.StudyMinutes != 1 || task.ActualStart.In(loc).Format("2006-01-02 15:04") != "2020-01-02 20:00" {
+		t.Fatalf("unexpected makeup result: %+v", task)
+	}
+}
+
+func TestEnsureDailyTaskRequiresActivePlanAndDoesNotInventObjective(t *testing.T) {
+	setupTestDB(t)
+	plan := models.Plan{UserID: 1, Title: "P", Description: "not an objective", Status: models.PlanStatusPaused, StudyDates: []string{"2026-07-20"}}
+	db.DB.Create(&plan)
+	if _, err := ensureDailyTask(1, plan, "2026-07-20"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("paused plan should not ensure a task: %v", err)
+	}
+	plan.Status = models.PlanStatusActive
+	if _, err := ensureDailyTask(1, plan, "2026-07-20"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("plan without persisted objective cannot auto-create a task: %v", err)
+	}
+	var count int64
+	db.DB.Model(&models.DailyTask{}).Count(&count)
+	if count != 0 {
+		t.Fatal("ensureDailyTask must not use description as objective")
+	}
+}
+
+func TestPlanDateValidationAndActiveSessionIndex(t *testing.T) {
+	if validatePlanDates("2026-07-20", "", nil, nil) == nil {
+		t.Fatal("partial plan date range must be rejected")
+	}
+	if validatePlanDates("2026-07-20", "2026-07-21", []string{"2026-07-22"}, nil) == nil {
+		t.Fatal("out-of-range study date must be rejected")
+	}
+	if validatePlanDates("2026-07-20", "2026-07-21", nil, []scheduleOverrideReq{{Date: "2026-07-22"}}) == nil {
+		t.Fatal("out-of-range override date must be rejected")
+	}
+
+	setupTestDB(t)
+	if !db.DB.Migrator().HasIndex(&models.StudySession{}, "idx_study_sessions_active_task") {
+		t.Fatal("expected active session partial unique index")
+	}
+	session := models.StudySession{TaskID: 1, UserID: 1, StartTime: time.Now()}
+	if err := db.DB.Create(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Create(&models.StudySession{TaskID: 1, UserID: 1, StartTime: time.Now()}).Error; err == nil {
+		t.Fatal("expected duplicate active session rejection")
+	}
+	end := time.Now()
+	db.DB.Model(&session).Update("end_time", end)
+	if err := db.DB.Create(&models.StudySession{TaskID: 1, UserID: 1, StartTime: time.Now()}).Error; err != nil {
+		t.Fatalf("closed sessions must not block a new active session: %v", err)
+	}
+}
+
+func TestPlanResponsesPreloadScheduleOverrides(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "plan-response", Nickname: "plan-response"}
+	db.DB.Create(&user)
+	create := callJSONHandler(t, CreatePlan, user.ID, "/plans", "", gin.H{
+		"title": "Read", "objective": "finish chapter one", "start_date": "2026-07-20", "end_date": "2026-07-20",
+		"study_dates": []string{"2026-07-20"}, "schedule_overrides": []gin.H{{"date": "2026-07-20", "planned_start": "19:00", "planned_end": "20:00"}},
+	})
+	var created struct {
+		Code int         `json:"code"`
+		Data models.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(create, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Code != 0 || len(created.Data.ScheduleOverrides) != 1 {
+		t.Fatalf("create response missing overrides: %s", create)
+	}
+
+	update := callJSONHandler(t, UpdatePlan, user.ID, "/plans/:id", strconv.FormatUint(uint64(created.Data.ID), 10), gin.H{
+		"schedule_overrides": []gin.H{{"date": "2026-07-20", "planned_start": "18:00", "planned_end": "19:00"}},
+	})
+	var updated struct {
+		Code int         `json:"code"`
+		Data models.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(update, &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Code != 0 || len(updated.Data.ScheduleOverrides) != 1 || updated.Data.ScheduleOverrides[0].PlannedStart != "18:00" {
+		t.Fatalf("update response did not preload latest overrides: %s", update)
+	}
+}
+
+func TestCheckinRechecksEligibilityAndRetryIsIdempotent(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "checkin", Nickname: "checkin"}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P", Status: models.PlanStatusActive}
+	db.DB.Create(&plan)
+	task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "Read", Objective: "finish chapter one", Status: models.TaskStatusPending}
+	db.DB.Create(&task)
+	body := gin.H{"plan_id": plan.ID, "date": task.Date, "completed": true}
+	response := callJSONHandler(t, ToggleCheckin, user.ID, "/checkins", "", body)
+	if responseCode(t, response) != http.StatusBadRequest {
+		t.Fatalf("ineligible checkin should fail: %s", response)
+	}
+	db.DB.Model(&task).Update("status", models.TaskStatusCompleted)
+	if responseCode(t, callJSONHandler(t, ToggleCheckin, user.ID, "/checkins", "", body)) != 0 {
+		t.Fatal("eligible checkin should succeed")
+	}
+	if responseCode(t, callJSONHandler(t, ToggleCheckin, user.ID, "/checkins", "", body)) != 0 {
+		t.Fatal("checkin retry should succeed")
+	}
+	db.DB.First(&user, user.ID)
+	if user.SlackBalance != 10 {
+		t.Fatalf("checkin retry awarded twice: balance=%d", user.SlackBalance)
+	}
+}
+
+func callTaskHandler(t *testing.T, handler gin.HandlerFunc, uid, taskID uint, body interface{}) int {
+	t.Helper()
+	g := gin.New()
+	g.PUT("/tasks/:id", func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uid) }, handler)
+	var reader *bytes.Reader
+	if body == nil {
+		reader = bytes.NewReader(nil)
+	} else {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader = bytes.NewReader(payload)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/tasks/"+strconv.FormatUint(uint64(taskID), 10), reader)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	g.ServeHTTP(rec, req)
+	var response struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+	}
+	return response.Code
+}
+
+func callJSONHandler(t *testing.T, handler gin.HandlerFunc, uid uint, route, id string, body interface{}) []byte {
+	t.Helper()
+	g := gin.New()
+	g.POST(route, func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uid) }, handler)
+	g.PUT(route, func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uid) }, handler)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := strings.Replace(route, ":id", id, 1)
+	method := http.MethodPost
+	if strings.Contains(route, ":id") {
+		method = http.MethodPut
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	g.ServeHTTP(rec, req)
+	return rec.Body.Bytes()
+}
+
+func responseCode(t *testing.T, body []byte) int {
+	t.Helper()
+	var response struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("decode response %q: %v", body, err)
+	}
+	return response.Code
 }

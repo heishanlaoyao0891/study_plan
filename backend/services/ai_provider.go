@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 type AIProvider interface {
 	Test() error
+	Generate(prompt string, maxTokens int) (string, error)
 }
 
 func NewAIProvider(cfg models.AIConfig) AIProvider {
@@ -32,25 +34,37 @@ type MockAIProvider struct {
 
 func (p *MockAIProvider) Test() error { return nil }
 
+func (p *MockAIProvider) Generate(prompt string, maxTokens int) (string, error) {
+	if strings.Contains(prompt, "study planning agent") {
+		return "", fmt.Errorf("mock provider does not generate structured plans")
+	}
+	return "今天的专注，会成为明天的底气。", nil
+}
+
 type OpenAICompatibleProvider struct {
 	Config models.AIConfig
 }
 
 func (p *OpenAICompatibleProvider) Test() error {
+	_, err := p.Generate("ping", 16)
+	return err
+}
+
+func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (string, error) {
 	if strings.TrimSpace(p.Config.BaseURL) == "" {
-		return fmt.Errorf("base url is required")
+		return "", fmt.Errorf("base url is required")
 	}
 	if strings.TrimSpace(p.Config.ModelName) == "" {
-		return fmt.Errorf("model name is required")
+		return "", fmt.Errorf("model name is required")
 	}
 	if !p.Config.Enabled {
-		return fmt.Errorf("provider is disabled")
+		return "", fmt.Errorf("provider is disabled")
 	}
 	reqBody := map[string]any{
 		"model":       p.Config.ModelName,
-		"messages":    []map[string]string{{"role": "user", "content": "ping"}},
+		"messages":    []map[string]string{{"role": "user", "content": prompt}},
 		"temperature": 0,
-		"max_tokens":  16,
+		"max_tokens":  maxInt(maxTokens, 64),
 	}
 	body, _ := json.Marshal(reqBody)
 	client := &http.Client{Timeout: time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30)) * time.Second}
@@ -58,7 +72,7 @@ func (p *OpenAICompatibleProvider) Test() error {
 	for attempt := 0; attempt < 2; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(p.Config.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
 		if err != nil {
-			return err
+			return "", err
 		}
 		req.Header.Set("Content-Type", "application/json")
 		if key := strings.TrimSpace(decodeAIKey(p.Config)); key != "" {
@@ -69,14 +83,33 @@ func (p *OpenAICompatibleProvider) Test() error {
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+		responseBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = readErr
+			continue
+		}
 		if resp.StatusCode >= 400 {
 			lastErr = fmt.Errorf("provider returned http %d", resp.StatusCode)
 			continue
 		}
-		return nil
+		var decoded struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 || strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
+			lastErr = fmt.Errorf("provider returned invalid completion")
+			continue
+		}
+		return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
 	}
-	return lastErr
+	if lastErr == nil {
+		lastErr = fmt.Errorf("provider request failed")
+	}
+	return "", lastErr
 }
 
 func decodeAIKey(cfg models.AIConfig) string {

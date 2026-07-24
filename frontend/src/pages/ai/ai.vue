@@ -8,6 +8,10 @@
         <view class="field"><text>每天小时</text><input v-model.number="hours" type="number" /></view>
         <view class="field"><text>计划天数</text><input v-model.number="days" type="number" /></view>
       </view>
+      <view class="grid">
+        <view class="field"><text>可用开始时间</text><picker mode="time" :value="availableStart" @change="availableStart = $event.detail.value"><view class="picker-value">{{ availableStart }}</view></picker></view>
+        <view class="field"><text>可用结束时间</text><picker mode="time" :value="availableEnd" @change="availableEnd = $event.detail.value"><view class="picker-value">{{ availableEnd }}</view></picker></view>
+      </view>
       <view class="field"><text>追加说明</text><textarea v-model="refinement" placeholder="例如：周末少一点，工作日晚间安排" /></view>
       <button class="primary" @click="generate">生成建议</button>
       <button class="secondary" v-if="preview" @click="commit">确认保存</button>
@@ -26,6 +30,7 @@
         <view class="field"><text>开始时间</text><input v-model="t.planned_start" placeholder="20:00" /></view>
         <view class="field"><text>结束时间</text><input v-model="t.planned_end" placeholder="21:00" /></view>
         <view class="field"><text>标题</text><input v-model="t.title" /></view>
+        <view class="field"><text>任务目标</text><textarea v-model="t.objective" maxlength="500" placeholder="描述当天具体要完成什么" /></view>
         <view class="field"><text>描述</text><textarea v-model="t.description" /></view>
         <view class="grid">
           <view class="field"><text>预计分钟</text><input v-model.number="t.estimated_minutes" type="number" /></view>
@@ -43,6 +48,8 @@ import { AIApi } from '@/api'
 const goal = ref('学习 Go 语言')
 const hours = ref(1)
 const days = ref(7)
+const availableStart = ref('20:00')
+const availableEnd = ref('21:00')
 const refinement = ref('')
 const preview = ref<any>(null)
 
@@ -51,8 +58,12 @@ async function generate() {
     uni.showToast({ title: '请输入学习目标', icon: 'none' })
     return
   }
+  if (availableStart.value >= availableEnd.value) {
+    uni.showToast({ title: '可用结束时间须晚于开始时间', icon: 'none' })
+    return
+  }
   try {
-    const resp = await AIApi.generatePlan({ goal: goal.value, hours_per_day: hours.value, days: days.value, refinement: refinement.value })
+    const resp = await AIApi.generatePlan({ goal: goal.value, hours_per_day: hours.value, days: days.value, available_time_slot: `${availableStart.value}-${availableEnd.value}`, refinement: refinement.value })
     preview.value = resp.preview || resp.data?.preview || resp
     uni.showToast({ title: '已生成预览', icon: 'success' })
   } catch (e: any) {
@@ -65,6 +76,11 @@ function removeTask(index: number) {
 }
 
 async function commit() {
+  const invalid = preview.value?.tasks?.find((task: any) => !task.objective?.trim() || task.objective.trim().toLowerCase() === task.title?.trim().toLowerCase())
+  if (invalid) {
+    uni.showToast({ title: '每个任务需填写比标题更具体的目标', icon: 'none' })
+    return
+  }
   try {
     await AIApi.commitPlan(preview.value)
     uni.showToast({ title: '已保存', icon: 'success' })
@@ -83,6 +99,7 @@ async function commit() {
 .field { margin-bottom: 22rpx; }
 .field text { display: block; margin-bottom: 10rpx; color: #606a80; font-size: 24rpx; }
 .field input, .field textarea { width: 100%; box-sizing: border-box; height: 78rpx; padding: 0 20rpx; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; }
+.picker-value { box-sizing: border-box; height: 78rpx; padding: 20rpx; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; color: #111827; }
 .field textarea { height: 140rpx; padding-top: 16rpx; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx; }
 .primary, .secondary { background: #2264d1; color: #fff; border-radius: 12rpx; }

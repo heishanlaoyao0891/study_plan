@@ -62,7 +62,8 @@ const restSuggestion = computed(() => {
 
 async function load() {
   try {
-    const today = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const month = today.slice(0, 7)
     const [w, d, s, e, b] = await Promise.all([
       StatsApi.weeklyReport(),

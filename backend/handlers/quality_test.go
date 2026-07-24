@@ -171,7 +171,9 @@ func TestAutoMigrateCreatesCriticalTablesAndIndexes(t *testing.T) {
 	for _, model := range []interface{}{
 		&models.User{},
 		&models.Plan{},
+		&models.PlanScheduleOverride{},
 		&models.DailyTask{},
+		&models.DailyMotivation{},
 		&models.Checkin{},
 		&models.StudyGroup{},
 		&models.OpsContent{},

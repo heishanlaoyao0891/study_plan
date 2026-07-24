@@ -15,6 +15,8 @@ type DailyTask struct {
 	Date             string     `gorm:"size:10;not null;index" json:"date"`
 	Title            string     `gorm:"size:128;not null" json:"title"`
 	Description      string     `gorm:"size:1024" json:"description"`
+	Objective        string     `gorm:"size:500" json:"objective"`
+	Reflection       string     `gorm:"size:500" json:"reflection,omitempty"`
 	Status           string     `gorm:"size:24;default:pending;not null" json:"status"`
 	SortOrder        int        `gorm:"default:0" json:"sort_order"`
 	PlannedStart     string     `gorm:"size:5" json:"planned_start,omitempty"`
@@ -28,6 +30,7 @@ type DailyTask struct {
 	ActualStart      *time.Time `json:"actual_start,omitempty"`
 	ActualEnd        *time.Time `json:"actual_end,omitempty"`
 	StudyMinutes     int        `gorm:"default:0" json:"study_minutes"`
+	StudySeconds     int        `gorm:"default:0" json:"study_seconds"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -41,6 +44,7 @@ type StudySession struct {
 	StartTime   time.Time  `json:"start_time"`
 	EndTime     *time.Time `json:"end_time,omitempty"`
 	DurationMin int        `gorm:"default:0" json:"duration_min"`
+	DurationSec int        `gorm:"default:0" json:"duration_seconds"`
 	Suspicious  bool       `gorm:"default:false" json:"suspicious"`
 	ReviewNote  string     `gorm:"size:256" json:"review_note,omitempty"`
 	Note        string     `gorm:"size:256" json:"note"`
@@ -62,3 +66,15 @@ type PostponeRecord struct {
 }
 
 func (PostponeRecord) TableName() string { return "postpone_records" }
+
+type DailyMotivation struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;not null" json:"user_id"`
+	Date      string    `gorm:"size:10;not null;index" json:"date"`
+	Text      string    `gorm:"size:128;not null" json:"text"`
+	Source    string    `gorm:"size:48;not null" json:"source"`
+	Origin    string    `gorm:"size:16;not null" json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (DailyMotivation) TableName() string { return "daily_motivations" }

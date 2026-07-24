@@ -31,12 +31,113 @@ export interface Plan {
   weekly_target_hours: number
   start_date?: string
   end_date?: string
+  default_planned_start: string
+  default_planned_end: string
+  study_weekdays: number[]
+  study_dates: string[]
+  schedule_overrides?: ScheduleOverride[]
   public_to_group: boolean
   ai_generated: boolean
   is_shared: boolean
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+export interface ScheduleOverride {
+  id?: number
+  plan_id?: number
+  weekday?: number
+  date?: string
+  planned_start: string
+  planned_end: string
+}
+
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+export type TimerState = 'pending' | 'running' | 'paused' | 'achieved' | 'completed'
+
+export interface StudySession {
+  id: number
+  task_id: number
+  user_id: number
+  start_time: string
+  end_time?: string
+  duration_min: number
+  duration_seconds: number
+}
+
+export interface DailyTask {
+  id: number
+  plan_id: number
+  user_id: number
+  date: string
+  title: string
+  description: string
+  objective: string
+  reflection?: string
+  status: TaskStatus
+  sort_order: number
+  planned_start?: string
+  planned_end?: string
+  estimated_minutes: number
+  difficulty?: string
+  public_to_group: boolean
+  needs_decision: boolean
+  actual_start?: string
+  actual_end?: string
+  study_minutes: number
+  study_seconds: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TimerTask extends DailyTask {
+  target_minutes: number
+  accumulated_seconds: number
+  active_session: StudySession | null
+  timer_state: TimerState
+  remaining_seconds: number
+  overtime_seconds: number
+}
+
+export interface PostponeRecord {
+  id: number
+  task_id: number
+  old_date: string
+  new_date: string
+  reason: string
+  created_at: string
+}
+
+export interface TaskDetail {
+  task: TimerTask
+  plan: Plan
+  history: PostponeRecord[]
+}
+
+export interface Motivation {
+  id: number
+  user_id: number
+  date: string
+  text: string
+  source: string
+  origin: 'ai' | 'library'
+  created_at: string
+}
+
+export interface PostponeTaskReq {
+  date: string
+  planned_start?: string
+  planned_end?: string
+  reason?: string
+  confirm_conflict?: boolean
+}
+
+export interface MakeupTaskReq {
+  actual_date: string
+  actual_start: string
+  actual_end: string
+  reason?: string
 }
 
 export interface StudyGroup {
@@ -74,11 +175,17 @@ export interface GroupMemberView {
 export interface CreatePlanReq {
   title: string
   description?: string
+  objective?: string
   weekly_target_hours?: number
   start_date?: string
   end_date?: string
   public_to_group?: boolean
   confirm_overload?: boolean
+  default_planned_start?: string
+  default_planned_end?: string
+  study_weekdays?: number[]
+  study_dates?: string[]
+  schedule_overrides?: ScheduleOverride[]
 }
 
 export interface CheckinInfo {
@@ -94,6 +201,9 @@ export interface CheckinInfo {
   estimated_minutes?: number
   needs_decision?: boolean
   completed: boolean
+  eligible: boolean
+  remaining_tasks: number
+  task: TimerTask
 }
 
 export interface CreateCheckinReq {
@@ -151,10 +261,10 @@ export const PlanApi = {
     return api.post<any>(`/api/plans/${id}/invite`, { user_id })
   },
   tasks(id: number) {
-    return api.get<any[]>(`/api/plans/${id}/tasks`)
+    return api.get<TimerTask[]>(`/api/plans/${id}/tasks`)
   },
-  createTask(id: number, data: { date: string; title: string; description?: string; sort_order?: number }) {
-    return api.post<any>(`/api/plans/${id}/tasks`, data)
+  createTask(id: number, data: { date: string; title: string; objective: string; description?: string; planned_start?: string; planned_end?: string; estimated_minutes?: number; difficulty?: string; public_to_group?: boolean; sort_order?: number }) {
+    return api.post<TimerTask>(`/api/plans/${id}/tasks`, data)
   },
   reorderTasks(id: number, task_ids: number[]) {
     return api.put<any>(`/api/plans/${id}/tasks/reorder`, { task_ids })
@@ -239,34 +349,49 @@ export const CheckinApi = {
 
 export const StudyTaskApi = {
   get(id: number) {
-    return api.get<any>(`/api/tasks/${id}`)
+    return api.get<TaskDetail>(`/api/tasks/${id}`)
   },
   start(id: number) {
-    return api.put<any>(`/api/tasks/${id}/start`)
+    return api.put<{ task: TimerTask; session: StudySession }>(`/api/tasks/${id}/start`)
   },
-  stop(id: number) {
-    return api.put<any>(`/api/tasks/${id}/stop`)
+  resume(id: number) {
+    return api.put<{ task: TimerTask; session: StudySession }>(`/api/tasks/${id}/resume`)
   },
-  complete(id: number) {
-    return api.put<any>(`/api/tasks/${id}/complete`)
+  pause(id: number) {
+    return api.put<{ task: TimerTask; session: StudySession | null }>(`/api/tasks/${id}/pause`)
   },
-  update(id: number, data: any) {
-    return api.put<any>(`/api/tasks/${id}`, data)
+  stop(id: number, reflection?: string) {
+    return api.put<TimerTask>(`/api/tasks/${id}/stop`, reflection === undefined ? {} : { reflection })
+  },
+  complete(id: number, reflection?: string) {
+    return api.put<TimerTask>(`/api/tasks/${id}/complete`, reflection === undefined ? {} : { reflection })
+  },
+  reflection(id: number, reflection: string) {
+    return api.put<DailyTask>(`/api/tasks/${id}/reflection`, { reflection })
+  },
+  update(id: number, data: Partial<Pick<DailyTask, 'date' | 'title' | 'description' | 'objective' | 'sort_order' | 'planned_start' | 'planned_end' | 'estimated_minutes' | 'difficulty' | 'public_to_group'>>) {
+    return api.put<DailyTask>(`/api/tasks/${id}`, data)
   },
   remove(id: number) {
     return api.delete<any>(`/api/tasks/${id}`)
   },
-  postpone(id: number, date: string, reason = '', planned_start = '', planned_end = '', confirm_conflict = false) {
-    return api.put<any>(`/api/tasks/${id}/postpone`, { date, reason, planned_start, planned_end, confirm_conflict })
+  postpone(id: number, data: PostponeTaskReq) {
+    return api.put<{ task: DailyTask; record: PostponeRecord }>(`/api/tasks/${id}/postpone`, data)
   },
-  makeup(id: number, actual_end: string, reason = '', actual_start = '') {
-    return api.put<any>(`/api/tasks/${id}/makeup`, { actual_start, actual_end, reason })
+  makeup(id: number, data: MakeupTaskReq) {
+    return api.put<{ task: DailyTask; makeup_cost_minutes: number }>(`/api/tasks/${id}/makeup`, data)
   },
   pendingDecision(date?: string) {
-    return api.get<any[]>(`/api/tasks/pending-decision${date ? `?date=${date}` : ''}`)
+    return api.get<DailyTask[]>(`/api/tasks/pending-decision${date ? `?date=${date}` : ''}`)
   },
   compensateMidnight() {
     return api.post<any>('/api/tasks/midnight-compensate', {})
+  },
+}
+
+export const MotivationApi = {
+  daily(date?: string) {
+    return api.get<Motivation>(`/api/motivation/daily${date ? `?date=${date}` : ''}`)
   },
 }
 
@@ -307,10 +432,10 @@ export const StatsApi = {
 }
 
 export const AIApi = {
-  generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[]; refinement?: string }) {
+  generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {
     return api.post<any>('/api/ai/generate-plan', data)
   },
-  regeneratePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; skip_dates?: string[]; refinement?: string }) {
+  regeneratePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {
     return api.post<any>('/api/ai/regenerate', data)
   },
   commitPlan(preview: any) {

@@ -101,7 +101,7 @@ func main() {
 		bound.PUT("/plans/:id/tasks/reorder", handlers.ReorderPlanTasks)
 		bound.PUT("/tasks/:id/start", handlers.StartTask)
 		bound.PUT("/tasks/:id/stop", handlers.StopTask)
-		bound.PUT("/tasks/:id/pause", handlers.StopTask)
+		bound.PUT("/tasks/:id/pause", handlers.PauseTask)
 		bound.PUT("/tasks/:id/resume", handlers.StartTask)
 		bound.PUT("/tasks/:id/extend", handlers.StartTask)
 		bound.GET("/tasks/:id", handlers.GetTask)
@@ -110,6 +110,8 @@ func main() {
 		bound.PUT("/tasks/:id/postpone", handlers.PostponeTask)
 		bound.PUT("/tasks/:id/makeup", handlers.MakeupTask)
 		bound.PUT("/tasks/:id/complete", handlers.CompleteTask)
+		bound.PUT("/tasks/:id/reflection", handlers.UpdateTaskReflection)
+		bound.GET("/motivation/daily", handlers.DailyMotivation)
 		bound.GET("/tasks/pending-decision", handlers.PendingDecisionTasks)
 		bound.POST("/tasks/midnight-compensate", handlers.CompensateMidnightTasks)
 

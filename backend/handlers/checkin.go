@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +20,7 @@ import (
 type checkinReq struct {
 	PlanID    uint   `json:"plan_id" binding:"required"`
 	Date      string `json:"date" binding:"required"` // YYYY-MM-DD
-	Completed *bool  `json:"completed"`              // nil=toggle, true=打勾, false=取消
+	Completed *bool  `json:"completed"`               // nil=toggle, true=打勾, false=取消
 }
 
 const dateLayout = "2006-01-02"
@@ -46,14 +49,17 @@ func ListCheckins(c *gin.Context) {
 		planIDs = append(planIDs, p.ID)
 	}
 	type checkinfo struct {
-		PlanID       uint   `json:"plan_id"`
-		TaskID       uint   `json:"task_id"`
-		Title        string `json:"title"`
-		Status       string `json:"status"`
-		TaskStatus   string `json:"task_status"`
-		Date         string `json:"date"`
-		StudyMinutes int    `json:"study_minutes"`
-		Completed    bool   `json:"completed"`
+		PlanID         uint           `json:"plan_id"`
+		TaskID         uint           `json:"task_id"`
+		Title          string         `json:"title"`
+		Status         string         `json:"status"`
+		TaskStatus     string         `json:"task_status"`
+		Date           string         `json:"date"`
+		StudyMinutes   int            `json:"study_minutes"`
+		Completed      bool           `json:"completed"`
+		Eligible       bool           `json:"eligible"`
+		RemainingTasks int            `json:"remaining_tasks"`
+		Task           *taskTimerView `json:"task,omitempty"`
 	}
 	out := make([]checkinfo, 0, len(plans))
 
@@ -70,20 +76,49 @@ func ListCheckins(c *gin.Context) {
 			}
 		}
 		for _, p := range plans {
-			task, err := ensureDailyTask(uid, p, date)
+			var tasks []models.DailyTask
+			err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, p.ID, date).Order("sort_order ASC, id ASC").Find(&tasks).Error
 			if err != nil {
-				api.Fail(c, http.StatusInternalServerError, "ensure daily task failed: "+err.Error())
+				api.Fail(c, http.StatusInternalServerError, "query daily tasks failed: "+err.Error())
+				return
+			}
+			if len(tasks) == 0 {
+				task, ensureErr := ensureDailyTask(uid, p, date)
+				if ensureErr == nil {
+					tasks = append(tasks, task)
+				} else if !errors.Is(ensureErr, gorm.ErrRecordNotFound) {
+					api.Fail(c, http.StatusInternalServerError, "ensure daily task failed: "+ensureErr.Error())
+					return
+				}
+			}
+			if len(tasks) == 0 {
+				continue
+			}
+			remaining := 0
+			studyMinutes := 0
+			for _, task := range tasks {
+				studyMinutes += task.StudyMinutes
+				if task.Status != models.TaskStatusCompleted {
+					remaining++
+				}
+			}
+			view, viewErr := buildTaskTimerView(tasks[0], time.Now())
+			if viewErr != nil {
+				api.Fail(c, http.StatusInternalServerError, viewErr.Error())
 				return
 			}
 			out = append(out, checkinfo{
-				PlanID:       p.ID,
-				TaskID:       task.ID,
-				Title:        p.Title,
-				Status:       p.Status,
-				TaskStatus:   task.Status,
-				Date:         date,
-				StudyMinutes: task.StudyMinutes,
-				Completed:    checked[p.ID],
+				PlanID:         p.ID,
+				TaskID:         tasks[0].ID,
+				Title:          p.Title,
+				Status:         p.Status,
+				TaskStatus:     tasks[0].Status,
+				Date:           date,
+				StudyMinutes:   studyMinutes,
+				Completed:      checked[p.ID],
+				Eligible:       remaining == 0,
+				RemainingTasks: remaining,
+				Task:           &view,
 			})
 		}
 	}
@@ -103,85 +138,90 @@ func ToggleCheckin(c *gin.Context) {
 		return
 	}
 
-	// 校验收计划归属
-	var plan models.Plan
-	if err := db.DB.First(&plan, req.PlanID).Error; err != nil {
-		api.Fail(c, http.StatusNotFound, "plan not found")
-		return
-	}
-	if plan.UserID != uid {
-		api.Fail(c, http.StatusForbidden, "not your plan")
-		return
-	}
-
 	newVal := true
 	if req.Completed != nil {
 		newVal = *req.Completed
 	}
-
-	// 查询现有记录
+	if !newVal {
+		api.Fail(c, http.StatusBadRequest, "completed check-in cannot be reopened")
+		return
+	}
 	var existing models.Checkin
-	err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&existing).Error
-	if err == nil && req.Completed == nil {
-		newVal = !existing.Completed
-	}
-	if newVal {
-		var task models.DailyTask
-		if err := db.DB.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&task).Error; err != nil {
-			api.Fail(c, http.StatusBadRequest, "daily task not found")
-			return
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		var plan models.Plan
+		if err := tx.First(&plan, req.PlanID).Error; err != nil {
+			return err
 		}
-		if task.Status != models.TaskStatusCompleted {
-			api.Fail(c, http.StatusBadRequest, "complete today's task before check-in")
-			return
+		if plan.UserID != uid {
+			return errNotPlanOwner
 		}
-	}
-
-	if err == gorm.ErrRecordNotFound {
-		existing = models.Checkin{
-			UserID:    uid,
-			PlanID:    req.PlanID,
-			Date:      req.Date,
-			Completed: newVal,
+		queryErr := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&existing).Error
+		if queryErr == nil && existing.Completed {
+			return nil
 		}
-		if e := db.DB.Transaction(func(tx *gorm.DB) error {
+		if queryErr != nil && !errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return queryErr
+		}
+		var total, remaining int64
+		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Count(&total).Error; err != nil {
+			return err
+		}
+		if total == 0 {
+			return errDailyTaskNotFound
+		}
+		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ? AND status <> ?", uid, req.PlanID, req.Date, models.TaskStatusCompleted).Count(&remaining).Error; err != nil {
+			return err
+		}
+		if remaining > 0 {
+			return fmt.Errorf("%w: %d", errTasksRemaining, remaining)
+		}
+		if errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			existing = models.Checkin{UserID: uid, PlanID: req.PlanID, Date: req.Date, Completed: true}
 			if err := tx.Create(&existing).Error; err != nil {
 				return err
 			}
-			if newVal {
-				if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusCompleted).Error; err != nil {
-					return err
-				}
-				return awardSlackIfNeeded(tx, uid, &existing)
-			}
-			return nil
-		}); e != nil {
-			api.Fail(c, http.StatusInternalServerError, "create checkin failed: "+e.Error())
-			return
-		}
-	} else if err != nil {
-		api.Fail(c, http.StatusInternalServerError, "query checkin failed: "+err.Error())
-		return
-	} else {
-		if e := db.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&existing).Update("completed", newVal).Error; err != nil {
+		} else {
+			if err := tx.Model(&existing).Update("completed", true).Error; err != nil {
 				return err
 			}
-			existing.Completed = newVal
-			if newVal {
-				if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusCompleted).Error; err != nil {
-					return err
-				}
-				return awardSlackIfNeeded(tx, uid, &existing)
-			}
-			return tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Update("status", models.TaskStatusPending).Error
-		}); e != nil {
-			api.Fail(c, http.StatusInternalServerError, "update checkin failed: "+e.Error())
+			existing.Completed = true
+		}
+		return awardSlackIfNeeded(tx, uid, &existing)
+	})
+	if err != nil && isUniqueConstraintError(err) {
+		if queryErr := db.DB.Where("user_id = ? AND plan_id = ? AND date = ? AND completed = ?", uid, req.PlanID, req.Date, true).First(&existing).Error; queryErr == nil {
+			api.OK(c, existing)
 			return
 		}
 	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		api.Fail(c, http.StatusNotFound, "plan not found")
+		return
+	}
+	if errors.Is(err, errNotPlanOwner) {
+		api.Fail(c, http.StatusForbidden, "not your plan")
+		return
+	}
+	if errors.Is(err, errDailyTaskNotFound) {
+		api.Fail(c, http.StatusBadRequest, "daily task not found")
+		return
+	}
+	if errors.Is(err, errTasksRemaining) {
+		api.Fail(c, http.StatusBadRequest, "complete today's tasks before check-in; remaining_tasks="+strings.TrimPrefix(err.Error(), errTasksRemaining.Error()+": "))
+		return
+	}
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "create checkin failed: "+err.Error())
+		return
+	}
 	api.OK(c, existing)
 }
+
+var (
+	errNotPlanOwner      = errors.New("not plan owner")
+	errDailyTaskNotFound = errors.New("daily task not found")
+	errTasksRemaining    = errors.New("tasks remaining")
+)
 
 // Streak 连续打卡天数（MVP：连续多少天所有 active 计划都打满了卡）
 func Streak(c *gin.Context) {

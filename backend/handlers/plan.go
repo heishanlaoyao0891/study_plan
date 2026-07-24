@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,23 +23,41 @@ const (
 )
 
 type createPlanReq struct {
-	Title             string `json:"title" binding:"required"`
-	Description       string `json:"description"`
-	WeeklyTargetHours int    `json:"weekly_target_hours"`
-	StartDate         string `json:"start_date"`
-	EndDate           string `json:"end_date"`
-	PublicToGroup     bool   `json:"public_to_group"`
-	ConfirmOverload   bool   `json:"confirm_overload"`
+	Title               string                `json:"title" binding:"required"`
+	Description         string                `json:"description"`
+	WeeklyTargetHours   int                   `json:"weekly_target_hours"`
+	StartDate           string                `json:"start_date"`
+	EndDate             string                `json:"end_date"`
+	PublicToGroup       bool                  `json:"public_to_group"`
+	ConfirmOverload     bool                  `json:"confirm_overload"`
+	Objective           string                `json:"objective"`
+	DefaultPlannedStart string                `json:"default_planned_start"`
+	DefaultPlannedEnd   string                `json:"default_planned_end"`
+	StudyWeekdays       []int                 `json:"study_weekdays"`
+	StudyDates          []string              `json:"study_dates"`
+	ScheduleOverrides   []scheduleOverrideReq `json:"schedule_overrides"`
+}
+
+type scheduleOverrideReq struct {
+	Weekday      int    `json:"weekday"`
+	Date         string `json:"date"`
+	PlannedStart string `json:"planned_start"`
+	PlannedEnd   string `json:"planned_end"`
 }
 
 type updatePlanReq struct {
-	Title             *string `json:"title"`
-	Description       *string `json:"description"`
-	WeeklyTargetHours *int    `json:"weekly_target_hours"`
-	StartDate         *string `json:"start_date"`
-	EndDate           *string `json:"end_date"`
-	Status            *string `json:"status"`
-	PublicToGroup     *bool   `json:"public_to_group"`
+	Title               *string                `json:"title"`
+	Description         *string                `json:"description"`
+	WeeklyTargetHours   *int                   `json:"weekly_target_hours"`
+	StartDate           *string                `json:"start_date"`
+	EndDate             *string                `json:"end_date"`
+	Status              *string                `json:"status"`
+	PublicToGroup       *bool                  `json:"public_to_group"`
+	DefaultPlannedStart *string                `json:"default_planned_start"`
+	DefaultPlannedEnd   *string                `json:"default_planned_end"`
+	StudyWeekdays       *[]int                 `json:"study_weekdays"`
+	StudyDates          *[]string              `json:"study_dates"`
+	ScheduleOverrides   *[]scheduleOverrideReq `json:"schedule_overrides"`
 }
 
 type shiftPlanReq struct {
@@ -56,7 +75,7 @@ func ListPlans(c *gin.Context) {
 	status := c.Query("status")
 
 	var plans []models.Plan
-	q := db.DB.Where("user_id = ?", uid)
+	q := db.DB.Preload("ScheduleOverrides").Where("user_id = ?", uid)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -75,6 +94,7 @@ func GetPlan(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	db.DB.Preload("ScheduleOverrides").First(plan, plan.ID)
 	api.OK(c, plan)
 }
 
@@ -93,31 +113,56 @@ func CreatePlan(c *gin.Context) {
 		return
 	}
 	if req.StartDate != "" && req.EndDate != "" {
-		if slotWarnings, slotErr := checkTaskSlotConflicts(uid, req.StartDate, req.EndDate, "20:00", "21:00"); slotErr == nil && len(slotWarnings) > 0 {
+		if slotWarnings, slotErr := checkTaskSlotConflicts(uid, req.StartDate, req.EndDate, defaultString(req.DefaultPlannedStart, defaultPlannedStart()), defaultString(req.DefaultPlannedEnd, defaultPlannedEnd())); slotErr == nil && len(slotWarnings) > 0 {
 			warnings = append(warnings, slotWarnings...)
 		} else if slotErr != nil {
 			api.Fail(c, http.StatusBadRequest, slotErr.Error())
 			return
 		}
 	}
+	if err := validatePlanSchedule(req.DefaultPlannedStart, req.DefaultPlannedEnd, req.StudyWeekdays, req.StudyDates, req.ScheduleOverrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validatePlanDates(req.StartDate, req.EndDate, req.StudyDates, req.ScheduleOverrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(req.StudyWeekdays) > 0 || len(req.StudyDates) > 0 {
+		if err := validateObjective(req.Title, req.Objective); err != nil {
+			api.Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	plan := models.Plan{
-		UserID:            uid,
-		Title:             req.Title,
-		Description:       req.Description,
-		WeeklyTargetHours: req.WeeklyTargetHours,
-		StartDate:         req.StartDate,
-		EndDate:           req.EndDate,
-		PublicToGroup:     req.PublicToGroup,
-		Status:            models.PlanStatusActive,
+		UserID:              uid,
+		Title:               req.Title,
+		Description:         req.Description,
+		WeeklyTargetHours:   req.WeeklyTargetHours,
+		StartDate:           req.StartDate,
+		EndDate:             req.EndDate,
+		PublicToGroup:       req.PublicToGroup,
+		Status:              models.PlanStatusActive,
+		DefaultPlannedStart: defaultString(req.DefaultPlannedStart, defaultPlannedStart()),
+		DefaultPlannedEnd:   defaultString(req.DefaultPlannedEnd, defaultPlannedEnd()),
+		StudyWeekdays:       req.StudyWeekdays,
+		StudyDates:          req.StudyDates,
 	}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
-		return generateTasksForPlan(tx, uid, plan)
+		if err := replaceScheduleOverrides(tx, plan.ID, req.ScheduleOverrides); err != nil {
+			return err
+		}
+		return generateTasksForPlan(tx, uid, plan, strings.TrimSpace(req.Objective))
 	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "create plan failed: "+err.Error())
+		return
+	}
+	if err := db.DB.Preload("ScheduleOverrides").First(&plan, plan.ID).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query created plan failed: "+err.Error())
 		return
 	}
 	api.Warn(c, plan, warnings)
@@ -158,16 +203,72 @@ func UpdatePlan(c *gin.Context) {
 	if req.PublicToGroup != nil {
 		updates["public_to_group"] = *req.PublicToGroup
 	}
-	if len(updates) == 0 {
+	if req.DefaultPlannedStart != nil {
+		updates["default_planned_start"] = *req.DefaultPlannedStart
+	}
+	if req.DefaultPlannedEnd != nil {
+		updates["default_planned_end"] = *req.DefaultPlannedEnd
+	}
+	if req.StudyWeekdays != nil {
+		updates["study_weekdays"] = *req.StudyWeekdays
+	}
+	if req.StudyDates != nil {
+		updates["study_dates"] = *req.StudyDates
+	}
+	start, end := plan.DefaultPlannedStart, plan.DefaultPlannedEnd
+	if req.DefaultPlannedStart != nil {
+		start = *req.DefaultPlannedStart
+	}
+	if req.DefaultPlannedEnd != nil {
+		end = *req.DefaultPlannedEnd
+	}
+	weekdays, dates := plan.StudyWeekdays, plan.StudyDates
+	if req.StudyWeekdays != nil {
+		weekdays = *req.StudyWeekdays
+	}
+	if req.StudyDates != nil {
+		dates = *req.StudyDates
+	}
+	overrides := make([]scheduleOverrideReq, 0, len(plan.ScheduleOverrides))
+	for _, row := range plan.ScheduleOverrides {
+		overrides = append(overrides, scheduleOverrideReq{Weekday: row.Weekday, Date: row.Date, PlannedStart: row.PlannedStart, PlannedEnd: row.PlannedEnd})
+	}
+	if req.ScheduleOverrides != nil {
+		overrides = *req.ScheduleOverrides
+	}
+	if err := validatePlanSchedule(start, end, weekdays, dates, overrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	startDate, endDate := plan.StartDate, plan.EndDate
+	if req.StartDate != nil {
+		startDate = *req.StartDate
+	}
+	if req.EndDate != nil {
+		endDate = *req.EndDate
+	}
+	if err := validatePlanDates(startDate, endDate, dates, overrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(updates) == 0 && req.ScheduleOverrides == nil {
 		api.OK(c, plan)
 		return
 	}
-	if err := db.DB.Model(&plan).Updates(updates).Error; err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&plan).Updates(updates).Error; err != nil {
+			return err
+		}
+		if req.ScheduleOverrides != nil {
+			return replaceScheduleOverrides(tx, plan.ID, *req.ScheduleOverrides)
+		}
+		return nil
+	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "update plan failed: "+err.Error())
 		return
 	}
 	// 返回最新数据
-	db.DB.First(&plan, plan.ID)
+	db.DB.Preload("ScheduleOverrides").First(&plan, plan.ID)
 	api.OK(c, plan)
 }
 
@@ -180,6 +281,9 @@ func DeletePlan(c *gin.Context) {
 	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		if e := tx.Where("plan_id = ?", plan.ID).Delete(&models.Checkin{}).Error; e != nil {
+			return e
+		}
+		if e := tx.Where("plan_id = ?", plan.ID).Delete(&models.PlanScheduleOverride{}).Error; e != nil {
 			return e
 		}
 		var taskIDs []uint
@@ -394,7 +498,7 @@ func mustGetOwnedPlan(c *gin.Context, uid uint) (*models.Plan, error) {
 		return nil, err
 	}
 	var plan models.Plan
-	if err := db.DB.First(&plan, pid).Error; err != nil {
+	if err := db.DB.Preload("ScheduleOverrides").First(&plan, pid).Error; err != nil {
 		api.Fail(c, http.StatusNotFound, "plan not found")
 		return nil, err
 	}
@@ -407,7 +511,7 @@ func mustGetOwnedPlan(c *gin.Context, uid uint) (*models.Plan, error) {
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan) error {
+func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan, objective string) error {
 	if plan.StartDate == "" || plan.EndDate == "" {
 		return nil
 	}
@@ -420,16 +524,26 @@ func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan) error {
 		return nil
 	}
 	order := 1
+	var overrides []models.PlanScheduleOverride
+	if err := tx.Where("plan_id = ?", plan.ID).Find(&overrides).Error; err != nil {
+		return err
+	}
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		date := d.Format(dateLayout)
+		if !planStudiesOn(plan, d) {
+			continue
+		}
+		plannedStart, plannedEnd := resolvePlanSchedule(plan, overrides, d)
 		task := models.DailyTask{
 			UserID:           uid,
 			PlanID:           plan.ID,
-			Date:             d.Format(dateLayout),
+			Date:             date,
 			Title:            plan.Title,
 			Description:      plan.Description,
-			PlannedStart:     "20:00",
-			PlannedEnd:       "21:00",
-			EstimatedMinutes: 60,
+			Objective:        objective,
+			PlannedStart:     plannedStart,
+			PlannedEnd:       plannedEnd,
+			EstimatedMinutes: plannedRangeMinutes(plannedStart, plannedEnd),
 			Difficulty:       "medium",
 			Status:           models.TaskStatusPending,
 			SortOrder:        order,
@@ -440,4 +554,161 @@ func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan) error {
 		order++
 	}
 	return nil
+}
+
+func validatePlanSchedule(start, end string, weekdays []int, dates []string, overrides []scheduleOverrideReq) error {
+	if start == "" {
+		start = defaultPlannedStart()
+	}
+	if end == "" {
+		end = defaultPlannedEnd()
+	}
+	if plannedRangeMinutes(start, end) <= 0 {
+		return errors.New("default planned time range is invalid")
+	}
+	seenWeekdays := map[int]bool{}
+	for _, day := range weekdays {
+		if day < 1 || day > 7 || seenWeekdays[day] {
+			return errors.New("study_weekdays must contain unique ISO weekdays 1..7")
+		}
+		seenWeekdays[day] = true
+	}
+	seenDates := map[string]bool{}
+	for _, date := range dates {
+		if _, err := time.Parse(dateLayout, date); err != nil {
+			return errors.New("study_dates must use YYYY-MM-DD")
+		}
+		if seenDates[date] {
+			return errors.New("study_dates must be unique")
+		}
+		seenDates[date] = true
+	}
+	seenOverrideWeekdays, seenOverrideDates := map[int]bool{}, map[string]bool{}
+	for _, row := range overrides {
+		if (row.Weekday == 0) == (row.Date == "") {
+			return errors.New("schedule override requires exactly one weekday or date")
+		}
+		if row.Weekday != 0 {
+			if row.Weekday < 1 || row.Weekday > 7 || seenOverrideWeekdays[row.Weekday] {
+				return errors.New("override weekdays must be unique ISO weekdays 1..7")
+			}
+			seenOverrideWeekdays[row.Weekday] = true
+		}
+		if row.Date != "" {
+			if _, err := time.Parse(dateLayout, row.Date); err != nil {
+				return errors.New("override date must use YYYY-MM-DD")
+			}
+			if seenOverrideDates[row.Date] {
+				return errors.New("override dates must be unique")
+			}
+			seenOverrideDates[row.Date] = true
+		}
+		if plannedRangeMinutes(row.PlannedStart, row.PlannedEnd) <= 0 {
+			return errors.New("schedule override time range is invalid")
+		}
+	}
+	return nil
+}
+
+func validatePlanDates(startDate, endDate string, studyDates []string, overrides []scheduleOverrideReq) error {
+	if (startDate == "") != (endDate == "") {
+		return errors.New("start_date and end_date must be provided together")
+	}
+	if startDate == "" {
+		return nil
+	}
+	start, err := time.Parse(dateLayout, startDate)
+	if err != nil {
+		return errors.New("invalid start_date, expect YYYY-MM-DD")
+	}
+	end, err := time.Parse(dateLayout, endDate)
+	if err != nil {
+		return errors.New("invalid end_date, expect YYYY-MM-DD")
+	}
+	if end.Before(start) {
+		return errors.New("end_date cannot be earlier than start_date")
+	}
+	for _, value := range studyDates {
+		date, _ := time.Parse(dateLayout, value)
+		if date.Before(start) || date.After(end) {
+			return errors.New("study_dates must be within the plan date range")
+		}
+	}
+	for _, row := range overrides {
+		if row.Date == "" {
+			continue
+		}
+		date, _ := time.Parse(dateLayout, row.Date)
+		if date.Before(start) || date.After(end) {
+			return errors.New("override dates must be within the plan date range")
+		}
+	}
+	return nil
+}
+
+func replaceScheduleOverrides(tx *gorm.DB, planID uint, rows []scheduleOverrideReq) error {
+	if err := tx.Where("plan_id = ?", planID).Delete(&models.PlanScheduleOverride{}).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		override := models.PlanScheduleOverride{PlanID: planID, Weekday: row.Weekday, Date: row.Date, PlannedStart: row.PlannedStart, PlannedEnd: row.PlannedEnd}
+		if err := tx.Create(&override).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func planStudiesOn(plan models.Plan, day time.Time) bool {
+	date := day.Format(dateLayout)
+	for _, selected := range plan.StudyDates {
+		if selected == date {
+			return true
+		}
+	}
+	weekday := int(day.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	for _, selected := range plan.StudyWeekdays {
+		if selected == weekday {
+			return true
+		}
+	}
+	return false
+}
+
+func resolvePlanSchedule(plan models.Plan, overrides []models.PlanScheduleOverride, day time.Time) (string, string) {
+	date := day.Format(dateLayout)
+	weekday := int(day.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	for _, row := range overrides {
+		if row.Date == date {
+			return row.PlannedStart, row.PlannedEnd
+		}
+	}
+	for _, row := range overrides {
+		if row.Date == "" && row.Weekday == weekday {
+			return row.PlannedStart, row.PlannedEnd
+		}
+	}
+	return defaultString(plan.DefaultPlannedStart, defaultPlannedStart()), defaultString(plan.DefaultPlannedEnd, defaultPlannedEnd())
+}
+
+func plannedRangeMinutes(start, end string) int {
+	s, err1 := time.Parse("15:04", strings.TrimSpace(start))
+	e, err2 := time.Parse("15:04", strings.TrimSpace(end))
+	if err1 != nil || err2 != nil || !e.After(s) {
+		return 0
+	}
+	return int(e.Sub(s).Minutes())
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

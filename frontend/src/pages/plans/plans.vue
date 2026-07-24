@@ -47,6 +47,7 @@
           <view class="status-pill" :class="p.status">{{ statusText(p.status) }}</view>
         </view>
         <view class="plan-desc" v-if="p.description">{{ p.description }}</view>
+        <view class="schedule-line">{{ weekdaySummary(p.study_weekdays) }} · {{ p.default_planned_start || '20:00' }}-{{ p.default_planned_end || '21:00' }}</view>
         <view class="metrics">
           <view class="metric">
             <view class="metric-num">{{ p.weekly_target_hours || 0 }}</view>
@@ -79,6 +80,10 @@
           <text class="label">计划说明</text>
           <textarea class="textarea" v-model="form.description" placeholder="可选，写下阶段目标或范围" />
         </view>
+        <view class="field" v-if="!editing">
+          <text class="label">每日任务目标</text>
+          <textarea class="textarea" v-model="form.objective" maxlength="500" placeholder="例如：完成 Go 接口章节并写出 2 个练习，需比计划名称更具体" />
+        </view>
         <view class="field">
           <text class="label">每周目标小时</text>
           <input class="input" v-model.number="form.weekly_target_hours" type="number" placeholder="例如：7" />
@@ -86,12 +91,29 @@
         <view class="grid-fields">
           <view class="field">
             <text class="label">开始日期</text>
-            <input class="input" v-model="form.start_date" placeholder="YYYY-MM-DD" />
+             <picker mode="date" :value="form.start_date" @change="setDate('start_date', $event)"><view class="picker-value">{{ form.start_date || '选择日期' }}</view></picker>
           </view>
           <view class="field">
             <text class="label">结束日期</text>
-            <input class="input" v-model="form.end_date" placeholder="YYYY-MM-DD" />
+             <picker mode="date" :value="form.end_date" :start="form.start_date" @change="setDate('end_date', $event)"><view class="picker-value">{{ form.end_date || '选择日期' }}</view></picker>
+           </view>
+         </view>
+        <view class="grid-fields">
+          <view class="field">
+            <text class="label">默认开始时间</text>
+            <picker mode="time" :value="form.default_planned_start" @change="setTime('default_planned_start', $event)"><view class="picker-value">{{ form.default_planned_start }}</view></picker>
           </view>
+          <view class="field">
+            <text class="label">默认结束时间</text>
+            <picker mode="time" :value="form.default_planned_end" @change="setTime('default_planned_end', $event)"><view class="picker-value">{{ form.default_planned_end }}</view></picker>
+          </view>
+        </view>
+        <view class="field">
+          <text class="label">学习工作日</text>
+          <view class="weekday-row">
+            <view v-for="day in weekdays" :key="day.value" class="weekday" :class="{ selected: (form.study_weekdays || []).includes(day.value) }" @click="toggleWeekday(day.value)">{{ day.label }}</view>
+          </view>
+          <view class="field-hint">仅在选中的日期生成任务</view>
         </view>
         <view class="confirm-row" v-if="!editing">
           <label class="confirm-label">
@@ -118,6 +140,7 @@
 import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { PlanApi, type Plan, type CreatePlanReq } from '@/api'
+import { addLocalDays, localDateKey } from '@/utils/date'
 
 interface FormState extends CreatePlanReq { confirm_overload?: boolean }
 
@@ -125,7 +148,8 @@ const plans = ref<Plan[]>([])
 const loading = ref(false)
 const showModal = ref(false)
 const editing = ref<Plan | null>(null)
-const form = reactive<FormState>({ title: '', description: '', weekly_target_hours: 7, start_date: '', end_date: '', confirm_overload: false, public_to_group: false })
+const weekdays = [{ value: 1, label: '一' }, { value: 2, label: '二' }, { value: 3, label: '三' }, { value: 4, label: '四' }, { value: 5, label: '五' }, { value: 6, label: '六' }, { value: 7, label: '日' }]
+const form = reactive<FormState>({ title: '', description: '', objective: '', weekly_target_hours: 7, start_date: '', end_date: '', default_planned_start: '20:00', default_planned_end: '21:00', study_weekdays: [1, 2, 3, 4, 5], confirm_overload: false, public_to_group: false })
 const activeCount = computed(() => plans.value.filter(p => p.status === 'active').length)
 const pausedCount = computed(() => plans.value.filter(p => p.status === 'paused').length)
 const totalWeeklyHours = computed(() => plans.value.filter(p => p.status === 'active').reduce((sum, p) => sum + (p.weekly_target_hours || 0), 0))
@@ -139,12 +163,16 @@ async function load() {
 
 function resetForm() {
   const start = new Date()
-  const end = new Date(Date.now() + 6 * 86400000)
+  const end = addLocalDays(start, 6)
   form.title = ''
   form.description = ''
+  form.objective = ''
   form.weekly_target_hours = 7
-  form.start_date = start.toISOString().slice(0, 10)
-  form.end_date = end.toISOString().slice(0, 10)
+  form.start_date = localDateKey(start)
+  form.end_date = localDateKey(end)
+  form.default_planned_start = '20:00'
+  form.default_planned_end = '21:00'
+  form.study_weekdays = [1, 2, 3, 4, 5]
   form.confirm_overload = false
   form.public_to_group = false
 }
@@ -159,9 +187,13 @@ function openEdit(p: Plan) {
   editing.value = p
   form.title = p.title
   form.description = p.description || ''
+  form.objective = ''
   form.weekly_target_hours = p.weekly_target_hours || 0
   form.start_date = p.start_date || ''
   form.end_date = p.end_date || ''
+  form.default_planned_start = p.default_planned_start || '20:00'
+  form.default_planned_end = p.default_planned_end || '21:00'
+  form.study_weekdays = [...(p.study_weekdays || [])]
   form.confirm_overload = false
   form.public_to_group = !!p.public_to_group
   showModal.value = true
@@ -174,6 +206,18 @@ async function save() {
     uni.showToast({ title: '请输入计划名称', icon: 'none' })
     return
   }
+  if (!editing.value && !form.objective?.trim()) {
+    uni.showToast({ title: '请输入具体的每日任务目标', icon: 'none' })
+    return
+  }
+  if (!form.study_weekdays?.length) {
+    uni.showToast({ title: '请至少选择一个学习日', icon: 'none' })
+    return
+  }
+  if (form.default_planned_start! >= form.default_planned_end!) {
+    uni.showToast({ title: '结束时间须晚于开始时间', icon: 'none' })
+    return
+  }
   try {
     if (editing.value) {
       await PlanApi.update(editing.value.id, {
@@ -182,6 +226,9 @@ async function save() {
         weekly_target_hours: form.weekly_target_hours,
         start_date: form.start_date,
         end_date: form.end_date,
+        default_planned_start: form.default_planned_start,
+        default_planned_end: form.default_planned_end,
+        study_weekdays: form.study_weekdays,
         public_to_group: form.public_to_group,
       })
       uni.showToast({ title: '已保存', icon: 'success' })
@@ -252,12 +299,12 @@ async function batchShift(p: Plan) {
     return
   }
   const startRes = await new Promise<any>(resolve => {
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+    const tomorrow = localDateKey(addLocalDays(new Date(), 1))
     uni.showModal({ title: '起始日期', editable: true, placeholderText: tomorrow, success: resolve })
   })
   if (!startRes.confirm) return
   try {
-    await PlanApi.shift(p.id, days, startRes.content || new Date(Date.now() + 86400000).toISOString().slice(0, 10))
+    await PlanApi.shift(p.id, days, startRes.content || localDateKey(addLocalDays(new Date(), 1)))
     uni.showToast({ title: '已批量平移', icon: 'success' })
     await load()
   } catch (e: any) {
@@ -285,6 +332,13 @@ async function invite(p: Plan) {
 }
 
 function statusText(s: string) { return s === 'paused' ? '暂停' : s === 'archived' ? '归档' : '进行' }
+function setDate(field: 'start_date' | 'end_date', event: any) { form[field] = event.detail.value }
+function setTime(field: 'default_planned_start' | 'default_planned_end', event: any) { form[field] = event.detail.value }
+function toggleWeekday(value: number) {
+  const selected = form.study_weekdays || []
+  form.study_weekdays = selected.includes(value) ? selected.filter(day => day !== value) : [...selected, value].sort()
+}
+function weekdaySummary(selected: number[] = []) { return selected.length === 7 ? '每天' : selected.length ? `周${selected.map(day => weekdays.find(row => row.value === day)?.label).join('、')}` : '未设置学习日' }
 function goSchedule() { uni.navigateTo({ url: '/pages/schedule/schedule' }) }
 function goGroup() { uni.navigateTo({ url: '/pages/group/group' }) }
 function goRecovery() { uni.navigateTo({ url: '/pages/recovery/recovery' }) }
@@ -327,6 +381,7 @@ onShow(load)
 .status-pill { min-width: 76rpx; text-align: center; padding: 8rpx 0; border-radius: 99rpx; color: #ff6f91; background: #fff0f6; font-size: 22rpx; font-weight: 800; }
 .status-pill.paused { color: #9a5b00; background: #fff7e6; }
 .plan-desc { margin-top: 14rpx; color: #606a80; font-size: 25rpx; line-height: 1.5; }
+.schedule-line { margin-top: 12rpx; color: #ff6f91; font-size: 23rpx; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; margin-top: 22rpx; }
 .metric { padding: 20rpx; border-radius: 12rpx; background: #f8fafc; }
 .metric-num { color: #111827; font-size: 30rpx; font-weight: 800; }
@@ -347,6 +402,11 @@ onShow(load)
 .input, .textarea { box-sizing: border-box; width: 100%; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; color: #111827; font-size: 27rpx; }
 .input { height: 80rpx; padding: 0 20rpx; }
 .textarea { height: 138rpx; padding: 18rpx 20rpx; }
+.picker-value { box-sizing: border-box; height: 80rpx; line-height: 80rpx; padding: 0 20rpx; border: 1rpx solid #dbe2ee; border-radius: 12rpx; background: #f9fbff; color: #111827; font-size: 27rpx; }
+.weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10rpx; }
+.weekday { height: 64rpx; line-height: 64rpx; border-radius: 50%; background: #f3f6fb; color: #606a80; font-size: 24rpx; text-align: center; }
+.weekday.selected { background: #ff7aa2; color: #fff; font-weight: 800; }
+.field-hint { margin-top: 10rpx; color: #8a92a6; font-size: 21rpx; }
 .confirm-row { margin: 8rpx 0 24rpx; color: #606a80; font-size: 24rpx; }
 .confirm-label { display: flex; align-items: center; gap: 10rpx; }
 .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }

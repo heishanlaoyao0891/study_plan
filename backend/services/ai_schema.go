@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type PlanValidationError struct {
@@ -71,6 +72,21 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 		}
 		if strings.TrimSpace(task.Title) == "" {
 			return PlanValidationError{Message: fmt.Sprintf("task %s missing title", task.Date)}
+		}
+		objective := strings.TrimSpace(task.Objective)
+		if objective == "" {
+			return PlanValidationError{Message: fmt.Sprintf("task %s missing objective", task.Date)}
+		}
+		if strings.EqualFold(objective, strings.TrimSpace(task.Title)) {
+			return PlanValidationError{Message: fmt.Sprintf("task %s objective must be more specific than title", task.Date)}
+		}
+		if len([]rune(objective)) > 500 {
+			return PlanValidationError{Message: fmt.Sprintf("task %s objective is too long", task.Date)}
+		}
+		start, startErr := time.Parse("15:04", task.PlannedStart)
+		end, endErr := time.Parse("15:04", task.PlannedEnd)
+		if startErr != nil || endErr != nil || !end.After(start) {
+			return PlanValidationError{Message: fmt.Sprintf("task %s has invalid planned time range", task.Date)}
 		}
 	}
 	return nil

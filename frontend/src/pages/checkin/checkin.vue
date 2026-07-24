@@ -22,6 +22,12 @@
       <view class="wallet-value">{{ slackBalance }}<text> 分钟</text></view>
     </view>
 
+    <view class="motivation-panel" v-if="motivation">
+      <view class="motivation-label">每日寄语</view>
+      <view class="motivation-text">{{ motivation.text }}</view>
+      <view class="motivation-source">{{ motivation.source }}</view>
+    </view>
+
     <view class="progress-panel">
       <view class="progress-head">
         <view>
@@ -41,8 +47,8 @@
           <view class="decision-meta">仍处于学习中，需结束或推迟</view>
         </view>
         <view class="decision-actions">
-          <button @click="makeup(task)">补录</button>
-          <button @click="postpone(task)">推迟</button>
+          <button @click="openCorrection(task, 'makeup')">补录</button>
+          <button @click="openCorrection(task, 'postpone')">推迟</button>
         </view>
       </view>
     </view>
@@ -62,41 +68,90 @@
       <view
         class="item"
         v-for="item in checkins"
-        :key="item.plan_id"
+        :key="item.task_id"
         :class="{ done: item.completed, disabled: item.status === 'paused' }"
+        @click="openDetail(item)"
       >
         <view class="state-dot"><view class="state-inner" /></view>
         <view class="item-main">
-          <view class="item-title">{{ item.title }}</view>
-          <view class="item-meta">{{ item.status === 'paused' ? '计划已暂停' : item.completed ? '今日已完成' : statusText(item) }}</view>
-          <view class="item-meta">已学习 {{ item.study_minutes || 0 }} 分钟</view>
+          <view class="item-title">{{ item.task.title || item.title }}</view>
+          <view
+            v-if="item.task.timer_state !== 'completed'"
+            class="objective"
+            :class="{ collapsed: !expandedTasks.has(item.task_id) }"
+            @click.stop="toggleObjective(item.task_id)"
+          >{{ item.task.objective || '暂未填写任务目标' }}</view>
+          <view class="expand-link" v-if="item.task.timer_state !== 'completed' && item.task.objective" @click.stop="toggleObjective(item.task_id)">{{ expandedTasks.has(item.task_id) ? '收起' : '展开目标' }}</view>
+          <view class="item-meta">{{ item.status === 'paused' ? '计划已暂停' : item.completed ? '今日已打卡' : statusText(item) }}</view>
+          <view class="item-meta" v-if="item.task.timer_state !== 'completed'">计划 {{ item.task.planned_start || '--:--' }}-{{ item.task.planned_end || '--:--' }} · {{ timerText(item.task) }}</view>
+          <view class="item-meta">累计 {{ durationText(accumulatedSeconds(item.task)) }}</view>
         </view>
-        <view class="button-stack" v-if="item.status !== 'paused'">
-          <button class="task-btn" v-if="item.task_status !== 'in_progress' && !item.completed" @click.stop="start(item)">开始</button>
-          <button class="task-btn warn" v-if="item.task_status === 'in_progress'" @click.stop="stop(item)">结束</button>
-          <button class="task-btn done-btn" v-if="!item.completed" @click.stop="complete(item)">完成</button>
+        <view class="button-stack">
+          <button class="task-btn" v-if="item.status !== 'paused' && item.task.timer_state === 'pending'" @click.stop="start(item)">开始</button>
+          <button class="task-btn warn" v-if="item.status !== 'paused' && item.task.timer_state === 'running'" @click.stop="pause(item)">暂停</button>
+          <button class="task-btn" v-if="item.status !== 'paused' && item.task.timer_state === 'paused'" @click.stop="resume(item)">继续</button>
+          <button class="task-btn done-btn" v-if="item.status !== 'paused' && item.task.timer_state === 'achieved'" @click.stop="openCompletion(item, false)">完成</button>
+          <button class="task-btn more" v-if="item.status !== 'paused' && item.task.timer_state !== 'completed'" @click.stop="openMore(item)">更多</button>
+          <button class="task-btn checkin-btn" :disabled="!item.eligible || item.completed || item.status === 'paused'" @click.stop="checkin(item)">{{ checkinLabel(item) }}</button>
         </view>
-        <view class="state-text" v-else>暂停</view>
       </view>
     </view>
 
     <view class="loading" v-if="loading">加载中...</view>
+
+    <view class="modal" v-if="completionItem" @click.self="cancelCompletion">
+      <view class="modal-body">
+        <view class="modal-title">{{ completionEarly ? '结束本次学习' : '完成任务' }}</view>
+        <view class="completion-summary">{{ completionItem.task.objective || '暂未填写任务目标' }}</view>
+        <view class="completion-time">本次累计 {{ durationText(accumulatedSeconds(completionItem.task)) }}</view>
+        <textarea class="reflection-input" v-model="reflection" maxlength="500" placeholder="写下今天的收获或下一步（可选）" />
+        <view class="char-count">{{ reflection.length }}/500</view>
+        <button class="submit" @click="submitCompletion(true)">保存心得并完成</button>
+        <button class="skip" @click="submitCompletion(false)">跳过，直接完成</button>
+        <button class="cancel" @click="cancelCompletion">取消</button>
+      </view>
+    </view>
+
+    <view class="modal" v-if="correctionItem" @click.self="closeCorrection">
+      <view class="modal-body">
+        <view class="modal-title">{{ correctionMode === 'makeup' ? '补录学习' : '推迟任务' }}</view>
+        <view class="picker-grid">
+          <view class="picker-field"><text>日期</text><picker mode="date" :value="correction.date" @change="setCorrection('date', $event)"><view class="picker-value">{{ correction.date }}</view></picker></view>
+          <view class="picker-field"><text>开始</text><picker mode="time" :value="correction.start" @change="setCorrection('start', $event)"><view class="picker-value">{{ correction.start }}</view></picker></view>
+          <view class="picker-field"><text>结束</text><picker mode="time" :value="correction.end" @change="setCorrection('end', $event)"><view class="picker-value">{{ correction.end }}</view></picker></view>
+        </view>
+        <view class="correction-summary">{{ correction.date }} {{ correction.start }}-{{ correction.end }}</view>
+        <button class="submit" @click="submitCorrection()">确认{{ correctionMode === 'makeup' ? '补录' : '推迟' }}</button>
+        <button class="cancel" @click="closeCorrection">取消</button>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import { CheckinApi, SlackApi, StudyTaskApi, type CheckinInfo } from '@/api'
+import { ref, computed, onUnmounted } from 'vue'
+import { onHide, onShow } from '@dcloudio/uni-app'
+import { CheckinApi, MotivationApi, SlackApi, StudyTaskApi, type CheckinInfo, type DailyTask, type Motivation, type TimerTask } from '@/api'
+import { addLocalDays, localDateKey } from '@/utils/date'
 
-const today = new Date()
-const todayStr = today.toISOString().slice(0, 10)
-const todayText = `${today.getMonth() + 1}月${today.getDate()}日`
+const todayStr = ref('')
+const todayText = ref('')
 const checkins = ref<CheckinInfo[]>([])
 const loading = ref(false)
 const streak = ref<number | null>(null)
 const slackBalance = ref(0)
-const pendingTasks = ref<any[]>([])
+const pendingTasks = ref<DailyTask[]>([])
+const motivation = ref<Motivation | null>(null)
+const now = ref(Date.now())
+const snapshotAt = ref(Date.now())
+const expandedTasks = ref(new Set<number>())
+const completionItem = ref<CheckinInfo | null>(null)
+const completionEarly = ref(false)
+const reflection = ref('')
+const correctionItem = ref<DailyTask | null>(null)
+const correctionMode = ref<'makeup' | 'postpone'>('postpone')
+const correction = ref({ date: '', start: '20:00', end: '21:00' })
+let ticker: ReturnType<typeof setInterval> | null = null
 const doneCount = computed(() => checkins.value.filter(c => c.completed).length)
 const totalCount = computed(() => checkins.value.length)
 const percent = computed(() => totalCount.value === 0 ? 0 : Math.round((doneCount.value / totalCount.value) * 100))
@@ -104,13 +159,18 @@ const percent = computed(() => totalCount.value === 0 ? 0 : Math.round((doneCoun
 async function load() {
   loading.value = true
   try {
-    const [list, s, slack] = await Promise.all([
-      CheckinApi.listByDate(todayStr),
+    const [list, s, slack, message, pending] = await Promise.all([
+      CheckinApi.listByDate(todayStr.value),
       CheckinApi.streak().catch(() => null),
       SlackApi.balance().catch(() => null),
+      MotivationApi.daily(todayStr.value).catch(() => null),
+      StudyTaskApi.pendingDecision(todayStr.value).catch(() => []),
     ])
     checkins.value = list || []
-    pendingTasks.value = await StudyTaskApi.pendingDecision(todayStr).catch(() => [])
+    pendingTasks.value = pending
+    motivation.value = message
+    snapshotAt.value = Date.now()
+    expandedTasks.value = new Set(checkins.value.filter(item => item.task.timer_state === 'running').map(item => item.task_id))
     if (s) streak.value = s.streak
     if (slack) slackBalance.value = slack.balance
   } catch (e: any) {
@@ -120,16 +180,15 @@ async function load() {
   }
 }
 
-async function toggle(item: CheckinInfo) {
+async function checkin(item: CheckinInfo) {
   if (item.status === 'paused') {
     uni.showToast({ title: '该计划已暂停', icon: 'none' })
     return
   }
   try {
-    await CheckinApi.toggle({ plan_id: item.plan_id, date: todayStr, completed: !item.completed })
-    item.completed = !item.completed
-    const s = await CheckinApi.streak().catch(() => null)
-    if (s) streak.value = s.streak
+    await CheckinApi.toggle({ plan_id: item.plan_id, date: todayStr.value, completed: true })
+    await load()
+    uni.showToast({ title: '今日打卡完成', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '打卡失败', icon: 'none' })
   }
@@ -144,73 +203,151 @@ async function start(item: CheckinInfo) {
   }
 }
 
-async function stop(item: CheckinInfo) {
+async function pause(item: CheckinInfo) {
   try {
-    await StudyTaskApi.stop(item.task_id)
+    await StudyTaskApi.pause(item.task_id)
     await load()
   } catch (e: any) {
-    uni.showToast({ title: e?.message || '结束失败', icon: 'none' })
+    uni.showToast({ title: e?.message || '暂停失败', icon: 'none' })
   }
 }
 
-async function complete(item: CheckinInfo) {
+async function resume(item: CheckinInfo) {
   try {
-    await StudyTaskApi.complete(item.task_id)
+    await StudyTaskApi.resume(item.task_id)
     await load()
-    uni.showToast({ title: '完成并累积躺平时间', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '继续失败', icon: 'none' })
+  }
+}
+
+function openCompletion(item: CheckinInfo, early: boolean) {
+  completionItem.value = item
+  completionEarly.value = early
+  reflection.value = ''
+}
+
+function cancelCompletion() {
+  completionItem.value = null
+  reflection.value = ''
+}
+
+async function submitCompletion(saveReflection: boolean) {
+  const item = completionItem.value
+  if (!item) return
+  try {
+    const note = saveReflection ? reflection.value.trim() : undefined
+    if (completionEarly.value) await StudyTaskApi.stop(item.task_id, note)
+    else await StudyTaskApi.complete(item.task_id, note)
+    cancelCompletion()
+    await load()
+    uni.showToast({ title: '任务已完成', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '完成失败', icon: 'none' })
   }
 }
 
-async function makeup(task: any) {
-  const res = await new Promise<any>(resolve => {
-    uni.showModal({ title: '补录结束时间', editable: true, placeholderText: `${todayStr} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`, success: resolve })
-  })
-  if (!res.confirm) return
-  try {
-    const parsed = parseMakeup(task, res.content || `${todayStr} ${task.planned_start || '20:00'}-${task.planned_end || '21:00'}`)
-    await StudyTaskApi.makeup(task.id, parsed.end, '手动补录', parsed.start)
-    await load()
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '补录失败', icon: 'none' })
-  }
-}
-
-async function postpone(task: any) {
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  const res = await new Promise<any>(resolve => {
-    uni.showModal({ title: '推迟任务', editable: true, placeholderText: tomorrow, success: resolve })
-  })
-  if (!res.confirm) return
-  try {
-    await StudyTaskApi.postpone(task.id, res.content || tomorrow, '手动推迟')
-    await load()
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '推迟失败', icon: 'none' })
-  }
-}
-
 function statusText(item: CheckinInfo) {
-  return item.task_status === 'in_progress' ? '学习中' : item.study_minutes > 0 ? '已记录学习' : '等待开始'
+  const labels = { pending: '等待开始', running: '学习中', paused: '已暂停', achieved: '目标已达成', completed: '已完成' }
+  return labels[item.task.timer_state]
 }
 
-function parseMakeup(task: any, value: string) {
-  const raw = value.trim()
-  if (raw.includes('-')) {
-    const [date, range = task.planned_end || '21:00-22:00'] = raw.split(/\s+/)
-    const [startTime = task.planned_start || '20:00', endTime = task.planned_end || '21:00'] = range.split('-')
-    return { start: `${date} ${startTime}`, end: `${date} ${endTime}` }
+function checkinLabel(item: CheckinInfo) {
+  if (item.completed) return '今日已打卡'
+  if (item.remaining_tasks > 0) return `还剩 ${item.remaining_tasks} 项`
+  return '完成今日打卡'
+}
+
+function accumulatedSeconds(task: TimerTask) {
+  return task.accumulated_seconds + (task.timer_state === 'running' ? Math.max(0, Math.floor((now.value - snapshotAt.value) / 1000)) : 0)
+}
+
+function timerText(task: TimerTask) {
+  const remaining = task.target_minutes * 60 - accumulatedSeconds(task)
+  return remaining >= 0 ? `剩余 ${durationText(remaining)}` : `超时 ${durationText(-remaining)}`
+}
+
+function durationText(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const secs = safe % 60
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : `${minutes}:${String(secs).padStart(2, '0')}`
+}
+
+function toggleObjective(id: number) {
+  const next = new Set(expandedTasks.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedTasks.value = next
+}
+
+function openMore(item: CheckinInfo) {
+  uni.showActionSheet({
+    itemList: ['结束本次学习', '推迟任务', '补录学习', '查看详情'],
+    success: ({ tapIndex }) => {
+      if (tapIndex === 0) openCompletion(item, item.task.timer_state !== 'achieved')
+      if (tapIndex === 1) openCorrection(item.task, 'postpone')
+      if (tapIndex === 2) openCorrection(item.task, 'makeup')
+      if (tapIndex === 3) openDetail(item)
+    },
+  })
+}
+
+function openCorrection(task: DailyTask, mode: 'makeup' | 'postpone') {
+  correctionItem.value = task
+  correctionMode.value = mode
+  correction.value = {
+    date: mode === 'postpone' ? localDateKey(addLocalDays(new Date(), 1)) : task.date,
+    start: task.planned_start || '20:00',
+    end: task.planned_end || '21:00',
   }
-  return { start: `${task.date} ${task.planned_start || '20:00'}`, end: raw }
+}
+
+function setCorrection(field: 'date' | 'start' | 'end', event: any) {
+  correction.value[field] = event.detail.value
+}
+
+function closeCorrection() { correctionItem.value = null }
+
+async function submitCorrection(confirmConflict = false) {
+  const task = correctionItem.value
+  if (!task) return
+  const value = correction.value
+  try {
+    if (correctionMode.value === 'makeup') {
+      await StudyTaskApi.makeup(task.id, { actual_date: value.date, actual_start: `${value.date} ${value.start}`, actual_end: `${value.date} ${value.end}`, reason: '手动补录' })
+    } else {
+      await StudyTaskApi.postpone(task.id, { date: value.date, planned_start: value.start, planned_end: value.end, reason: '手动推迟', confirm_conflict: confirmConflict })
+    }
+    closeCorrection()
+    await load()
+  } catch (e: any) {
+    if (correctionMode.value === 'postpone' && e?.code === 409 && !confirmConflict) {
+      uni.showModal({ title: '时间冲突', content: '目标时段已有任务，仍要推迟吗？', success: result => { if (result.confirm) submitCorrection(true) } })
+      return
+    }
+    uni.showToast({ title: e?.message || '操作失败', icon: 'none' })
+  }
 }
 
 function goPlans() {
   uni.switchTab({ url: '/pages/plans/plans' })
 }
 
-onMounted(load)
-onShow(load)
+function openDetail(item: CheckinInfo) { uni.navigateTo({ url: `/pages/task/task?id=${item.task_id}` }) }
+function startTicker() {
+  if (ticker) clearInterval(ticker)
+  ticker = setInterval(() => { now.value = Date.now() }, 1000)
+}
+function stopTicker() { if (ticker) clearInterval(ticker); ticker = null }
+function refreshToday() {
+  const today = new Date()
+  todayStr.value = localDateKey(today)
+  todayText.value = `${today.getMonth() + 1}月${today.getDate()}日`
+}
+onShow(() => { refreshToday(); now.value = Date.now(); startTicker(); load() })
+onHide(stopTicker)
+onUnmounted(stopTicker)
 </script>
 
 <style lang="scss">
@@ -262,6 +399,10 @@ onShow(load)
 .wallet-desc { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
 .wallet-value { color: #ff6f91; font-size: 38rpx; font-weight: 900; }
 .wallet-value text { font-size: 22rpx; font-weight: 600; }
+.motivation-panel { position: relative; margin-top: 18rpx; padding: 24rpx 30rpx; border-radius: 28rpx; background: #fffdf7; border: 1rpx solid #ffe4af; }
+.motivation-label { color: #c87818; font-size: 22rpx; font-weight: 800; }
+.motivation-text { margin-top: 8rpx; color: #4b2b3f; font-size: 27rpx; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.motivation-source { margin-top: 6rpx; color: #9a7a55; font-size: 21rpx; text-align: right; }
 .progress-panel {
   margin-top: 24rpx;
   padding: 30rpx;
@@ -314,6 +455,9 @@ onShow(load)
 .done .state-inner { background: #ff7aa2; }
 .item-main { flex: 1; min-width: 0; }
 .item-title { color: #111827; font-size: 30rpx; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.objective { margin-top: 10rpx; color: #4b5568; font-size: 24rpx; line-height: 1.45; }
+.objective.collapsed { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.expand-link { margin-top: 4rpx; color: #ff6f91; font-size: 21rpx; }
 .item-meta { margin-top: 8rpx; color: #7b8498; font-size: 23rpx; }
 .state-text { color: #ff6f91; font-size: 25rpx; font-weight: 700; }
 .button-stack { display: flex; flex-direction: column; gap: 8rpx; width: 112rpx; }
@@ -329,9 +473,24 @@ onShow(load)
 }
 .task-btn.warn { background: #fff7e6; color: #9a5b00; }
 .task-btn.done-btn { background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; }
+.task-btn.more { background: #f3f6fb; color: #606a80; }
+.task-btn.checkin-btn { background: #4da982; color: #fff; }
 .empty { margin-top: 22rpx; padding: 56rpx 34rpx; border-radius: 28rpx; background: #fff; border: 1rpx solid #ffe0ea; box-shadow: 0 14rpx 32rpx rgba(255, 143, 171, .10); }
 .empty-title { color: #111827; font-size: 32rpx; font-weight: 800; }
 .empty-desc { margin-top: 12rpx; color: #7b8498; font-size: 26rpx; line-height: 1.5; }
 .primary-btn { margin-top: 32rpx; background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; border-radius: 999rpx; }
 .loading { text-align: center; color: #7b8498; margin-top: 34rpx; }
+.modal { position: fixed; inset: 0; z-index: 99; display: flex; align-items: flex-end; background: rgba(17,24,39,.46); }
+.modal-body { width: 100%; box-sizing: border-box; padding: 34rpx 30rpx 42rpx; border-radius: 28rpx 28rpx 0 0; background: #fff; }
+.modal-title { color: #111827; font-size: 34rpx; font-weight: 800; }
+.completion-summary, .completion-time, .correction-summary { margin-top: 14rpx; color: #606a80; font-size: 24rpx; line-height: 1.5; }
+.reflection-input { width: 100%; height: 180rpx; box-sizing: border-box; margin-top: 22rpx; padding: 18rpx; border-radius: 16rpx; background: #f8fafc; font-size: 26rpx; }
+.char-count { margin: 8rpx 0 18rpx; color: #8a92a6; font-size: 22rpx; text-align: right; }
+.submit, .skip, .cancel { margin-top: 14rpx; border-radius: 999rpx; font-size: 27rpx; }
+.submit { background: linear-gradient(135deg, #ff7aa2, #ffb45c); color: #fff; }
+.skip { background: #fff0f6; color: #ff6f91; }
+.cancel { background: #f3f6fb; color: #606a80; }
+.picker-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12rpx; margin-top: 24rpx; }
+.picker-field text { display: block; margin-bottom: 8rpx; color: #7b8498; font-size: 22rpx; }
+.picker-value { padding: 20rpx 10rpx; border-radius: 12rpx; background: #f8fafc; color: #111827; font-size: 24rpx; text-align: center; }
 </style>

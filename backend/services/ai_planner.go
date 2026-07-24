@@ -13,13 +13,14 @@ const aiPlanDateLayout = "2006-01-02"
 const defaultMaxPreviewDays = 30
 
 type PlanGenerationInput struct {
-	UserID      uint
-	Goal        string
-	HoursPerDay int
-	Days        int
-	StartDate   string
-	SkipDates   []string
-	Refinement  string
+	UserID            uint
+	Goal              string
+	HoursPerDay       int
+	Days              int
+	StartDate         string
+	AvailableTimeSlot string
+	SkipDates         []string
+	Refinement        string
 }
 
 type LearningProfile struct {
@@ -41,12 +42,12 @@ type RecentTaskOutcomes struct {
 }
 
 type PlanningContext struct {
-	Input             PlanGenerationInput `json:"input"`
-	LearningProfile   LearningProfile     `json:"learning_profile"`
-	ActivePlanLoad    ActivePlanLoad      `json:"active_plan_load"`
-	RecentTaskOutcomes RecentTaskOutcomes `json:"recent_task_outcomes"`
-	ConflictingDates   []string           `json:"conflicting_dates"`
-	Prompt             string             `json:"prompt"`
+	Input              PlanGenerationInput `json:"input"`
+	LearningProfile    LearningProfile     `json:"learning_profile"`
+	ActivePlanLoad     ActivePlanLoad      `json:"active_plan_load"`
+	RecentTaskOutcomes RecentTaskOutcomes  `json:"recent_task_outcomes"`
+	ConflictingDates   []string            `json:"conflicting_dates"`
+	Prompt             string              `json:"prompt"`
 }
 
 type PlanPreview struct {
@@ -62,6 +63,7 @@ type PlanPreviewTask struct {
 	PlannedStart     string `json:"planned_start"`
 	PlannedEnd       string `json:"planned_end"`
 	Title            string `json:"title"`
+	Objective        string `json:"objective"`
 	Description      string `json:"description"`
 	EstimatedMinutes int    `json:"estimated_minutes"`
 	Difficulty       string `json:"difficulty"`
@@ -92,10 +94,11 @@ func BuildPlanningContext(input PlanGenerationInput) (PlanningContext, error) {
 
 func BuildPlanningPrompt(ctx PlanningContext) string {
 	return fmt.Sprintf(
-		"You are a study planning agent. Return only JSON for an editable plan preview. Goal: %s. Days: %d. Hours per day: %d. Completion rate: %.2f. Average study minutes: %d. Active plans: %d. Weekly target hours: %d. Postponed tasks: %d. Conflicting dates: %s. Respect skip dates and max 30 days.",
+		"You are a study planning agent. Return only JSON for an editable plan preview with title, summary, estimated_total_hours, rationale, and tasks. Each task must include date, planned_start, planned_end, title, objective, description, estimated_minutes, and difficulty. Goal: %s. Days: %d. Hours per day: %d. Available time slot: %s. Completion rate: %.2f. Average study minutes: %d. Active plans: %d. Weekly target hours: %d. Postponed tasks: %d. Conflicting dates: %s. Respect skip dates and max 30 days.",
 		ctx.Input.Goal,
 		boundedDays(ctx.Input.Days),
 		ctx.Input.HoursPerDay,
+		defaultString(ctx.Input.AvailableTimeSlot, "20:00-21:00"),
 		ctx.LearningProfile.CompletionRate,
 		ctx.LearningProfile.AverageStudyMins,
 		ctx.ActivePlanLoad.ActivePlanCount,
@@ -188,24 +191,49 @@ func CheckScheduleConflicts(userID uint, dates []string) ([]string, error) {
 
 func FallbackPlanPreview(ctx PlanningContext) PlanPreview {
 	input := ctx.Input
-	minutes := maxInt(input.HoursPerDay, 1) * 60
-	if ctx.LearningProfile.CompletionRate > 0 && ctx.LearningProfile.CompletionRate < 0.6 {
-		minutes = maxInt(minutes*3/4, 30)
-	}
+	plannedStart, plannedEnd := fallbackTimeSlot(input.AvailableTimeSlot, input.HoursPerDay)
+	startTime, _ := time.Parse("15:04", plannedStart)
+	endTime, _ := time.Parse("15:04", plannedEnd)
+	minutes := int(endTime.Sub(startTime).Minutes())
 	dates := previewDateList(input)
 	tasks := make([]PlanPreviewTask, 0, len(dates))
 	for i, date := range dates {
 		tasks = append(tasks, PlanPreviewTask{
 			Date:             date,
-			PlannedStart:     "20:00",
-			PlannedEnd:       "21:00",
+			PlannedStart:     plannedStart,
+			PlannedEnd:       plannedEnd,
 			Title:            fmt.Sprintf("Day %d: %s", i+1, input.Goal),
+			Objective:        fmt.Sprintf("完成%s的第%d个可验证学习单元并记录要点", input.Goal, i+1),
 			Description:      fmt.Sprintf("Focus on a concrete subtopic for %s and record blockers after study.", input.Goal),
 			EstimatedMinutes: minutes,
 			Difficulty:       fallbackDifficulty(ctx.LearningProfile.CompletionRate),
 		})
 	}
 	return PlanPreview{Title: input.Goal, Summary: "Rule-based fallback preview", EstimatedTotalHours: float64(minutes*len(tasks)) / 60, Rationale: fallbackRationale(ctx), Tasks: tasks}
+}
+
+func fallbackTimeSlot(slot string, hoursPerDay int) (string, string) {
+	parts := strings.Split(strings.TrimSpace(slot), "-")
+	if len(parts) == 2 {
+		start, startErr := time.Parse("15:04", strings.TrimSpace(parts[0]))
+		end, endErr := time.Parse("15:04", strings.TrimSpace(parts[1]))
+		if startErr == nil && endErr == nil && end.After(start) {
+			return start.Format("15:04"), end.Format("15:04")
+		}
+	}
+	start, _ := time.Parse("15:04", "20:00")
+	end := start.Add(time.Duration(maxInt(hoursPerDay, 1)) * time.Hour)
+	if end.Day() != start.Day() {
+		end, _ = time.Parse("15:04", "23:59")
+	}
+	return start.Format("15:04"), end.Format("15:04")
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func previewDateList(input PlanGenerationInput) []string {

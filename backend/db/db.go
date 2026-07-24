@@ -33,6 +33,7 @@ func AutoMigrate() error {
 		&models.User{},
 		&models.Plan{},
 		&models.PlanMember{},
+		&models.PlanScheduleOverride{},
 		&models.StudyGroup{},
 		&models.StudyGroupMember{},
 		&models.StudyGroupInvitation{},
@@ -40,6 +41,7 @@ func AutoMigrate() error {
 		&models.DailyTask{},
 		&models.StudySession{},
 		&models.PostponeRecord{},
+		&models.DailyMotivation{},
 		&models.Checkin{},
 		&models.SlackConfig{},
 		&models.SlackRecord{},
@@ -63,8 +65,22 @@ func AutoMigrate() error {
 	).Error; err != nil {
 		return err
 	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_schedule_override_weekday ON plan_schedule_overrides (plan_id, weekday) WHERE weekday > 0").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_schedule_override_date ON plan_schedule_overrides (plan_id, date) WHERE date <> ''").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_motivations_user_date ON daily_motivations (user_id, date)").Error; err != nil {
+		return err
+	}
 	if err := DB.Exec(
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_tasks_user_plan_date ON daily_tasks (user_id, plan_id, date)",
+	).Error; err != nil {
+		return err
+	}
+	if err := DB.Exec(
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_study_sessions_active_task ON study_sessions (task_id) WHERE end_time IS NULL",
 	).Error; err != nil {
 		return err
 	}

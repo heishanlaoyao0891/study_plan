@@ -14,12 +14,13 @@ import (
 )
 
 type generatePlanReq struct {
-	Goal        string   `json:"goal" binding:"required"`
-	HoursPerDay int      `json:"hours_per_day"`
-	Days        int      `json:"days"`
-	StartDate   string   `json:"start_date"`
-	SkipDates   []string `json:"skip_dates"`
-	Refinement  string   `json:"refinement"`
+	Goal              string   `json:"goal" binding:"required"`
+	HoursPerDay       int      `json:"hours_per_day"`
+	Days              int      `json:"days"`
+	StartDate         string   `json:"start_date"`
+	AvailableTimeSlot string   `json:"available_time_slot"`
+	SkipDates         []string `json:"skip_dates"`
+	Refinement        string   `json:"refinement"`
 }
 
 type commitAIPlanReq struct {
@@ -56,20 +57,39 @@ func GeneratePlan(c *gin.Context) {
 	if req.HoursPerDay <= 0 {
 		req.HoursPerDay = 1
 	}
-	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, SkipDates: req.SkipDates, Refinement: req.Refinement})
+	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, AvailableTimeSlot: req.AvailableTimeSlot, SkipDates: req.SkipDates, Refinement: req.Refinement})
 	if err != nil {
 		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
 		api.Fail(c, http.StatusInternalServerError, "build planning context failed: "+err.Error())
 		return
 	}
-	preview := services.FallbackPlanPreview(ctx)
+	preview := services.PlanPreview{}
+	mode := "ai"
+	_, provider, providerErr := services.CurrentAIProvider()
+	if providerErr == nil {
+		raw, generateErr := provider.Generate(ctx.Prompt, 4096)
+		if generateErr == nil {
+			preview, err = services.ParsePlanPreviewJSON(raw)
+			if err != nil {
+				services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", "invalid provider response: "+err.Error())
+				api.Fail(c, http.StatusBadGateway, "AI returned an invalid plan: "+err.Error())
+				return
+			}
+		} else {
+			mode = "fallback"
+			preview = services.FallbackPlanPreview(ctx)
+		}
+	} else {
+		mode = "fallback"
+		preview = services.FallbackPlanPreview(ctx)
+	}
 	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
 		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
-		api.Fail(c, http.StatusInternalServerError, "fallback preview validation failed: "+err.Error())
+		api.Fail(c, http.StatusBadGateway, "AI plan validation failed: "+err.Error())
 		return
 	}
-	services.RecordAIGenerationUsage(uid, cfg.Provider, "success", "fallback preview generated")
-	api.OK(c, gin.H{"preview": preview, "mode": "fallback", "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
+	services.RecordAIGenerationUsage(uid, cfg.Provider, "success", mode+" preview generated")
+	api.OK(c, gin.H{"preview": preview, "mode": mode, "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
 }
 
 func CommitAIPlan(c *gin.Context) {
@@ -84,14 +104,18 @@ func CommitAIPlan(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid preview: "+err.Error())
 		return
 	}
-	plan := models.Plan{UserID: uid, Title: req.Preview.Title, Description: req.Preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: int(req.Preview.EstimatedTotalHours), AIGenerated: true}
+	first, last := req.Preview.Tasks[0], req.Preview.Tasks[len(req.Preview.Tasks)-1]
+	plan := models.Plan{UserID: uid, Title: req.Preview.Title, Description: req.Preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: int(req.Preview.EstimatedTotalHours), AIGenerated: true, StartDate: first.Date, EndDate: last.Date, DefaultPlannedStart: first.PlannedStart, DefaultPlannedEnd: first.PlannedEnd}
+	for _, previewTask := range req.Preview.Tasks {
+		plan.StudyDates = append(plan.StudyDates, previewTask.Date)
+	}
 	var tasks []models.DailyTask
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
 		for i, previewTask := range req.Preview.Tasks {
-			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Description: previewTask.Description, SortOrder: i, PlannedStart: previewTask.PlannedStart, PlannedEnd: previewTask.PlannedEnd, EstimatedMinutes: previewTask.EstimatedMinutes, Difficulty: previewTask.Difficulty, Status: models.TaskStatusPending}
+			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Objective: previewTask.Objective, Description: previewTask.Description, SortOrder: i, PlannedStart: previewTask.PlannedStart, PlannedEnd: previewTask.PlannedEnd, EstimatedMinutes: previewTask.EstimatedMinutes, Difficulty: previewTask.Difficulty, Status: models.TaskStatusPending}
 			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
