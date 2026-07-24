@@ -17,9 +17,9 @@ func StatsCalendar(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	month := c.Query("month")
 	if month == "" {
-		month = time.Now().Format("2006-01")
+		month = shanghaiNow().Format("2006-01")
 	}
-	start, err := time.Parse("2006-01", month)
+	start, err := time.ParseInLocation("2006-01", month, shanghaiNow().Location())
 	if err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid month")
 		return
@@ -36,17 +36,21 @@ func StatsCalendar(c *gin.Context) {
 		date := d.Format(dateLayout)
 		var minutes int64
 		db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date = ?", uid, date).Select("COALESCE(SUM(study_minutes),0)").Scan(&minutes)
-		var completed, total int64
-		db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).Count(&completed)
-		db.DB.Model(&models.Plan{}).Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Count(&total)
-		out = append(out, row{Date: date, StudyMinutes: int(minutes), Completed: int(completed), Total: int(total)})
+		var completed, taskCount int64
+		db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).Count(&completed)
+		db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date = ?", uid, date).Count(&taskCount)
+		total := 0
+		if taskCount > 0 {
+			total = 1
+		}
+		out = append(out, row{Date: date, StudyMinutes: int(minutes), Completed: int(completed), Total: total})
 	}
 	api.OK(c, out)
 }
 
 func DailyDistribution(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	date := c.DefaultQuery("date", time.Now().Format(dateLayout))
+	date := c.DefaultQuery("date", shanghaiToday())
 	type row struct {
 		PlanID       uint   `json:"plan_id"`
 		Title        string `json:"title"`
@@ -63,7 +67,7 @@ func DailyDistribution(c *gin.Context) {
 
 func WeeklyReport(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	now := time.Now()
+	now := shanghaiNow()
 	year, _ := strconv.Atoi(c.DefaultQuery("year", strconv.Itoa(now.Year())))
 	week, _ := strconv.Atoi(c.DefaultQuery("week", strconv.Itoa(weekNumber(now))))
 	start := firstDayOfISOWeek(year, week)
@@ -73,9 +77,10 @@ func WeeklyReport(c *gin.Context) {
 
 func MonthlyReport(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	year, _ := strconv.Atoi(c.DefaultQuery("year", strconv.Itoa(time.Now().Year())))
-	month, _ := strconv.Atoi(c.DefaultQuery("month", strconv.Itoa(int(time.Now().Month()))))
-	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.Local)
+	now := shanghaiNow()
+	year, _ := strconv.Atoi(c.DefaultQuery("year", strconv.Itoa(now.Year())))
+	month, _ := strconv.Atoi(c.DefaultQuery("month", strconv.Itoa(int(now.Month()))))
+	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, now.Location())
 	end := start.AddDate(0, 1, 0)
 	reportRange(c, uid, start, end)
 }
@@ -84,9 +89,9 @@ func SlackDistribution(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	month := c.Query("month")
 	if month == "" {
-		month = time.Now().Format("2006-01")
+		month = shanghaiNow().Format("2006-01")
 	}
-	start, err := time.Parse("2006-01", month)
+	start, err := time.ParseInLocation("2006-01", month, shanghaiNow().Location())
 	if err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid month")
 		return
@@ -110,8 +115,8 @@ func EfficiencyStats(c *gin.Context) {
 	if days <= 0 || days > 366 {
 		days = 30
 	}
-	start := time.Now().AddDate(0, 0, -days+1).Format(dateLayout)
-	today := time.Now().Format(dateLayout)
+	start := shanghaiNow().AddDate(0, 0, -days+1).Format(dateLayout)
+	today := shanghaiToday()
 	var total, completed int64
 	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date <= ?", uid, start, today).Count(&total)
 	db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date >= ? AND date <= ? AND status = ?", uid, start, today, models.TaskStatusCompleted).Count(&completed)
@@ -133,15 +138,15 @@ func EfficiencyStats(c *gin.Context) {
 		Where("user_id = ? AND date >= ? AND date <= ?", uid, start, today).
 		Group("date").Order("date ASC").Scan(&trend)
 	api.OK(c, gin.H{
-		"days":              days,
-		"start":             start,
-		"end":               today,
-		"total_tasks":       total,
-		"completed_tasks":   completed,
-		"completion_rate":   completionRate,
-		"study_minutes":     minutes,
+		"days":                days,
+		"start":               start,
+		"end":                 today,
+		"total_tasks":         total,
+		"completed_tasks":     completed,
+		"completion_rate":     completionRate,
+		"study_minutes":       minutes,
 		"avg_minutes_per_day": int(minutes) / days,
-		"trend":             trend,
+		"trend":               trend,
 	})
 }
 
@@ -151,13 +156,13 @@ func reportRange(c *gin.Context, uid uint, start, end time.Time) {
 	var slackMinutes int64
 	db.DB.Model(&models.SlackRecord{}).Where("user_id = ? AND start_time >= ? AND start_time < ?", uid, start, end).Select("COALESCE(SUM(duration_min),0)").Scan(&slackMinutes)
 	var completed int64
-	db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date >= ? AND date < ? AND completed = ?", uid, start.Format(dateLayout), end.Format(dateLayout), true).Count(&completed)
+	db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND date >= ? AND date < ? AND completed = ?", uid, start.Format(dateLayout), end.Format(dateLayout), true).Count(&completed)
 	api.OK(c, gin.H{
-		"start":              start.Format(dateLayout),
-		"end":                end.AddDate(0, 0, -1).Format(dateLayout),
+		"start":               start.Format(dateLayout),
+		"end":                 end.AddDate(0, 0, -1).Format(dateLayout),
 		"total_study_minutes": studyMinutes,
-		"slack_minutes":      slackMinutes,
-		"completed_checkins": completed,
+		"slack_minutes":       slackMinutes,
+		"completed_checkins":  completed,
 	})
 }
 
@@ -167,7 +172,7 @@ func weekNumber(t time.Time) int {
 }
 
 func firstDayOfISOWeek(year int, week int) time.Time {
-	date := time.Date(year, 1, 4, 0, 0, 0, 0, time.Local)
+	date := time.Date(year, 1, 4, 0, 0, 0, 0, shanghaiNow().Location())
 	isoWeekday := int(date.Weekday())
 	if isoWeekday == 0 {
 		isoWeekday = 7

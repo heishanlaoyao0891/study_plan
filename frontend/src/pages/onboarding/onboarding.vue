@@ -1,8 +1,8 @@
 <template>
   <view class="page">
     <view class="hero">
-      <view class="title">开始使用</view>
-      <view class="subtitle">先把提醒、计划和今日任务串起来。</view>
+      <view class="title">欢迎来到学习花园</view>
+      <view class="subtitle">从一个目标开始，把它变成今天能完成的小步。</view>
     </view>
 
     <view class="step" v-if="!reminderDismissed">
@@ -16,8 +16,9 @@
 
     <view class="step">
       <view class="step-title">第一步：创建计划</view>
-      <view class="step-desc">先建一个明确目标，系统会按天生成任务。</view>
-      <button class="secondary" @click="goPlans">去创建</button>
+      <view class="step-desc">告诉 AI 你的学习目标，它会拆成有日期和时段的任务。</view>
+      <button class="primary wide" @click="goAI">AI 生成第一个计划</button>
+      <button class="secondary wide" @click="goPlans">手动创建</button>
     </view>
 
     <view class="step">
@@ -26,10 +27,7 @@
       <button class="secondary" @click="goCheckin">去查看</button>
     </view>
 
-    <view class="footer-actions">
-      <button class="ghost" @click="complete">完成引导</button>
-      <button class="ghost" @click="goBind">返回绑定</button>
-    </view>
+    <button class="ghost finish" @click="complete">完成引导</button>
   </view>
 </template>
 
@@ -43,8 +41,8 @@ onLoad(() => { reminderDismissed.value = !!uni.getStorageSync('onboarding_remind
 
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 function goPlans() { uni.switchTab({ url: '/pages/plans/plans' }) }
+function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goCheckin() { uni.switchTab({ url: '/pages/checkin/checkin' }) }
-function goBind() { uni.reLaunch({ url: '/pages/bind/bind' }) }
 function dismissReminder() { uni.setStorageSync('onboarding_reminder_dismissed', true); reminderDismissed.value = true }
 function complete() { uni.setStorageSync('onboarding_completed', true); uni.reLaunch({ url: '/pages/checkin/checkin' }) }
 </script>
@@ -60,5 +58,6 @@ function complete() { uni.setStorageSync('onboarding_completed', true); uni.reLa
 .primary { background: #111827; color: #fff; }
 .secondary { background: #eef4ff; color: #2264d1; }
 .ghost { background: #f3f6fb; color: #384257; }
-.footer-actions { margin-top: 20rpx; }
+.wide { margin-top: 16rpx; }
+.finish { margin-top: 20rpx; }
 </style>

@@ -56,7 +56,7 @@ function afterLogin(resp: LoginResp) {
   setToken(resp.token)
   uni.showToast({ title: '登录成功', icon: 'success' })
   const onboardingDone = !!uni.getStorageSync('onboarding_completed')
-  const url = onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding'
+  const url = resp.nickname_required ? '/pages/nickname/nickname' : (onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding')
   setTimeout(() => uni.reLaunch({ url }), 300)
 }
 
@@ -82,7 +82,7 @@ async function mockLogin() {
   errMsg.value = ''
   try {
     setApiBase(apiBase.value.trim())
-    const resp = await AuthApi.login(mockCode.value, '测试用户', '')
+    const resp = await AuthApi.login(mockCode.value, '', '')
     afterLogin(resp)
   } catch (e: any) {
     errMsg.value = e?.message || 'mock 登录失败'

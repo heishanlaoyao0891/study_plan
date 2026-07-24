@@ -85,21 +85,21 @@ export async function request<T = any>(path: string, options: RequestOptions = {
         }
         if (status === 403) {
           const data = res.data || {}
-          if (data.phone_required) {
-            uni.reLaunch({ url: '/pages/bind/bind' })
+          if (data.nickname_required || data.data?.nickname_required) {
+            uni.reLaunch({ url: '/pages/nickname/nickname' })
           }
           return reject({ code: 403, message: data.message || '无权访问', raw: data } as ApiError)
         }
         if (status >= 400) {
           const data = res.data || {}
-          return reject({ code: status, message: data.message || '请求失败' } as ApiError)
+          return reject({ code: status, message: data.message || '请求失败', raw: data.data || data } as ApiError)
         }
         const body: ApiResp<T> = res.data || {}
         if (body.code !== 0) {
-          if ((body as any).phone_required) {
-            uni.reLaunch({ url: '/pages/bind/bind' })
+          if ((body as any).nickname_required || (body.data as any)?.nickname_required) {
+            uni.reLaunch({ url: '/pages/nickname/nickname' })
           }
-          return reject({ code: body.code, message: body.message || '业务错误' } as ApiError)
+          return reject({ code: body.code, message: body.message || '业务错误', raw: body.data || body } as ApiError)
         }
         resolve(body.data as T)
       },

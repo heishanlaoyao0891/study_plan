@@ -54,7 +54,7 @@ func Load() *Config {
 		ArchiveDriver:          getEnv("ARCHIVE_DRIVER", "mysql"),
 		ArchiveDSN:             getEnv("ARCHIVE_DSN", ""),
 		ArchiveIntervalMinutes: getEnvInt("ARCHIVE_INTERVAL_MINUTES", 5),
-		ArchiveTables:          getEnv("ARCHIVE_TABLES", "users,plans,daily_tasks,checkins,study_sessions,slack_records"),
+		ArchiveTables:          getEnv("ARCHIVE_TABLES", "users,plans,daily_tasks,checkins,daily_checkins,study_sessions,slack_records"),
 	}
 	if !mockExplicit && !App.IsProduction() && (App.WeChatAppID == "" || App.WeChatSecret == "") {
 		App.WeChatLoginMock = true

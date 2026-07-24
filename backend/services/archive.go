@@ -46,6 +46,7 @@ func archiveOnce() {
 		&models.Plan{},
 		&models.DailyTask{},
 		&models.Checkin{},
+		&models.DailyCheckin{},
 		&models.StudySession{},
 		&models.SlackRecord{},
 	); err != nil {
@@ -80,6 +81,8 @@ func archiveTable(dst *gorm.DB, table string) error {
 		return upsertAll(dst, "daily_tasks", &[]models.DailyTask{})
 	case "checkins":
 		return upsertAll(dst, "checkins", &[]models.Checkin{})
+	case "daily_checkins":
+		return upsertAll(dst, "daily_checkins", &[]models.DailyCheckin{})
 	case "study_sessions":
 		return upsertAll(dst, "study_sessions", &[]models.StudySession{})
 	case "slack_records":

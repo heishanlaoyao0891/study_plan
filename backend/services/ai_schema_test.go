@@ -1,6 +1,9 @@
 package services
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestValidatePlanPreviewRejectsSkippedDates(t *testing.T) {
 	preview := PlanPreview{
@@ -39,5 +42,17 @@ func TestFallbackPlanPreviewUsesAvailableTimeSlot(t *testing.T) {
 	preview := FallbackPlanPreview(PlanningContext{Input: PlanGenerationInput{Goal: "Study Go", Days: 1, HoursPerDay: 2, StartDate: "2026-07-20", AvailableTimeSlot: "09:00-11:00"}})
 	if len(preview.Tasks) != 1 || preview.Tasks[0].PlannedStart != "09:00" || preview.Tasks[0].PlannedEnd != "11:00" || preview.Tasks[0].EstimatedMinutes != 120 {
 		t.Fatalf("expected available slot to define task timing: %+v", preview.Tasks)
+	}
+}
+
+func TestDecodeCompletionContentPreservesStructuredJSON(t *testing.T) {
+	raw := json.RawMessage(`{"title":"Study Go","metadata":{"source":"model"}}`)
+	content, err := decodeCompletionContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil || decoded["title"] != "Study Go" {
+		t.Fatalf("structured content was not preserved: %q, %v", content, err)
 	}
 }

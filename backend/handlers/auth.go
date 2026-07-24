@@ -10,10 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"study_plan_backend/api"
 	"study_plan_backend/config"
 	"study_plan_backend/db"
+	"study_plan_backend/identity"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
@@ -26,9 +28,19 @@ type loginReq struct {
 }
 
 type loginResp struct {
-	Token string      `json:"token"`
-	User  models.User `json:"user"`
+	Token            string      `json:"token"`
+	User             models.User `json:"user"`
+	NicknameRequired bool        `json:"nickname_required"`
 }
+
+type updateNicknameReq struct {
+	Nickname string `json:"nickname" binding:"required"`
+}
+
+var userSearchLimits = struct {
+	sync.Mutex
+	Items map[uint][]time.Time
+}{Items: map[uint][]time.Time{}}
 
 type adminLoginReq struct {
 	Username string `json:"username" binding:"required"`
@@ -82,18 +94,17 @@ func Login(c *gin.Context) {
 	err = db.DB.Where("open_id = ?", s.OpenID).First(&user).Error
 
 	if err == gorm.ErrRecordNotFound {
-		// 新用户：自动注册；首名注册用户设为 admin
-		user = models.User{
-			OpenID:    s.OpenID,
-			Nickname:  req.Nickname,
-			AvatarURL: req.AvatarURL,
-			Role:      models.RoleUser,
+		targetID, targetErr := identity.NewInviteTargetID()
+		if targetErr != nil {
+			api.Fail(c, http.StatusInternalServerError, "create invitation identity failed: "+targetErr.Error())
+			return
 		}
-		// 检查是否已有用户
-		var count int64
-		db.DB.Model(&models.User{}).Count(&count)
-		if count == 0 {
-			user.Role = models.RoleAdmin
+		// WeChat users never receive administrative privileges implicitly.
+		user = models.User{
+			OpenID:         s.OpenID,
+			AvatarURL:      req.AvatarURL,
+			InviteTargetID: targetID,
+			Role:           models.RoleUser,
 		}
 		if err := db.DB.Create(&user).Error; err != nil {
 			api.Fail(c, http.StatusInternalServerError, "create user failed: "+err.Error())
@@ -127,13 +138,9 @@ func Login(c *gin.Context) {
 			user.BannedUntil = nil
 			user.BannedReason = ""
 		}
-		// 客户端可每次刷新昵称/头像
-		if req.Nickname != "" || req.AvatarURL != "" {
+		// WeChat login does not authoritatively provide the application nickname.
+		if req.AvatarURL != "" {
 			updates := map[string]interface{}{}
-			if req.Nickname != "" {
-				updates["nickname"] = req.Nickname
-				user.Nickname = req.Nickname
-			}
 			if req.AvatarURL != "" {
 				updates["avatar_url"] = req.AvatarURL
 				user.AvatarURL = req.AvatarURL
@@ -147,7 +154,7 @@ func Login(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
 	}
-	api.OK(c, loginResp{Token: token, User: user})
+	api.OK(c, loginResp{Token: token, User: user, NicknameRequired: user.NicknameNormalized == ""})
 }
 
 func AdminLogin(c *gin.Context) {
@@ -194,7 +201,87 @@ func AdminLogin(c *gin.Context) {
 	db.DB.Model(&cred).Update("last_login_at", &now)
 	clearAdminLoginFailure(key)
 	recordAdminAudit(cred.User.ID, nil, "admin_login", "")
-	api.OK(c, loginResp{Token: token, User: cred.User})
+	api.OK(c, loginResp{Token: token, User: cred.User, NicknameRequired: false})
+}
+
+func UpdateNickname(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req updateNicknameReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	display, key, err := identity.Validate(req.Nickname)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	if err := db.DB.Model(&user).Updates(map[string]interface{}{"nickname": display, "nickname_normalized": key}).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			api.Conflict(c, "nickname is already in use", gin.H{"nickname_conflict": true})
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "update nickname failed: "+err.Error())
+		return
+	}
+	user.Nickname, user.NicknameNormalized = display, key
+	api.OK(c, user)
+}
+
+func SearchUsers(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	query := identity.Normalize(c.Query("q"))
+	if len([]rune(query)) < 2 {
+		api.Fail(c, http.StatusBadRequest, "search query must contain at least 2 characters")
+		return
+	}
+	if !allowUserSearch(uid, time.Now()) {
+		api.Fail(c, http.StatusTooManyRequests, "too many searches, try again later")
+		return
+	}
+	escaped := escapeLikePattern(query)
+	contains, prefix := "%"+escaped+"%", escaped+"%"
+	var users []models.User
+	if err := db.DB.Where("id <> ? AND account_status = ? AND nickname_normalized <> '' AND (banned_until IS NULL OR banned_until <= ?) AND nickname_normalized LIKE ? ESCAPE '\\'", uid, models.AccountStatusActive, time.Now(), contains).
+		Order(clause.Expr{SQL: "CASE WHEN nickname_normalized = ? THEN 0 WHEN nickname_normalized LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, nickname_normalized ASC, id ASC", Vars: []interface{}{query, prefix}}).
+		Limit(10).Find(&users).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "search users failed: "+err.Error())
+		return
+	}
+	rows := make([]gin.H, 0, len(users))
+	for _, user := range users {
+		rows = append(rows, gin.H{"invite_target_id": user.InviteTargetID, "nickname": user.Nickname, "avatar_url": user.AvatarURL})
+	}
+	api.OK(c, rows)
+}
+
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "%", "\\%")
+	return strings.ReplaceAll(value, "_", "\\_")
+}
+
+func allowUserSearch(uid uint, now time.Time) bool {
+	userSearchLimits.Lock()
+	defer userSearchLimits.Unlock()
+	cutoff := now.Add(-time.Minute)
+	recent := userSearchLimits.Items[uid][:0]
+	for _, value := range userSearchLimits.Items[uid] {
+		if value.After(cutoff) {
+			recent = append(recent, value)
+		}
+	}
+	if len(recent) >= 20 {
+		userSearchLimits.Items[uid] = recent
+		return false
+	}
+	userSearchLimits.Items[uid] = append(recent, now)
+	return true
 }
 
 func CurrentUser(c *gin.Context) {
@@ -275,13 +362,14 @@ func DeactivateAccount(c *gin.Context) {
 			return err
 		}
 		return tx.Model(&user).Updates(map[string]interface{}{
-			"nickname":          "",
-			"avatar_url":        "",
-			"phone_number":      "",
-			"phone_verified_at": nil,
-			"weekly_hours":      0,
-			"slack_balance":     0,
-			"account_status":    models.AccountStatusDeleted,
+			"nickname":            "",
+			"nickname_normalized": "",
+			"avatar_url":          "",
+			"phone_number":        "",
+			"phone_verified_at":   nil,
+			"weekly_hours":        0,
+			"slack_balance":       0,
+			"account_status":      models.AccountStatusDeleted,
 		}).Error
 	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "delete account failed: "+err.Error())
@@ -297,6 +385,12 @@ func cleanupUserData(tx *gorm.DB, uid uint) error {
 		return err
 	}
 	if err := tx.Where("user_id = ?", uid).Delete(&models.Checkin{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.DailyCheckin{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.PlanActionLayout{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("user_id = ?", uid).Delete(&models.StudySession{}).Error; err != nil {

@@ -74,10 +74,9 @@ func motivationSignals(uid uint) (string, string) {
 
 func currentStreakString(uid uint) string {
 	streak := 0
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	for day := time.Now().In(loc); streak < 366; day = day.AddDate(0, 0, -1) {
+	for day := shanghaiNow(); streak < 366; day = day.AddDate(0, 0, -1) {
 		var count int64
-		db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date = ? AND completed = ?", uid, day.Format(dateLayout), true).Count(&count)
+		db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND date = ? AND completed = ?", uid, day.Format(dateLayout), true).Count(&count)
 		if count == 0 {
 			break
 		}

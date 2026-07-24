@@ -1,0 +1,61 @@
+package db
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"study_plan_backend/models"
+)
+
+func openMigrationTestDB(t *testing.T) {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	connection, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	DB = connection
+}
+
+func TestMigrateLegacyCheckinsUpsertsMarkers(t *testing.T) {
+	openMigrationTestDB(t)
+	if err := DB.AutoMigrate(&models.Checkin{}, &models.DailyCheckin{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX idx_daily_checkins_user_date ON daily_checkins (user_id, date)").Error; err != nil {
+		t.Fatal(err)
+	}
+	DB.Create(&models.Checkin{UserID: 1, PlanID: 1, Date: "2026-07-20", Completed: true, Rewarded: false})
+	existing := models.DailyCheckin{UserID: 1, Date: "2026-07-20", Completed: false, Rewarded: false, Migrated: false}
+	DB.Create(&existing)
+	if err := migrateLegacyCheckins(); err != nil {
+		t.Fatal(err)
+	}
+	DB.First(&existing, existing.ID)
+	if !existing.Completed || existing.Rewarded || !existing.Migrated {
+		t.Fatalf("unexpected migration markers: %+v", existing)
+	}
+}
+
+func TestResolveDuplicateOpenSessionsPreservesDurationForDecision(t *testing.T) {
+	openMigrationTestDB(t)
+	if err := DB.AutoMigrate(&models.DailyTask{}, &models.StudySession{}); err != nil {
+		t.Fatal(err)
+	}
+	task := models.DailyTask{UserID: 1, PlanID: 1, Date: "2026-07-20", Title: "Task"}
+	DB.Create(&task)
+	DB.Create(&models.StudySession{UserID: 1, TaskID: task.ID, StartTime: time.Now().Add(-10 * time.Minute)})
+	DB.Create(&models.StudySession{UserID: 1, TaskID: task.ID + 1, StartTime: time.Now().Add(-5 * time.Minute)})
+	if err := DB.Transaction(resolveDuplicateOpenSessions); err != nil {
+		t.Fatal(err)
+	}
+	DB.First(&task, task.ID)
+	if !task.NeedsDecision || task.StudySeconds <= 0 || task.StudyMinutes <= 0 {
+		t.Fatalf("closed session duration must be retained for decision: %+v", task)
+	}
+}

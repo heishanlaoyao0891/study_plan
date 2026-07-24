@@ -1,183 +1,61 @@
 <template>
-  <view class="page">
-    <view class="panel" v-if="detail">
+  <view class="page" v-if="detail">
+    <view class="hero">
+      <view class="hero-top"><view class="plan-name">{{ detail.plan.title }}</view><view class="pill">{{ statusText(detail.task.timer_state) }}</view></view>
       <view class="title">{{ detail.task.title }}</view>
-      <view class="meta">{{ detail.plan.title }}</view>
-      <view class="content-block">
-        <view class="content-label">任务目标</view>
-        <view class="content-text">{{ detail.task.objective || '暂未填写任务目标' }}</view>
-      </view>
-      <view class="grid">
-        <view><text>日期</text><view class="value">{{ detail.task.date }}</view></view>
-        <view><text>计划时段</text><view class="value">{{ detail.task.planned_start || '--:--' }}-{{ detail.task.planned_end || '--:--' }}</view></view>
-        <view><text>状态</text><view class="value">{{ statusText(detail.task.timer_state) }}</view></view>
-        <view><text>累计学习</text><view class="value">{{ durationText(detail.task.accumulated_seconds) }}</view></view>
-      </view>
-      <view class="desc" v-if="detail.task.description">{{ detail.task.description }}</view>
-      <view class="content-block reflection-block" v-if="detail.task.timer_state === 'completed'">
-        <view class="content-head"><view class="content-label">完成心得</view><button @click="openReflection">{{ detail.task.reflection ? '编辑' : '补充' }}</button></view>
-        <view class="content-text muted" v-if="!detail.task.reflection">还没有记录心得</view>
-        <view class="content-text" v-else>{{ detail.task.reflection }}</view>
-      </view>
-      <view class="visibility-row">
-        <view>小组可见</view>
-        <button @click="togglePublic">{{ detail.task.public_to_group ? '已公开' : '未公开' }}</button>
-      </view>
-      <view class="actions">
-        <button @click="start" v-if="detail.task.timer_state === 'pending'">开始</button>
-        <button @click="pause" v-if="detail.task.timer_state === 'running'">暂停</button>
-        <button @click="resume" v-if="detail.task.timer_state === 'paused'">继续</button>
-        <button @click="complete" v-if="detail.task.timer_state === 'achieved'">完成</button>
-        <button @click="stop" v-if="detail.task.timer_state !== 'completed'">提前结束</button>
-        <button @click="openCorrection('postpone')" v-if="detail.task.timer_state !== 'completed'">推迟</button>
-        <button @click="openCorrection('makeup')">补录</button>
-      </view>
+      <view class="timer">{{ durationText(liveSeconds) }}</view>
+      <view class="timer-label">{{ timerLabel }}</view>
     </view>
 
-    <view class="panel" v-if="detail?.history?.length">
-      <view class="section-title">推迟记录</view>
-      <view class="history" v-for="row in detail.history" :key="row.id">
-        <view>{{ row.old_date }} -> {{ row.new_date }}</view>
-        <text>{{ row.reason || '-' }}</text>
-      </view>
+    <view class="objective-card"><view class="card-kicker">本次目标</view><view class="objective">{{ detail.task.objective || '暂未填写任务目标' }}</view></view>
+    <view class="facts">
+      <view><text>日期</text><view class="fact-value">{{ detail.task.date }}</view></view><view><text>计划时段</text><view class="fact-value">{{ detail.task.planned_start || '--:--' }}-{{ detail.task.planned_end || '--:--' }}</view></view><view><text>目标时长</text><view class="fact-value">{{ detail.task.target_minutes }} 分钟</view></view><view><text>累计学习</text><view class="fact-value">{{ durationText(liveSeconds) }}</view></view>
     </view>
+    <view class="card" v-if="detail.task.description"><view class="card-title">任务说明</view><view class="body-text">{{ detail.task.description }}</view></view>
+    <view class="card" v-if="detail.task.timer_state === 'completed'"><view class="card-head"><view class="card-title">完成心得</view><button @click="openReflection">{{ detail.task.reflection ? '编辑' : '补充' }}</button></view><view class="body-text" :class="{ muted: !detail.task.reflection }">{{ detail.task.reflection || '还没有记录心得' }}</view></view>
+    <view class="card privacy">
+      <view><view class="card-title">小组内可见</view><view class="privacy-desc">开启后，小组成员可看到任务标题、目标与完成进度；完成心得始终仅自己可见。</view></view>
+      <switch color="#ff7aa2" :checked="detail.task.public_to_group" :disabled="savingVisibility" @change="toggleVisibility" />
+    </view>
+    <view class="card" v-if="detail.history.length"><view class="card-title">调整记录</view><view class="history" v-for="row in detail.history" :key="row.id"><view>{{ row.old_date }} → {{ row.new_date }}</view><text>{{ row.reason || '手动调整' }}</text></view></view>
 
-    <view class="modal" v-if="showCorrection" @click.self="showCorrection = false">
-      <view class="modal-body">
-        <view class="section-title">{{ correctionMode === 'makeup' ? '补录学习' : '推迟任务' }}</view>
-        <view class="picker-grid">
-          <view class="picker-field"><text>日期</text><picker mode="date" :value="correction.date" @change="setCorrection('date', $event)"><view>{{ correction.date }}</view></picker></view>
-          <view class="picker-field"><text>开始</text><picker mode="time" :value="correction.start" @change="setCorrection('start', $event)"><view>{{ correction.start }}</view></picker></view>
-          <view class="picker-field"><text>结束</text><picker mode="time" :value="correction.end" @change="setCorrection('end', $event)"><view>{{ correction.end }}</view></picker></view>
-        </view>
-        <button class="primary" @click="submitCorrection()">确认</button>
-        <button class="secondary" @click="showCorrection = false">取消</button>
-      </view>
-    </view>
+    <view class="anchor"><button class="more" @click="showMore = true">更多</button><button class="primary" v-if="primaryAction" @click="runPrimary">{{ primaryAction.label }}</button><view class="complete-summary" v-else>任务已完成</view></view>
 
-    <view class="modal" v-if="showReflection" @click.self="showReflection = false">
-      <view class="modal-body">
-        <view class="section-title">编辑完成心得</view>
-        <textarea class="reflection-input" v-model="reflectionDraft" maxlength="500" placeholder="记录收获或下一步" />
-        <view class="counter">{{ reflectionDraft.length }}/500</view>
-        <button class="primary" @click="saveReflection">保存</button>
-        <button class="secondary" @click="showReflection = false">取消</button>
-      </view>
-    </view>
+    <view class="sheet" v-if="showMore" @click.self="showMore = false"><view class="sheet-body"><view class="sheet-title">更多操作</view>
+      <button v-if="detail.task.timer_state !== 'completed'" @click="openCorrection('postpone')">推迟任务</button><button @click="openCorrection('makeup')">补录学习</button><button v-if="detail.task.timer_state !== 'completed' && detail.task.timer_state !== 'achieved'" @click="stop">提前结束并完成</button><button v-if="detail.task.timer_state === 'completed'" @click="openReflection">编辑完成心得</button><button class="cancel" @click="showMore = false">取消</button>
+    </view></view>
+    <view class="sheet" v-if="showCorrection" @click.self="showCorrection = false"><view class="sheet-body"><view class="sheet-title">{{ correctionMode === 'makeup' ? '补录学习' : '推迟任务' }}</view><view class="pickers"><view><text>日期</text><picker mode="date" :value="correction.date" @change="setCorrection('date',$event)"><view>{{ correction.date }}</view></picker></view><view><text>开始</text><picker mode="time" :value="correction.start" @change="setCorrection('start',$event)"><view>{{ correction.start }}</view></picker></view><view><text>结束</text><picker mode="time" :value="correction.end" @change="setCorrection('end',$event)"><view>{{ correction.end }}</view></picker></view></view><button class="sheet-primary" @click="submitCorrection">确认</button><button class="cancel" @click="showCorrection=false">取消</button></view></view>
+    <view class="sheet" v-if="showReflection" @click.self="showReflection=false"><view class="sheet-body"><view class="sheet-title">完成心得</view><textarea class="reflection" v-model="reflectionDraft" maxlength="500" placeholder="记录收获或下一步"/><view class="counter">{{ reflectionDraft.length }}/500</view><button class="sheet-primary" @click="saveReflection">保存</button><button class="cancel" @click="showReflection=false">取消</button></view></view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { computed, onUnmounted, ref } from 'vue'
+import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import { StudyTaskApi, type TaskDetail } from '@/api'
 import { addLocalDays, localDateKey } from '@/utils/date'
 
-const taskId = ref(0)
-const detail = ref<TaskDetail | null>(null)
-const showCorrection = ref(false)
-const correctionMode = ref<'makeup' | 'postpone'>('postpone')
-const correction = ref({ date: localDateKey(), start: '20:00', end: '21:00' })
-const showReflection = ref(false)
-const reflectionDraft = ref('')
-
-onLoad((query: any) => { taskId.value = Number(query?.id || 0) })
-onShow(load)
-
-async function load() {
-  if (!taskId.value) return
-  try { detail.value = await StudyTaskApi.get(taskId.value) }
-  catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
-}
-async function start() {
-  try { await StudyTaskApi.start(taskId.value); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '开始失败', icon: 'none' }) }
-}
-async function pause() {
-  try { await StudyTaskApi.pause(taskId.value); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '暂停失败', icon: 'none' }) }
-}
-async function resume() {
-  try { await StudyTaskApi.resume(taskId.value); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '继续失败', icon: 'none' }) }
-}
-async function complete() {
-  try { await StudyTaskApi.complete(taskId.value); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '完成失败', icon: 'none' }) }
-}
-async function stop() {
-  const ok = await new Promise<boolean>(resolve => uni.showModal({ title: '提前结束', content: '当前累计时长未达到目标，仍要完成任务吗？', success: result => resolve(result.confirm) }))
-  if (!ok) return
-  try { await StudyTaskApi.stop(taskId.value); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '结束失败', icon: 'none' }) }
-}
-async function togglePublic() {
-  if (!detail.value) return
-  const current = !!detail.value.task.public_to_group
-  try { await StudyTaskApi.update(taskId.value, { public_to_group: !current }); await load() }
-  catch (e: any) { uni.showToast({ title: e?.message || '更新失败', icon: 'none' }) }
-}
-function openCorrection(mode: 'makeup' | 'postpone') {
-  if (!detail.value) return
-  const task = detail.value.task
-  correctionMode.value = mode
-  correction.value = { date: mode === 'postpone' ? localDateKey(addLocalDays(new Date(), 1)) : task.date, start: task.planned_start || '20:00', end: task.planned_end || '21:00' }
-  showCorrection.value = true
-}
-function setCorrection(field: 'date' | 'start' | 'end', event: any) { correction.value[field] = event.detail.value }
-async function submitCorrection(confirmConflict = false) {
-  const value = correction.value
-  try {
-    if (correctionMode.value === 'makeup') await StudyTaskApi.makeup(taskId.value, { actual_date: value.date, actual_start: `${value.date} ${value.start}`, actual_end: `${value.date} ${value.end}`, reason: '手动补录' })
-    else await StudyTaskApi.postpone(taskId.value, { date: value.date, planned_start: value.start, planned_end: value.end, reason: '手动推迟', confirm_conflict: confirmConflict })
-    showCorrection.value = false
-    await load()
-  } catch (e: any) {
-    if (correctionMode.value === 'postpone' && e?.code === 409 && !confirmConflict) {
-      uni.showModal({ title: '时间冲突', content: '目标时段已有任务，仍要推迟吗？', success: result => { if (result.confirm) submitCorrection(true) } })
-    } else uni.showToast({ title: e?.message || '操作失败', icon: 'none' })
-  }
-}
-function openReflection() { if (!detail.value) return; reflectionDraft.value = detail.value.task.reflection || ''; showReflection.value = true }
-async function saveReflection() {
-  try { await StudyTaskApi.reflection(taskId.value, reflectionDraft.value); showReflection.value = false; await load(); uni.showToast({ title: '心得已保存', icon: 'success' }) }
-  catch (e: any) { uni.showToast({ title: e?.message || '保存失败', icon: 'none' }) }
-}
-function durationText(seconds: number) { const minutes = Math.floor(seconds / 60); return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分 ${seconds % 60} 秒` }
-function statusText(status: string) { return ({ pending: '待执行', running: '学习中', paused: '已暂停', achieved: '目标已达成', completed: '已完成' } as Record<string, string>)[status] || status }
+const taskId=ref(0),detail=ref<TaskDetail|null>(null),showMore=ref(false),showCorrection=ref(false),showReflection=ref(false),savingVisibility=ref(false)
+const correctionMode=ref<'makeup'|'postpone'>('postpone'),correction=ref({date:localDateKey(),start:'20:00',end:'21:00'}),reflectionDraft=ref(''),now=ref(Date.now()),snapshotAt=ref(Date.now())
+let ticker:ReturnType<typeof setInterval>|null=null
+const liveSeconds=computed(()=>{const task=detail.value?.task;if(!task)return 0;const extra=task.timer_state==='running'?Math.max(0,Math.floor((now.value-snapshotAt.value)/1000)):0;return task.accumulated_seconds+extra})
+const timerLabel=computed(()=>{const task=detail.value?.task;if(!task)return '';if(task.timer_state==='completed')return '最终学习时长';const remaining=task.target_minutes*60-liveSeconds.value;return remaining>=0?`距离目标还有 ${durationText(remaining)}`:`已超出目标 ${durationText(-remaining)}`})
+const primaryAction=computed(()=>{const state=detail.value?.task.timer_state;if(state==='pending')return{label:'开始学习',action:'start'};if(state==='paused')return{label:'继续学习',action:'resume'};if(state==='running')return{label:'暂停计时',action:'pause'};if(state==='achieved')return{label:'完成任务',action:'complete'};return null})
+onLoad((query:any)=>taskId.value=Number(query?.id||0));onShow(()=>{load();startTicker()});onHide(stopTicker);onUnmounted(stopTicker)
+async function load(){if(!taskId.value)return;try{detail.value=await StudyTaskApi.get(taskId.value);snapshotAt.value=Date.now();now.value=Date.now()}catch(error:any){uni.showToast({title:error?.message||'加载失败',icon:'none'})}}
+function startTicker(){stopTicker();ticker=setInterval(()=>now.value=Date.now(),1000)}function stopTicker(){if(ticker)clearInterval(ticker);ticker=null}
+async function runPrimary(){const action=primaryAction.value?.action;if(!action)return;try{if(action==='start')await StudyTaskApi.start(taskId.value);if(action==='resume')await StudyTaskApi.resume(taskId.value);if(action==='pause')await StudyTaskApi.pause(taskId.value);if(action==='complete')await StudyTaskApi.complete(taskId.value);await load()}catch(error:any){if(error?.code===409&&error?.raw?.active_task_id){await load();const id=Number(error.raw.active_task_id);uni.showModal({title:'另一任务学习中',content:`「${error.raw.active_task_title||'另一任务'}」正在计时。`,confirmText:'查看任务',success:result=>{if(result.confirm&&id)uni.redirectTo({url:`/pages/task/task?id=${id}`})}})}else uni.showToast({title:error?.message||'操作失败',icon:'none'})}}
+async function stop(){const confirmed=await new Promise<boolean>(resolve=>uni.showModal({title:'提前结束',content:'当前学习会计入累计时长，并将任务标记为完成。',success:result=>resolve(result.confirm)}));if(!confirmed)return;try{await StudyTaskApi.stop(taskId.value);showMore.value=false;await load()}catch(error:any){uni.showToast({title:error?.message||'结束失败',icon:'none'})}}
+async function toggleVisibility(event:any){if(!detail.value||savingVisibility.value)return;const previous=detail.value.task.public_to_group,next=!!event.detail.value;detail.value.task.public_to_group=next;savingVisibility.value=true;try{await StudyTaskApi.visibility(taskId.value,next);uni.showToast({title:'可见范围已保存',icon:'success'})}catch(error:any){detail.value.task.public_to_group=previous;uni.showModal({title:'保存失败',content:`已恢复原来的可见状态。${error?.message||'请稍后重试'}`,showCancel:false})}finally{savingVisibility.value=false}}
+function openCorrection(mode:'makeup'|'postpone'){if(!detail.value)return;const task=detail.value.task;correctionMode.value=mode;correction.value={date:mode==='postpone'?localDateKey(addLocalDays(new Date(),1)):task.date,start:task.planned_start||'20:00',end:task.planned_end||'21:00'};showMore.value=false;showCorrection.value=true}
+function setCorrection(field:'date'|'start'|'end',event:any){correction.value[field]=event.detail.value}
+async function submitCorrection(){const value=correction.value;if(value.start>=value.end)return void uni.showToast({title:'结束时间须晚于开始时间',icon:'none'});try{if(correctionMode.value==='makeup')await StudyTaskApi.makeup(taskId.value,{actual_date:value.date,actual_start:`${value.date} ${value.start}`,actual_end:`${value.date} ${value.end}`,reason:'手动补录'});else await StudyTaskApi.postpone(taskId.value,{date:value.date,planned_start:value.start,planned_end:value.end,reason:'手动推迟'});showCorrection.value=false;await load()}catch(error:any){uni.showToast({title:error?.message||'操作失败',icon:'none'})}}
+function openReflection(){if(!detail.value)return;reflectionDraft.value=detail.value.task.reflection||'';showMore.value=false;showReflection.value=true}async function saveReflection(){try{await StudyTaskApi.reflection(taskId.value,reflectionDraft.value);showReflection.value=false;await load()}catch(error:any){uni.showToast({title:error?.message||'保存失败',icon:'none'})}}
+function durationText(seconds:number){const safe=Math.max(0,Math.floor(seconds)),hours=Math.floor(safe/3600),minutes=Math.floor((safe%3600)/60),secs=safe%60;return hours?`${hours}:${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`:`${minutes}:${String(secs).padStart(2,'0')}`}
+function statusText(status:string){return({pending:'待执行',running:'学习中',paused:'已暂停',achieved:'目标达成',completed:'已完成'}as Record<string,string>)[status]||status}
 </script>
 
 <style lang="scss">
-.page { min-height: 100vh; padding: 28rpx; box-sizing: border-box; background: #f6f7fb; }
-.panel { margin-bottom: 20rpx; padding: 30rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
-.title { color: #111827; font-size: 34rpx; font-weight: 800; }
-.meta { margin-top: 8rpx; color: #606a80; font-size: 24rpx; }
-.content-block { margin-top: 22rpx; padding: 20rpx; border-radius: 12rpx; background: #fff9f2; }
-.content-label { color: #9a5b00; font-size: 22rpx; font-weight: 800; }
-.content-text { margin-top: 8rpx; color: #384257; font-size: 25rpx; line-height: 1.55; }
-.content-text.muted { color: #8a92a6; }
-.content-head { display: flex; align-items: center; justify-content: space-between; }
-.content-head button { margin: 0; padding: 0 20rpx; height: 50rpx; line-height: 50rpx; background: #fff0f6; color: #ff6f91; font-size: 22rpx; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; margin-top: 24rpx; }
-.grid view { padding: 18rpx; border-radius: 12rpx; background: #f8fafc; }
-.grid text { display: block; color: #7b8498; font-size: 22rpx; }
-.value { margin-top: 8rpx; color: #111827; font-size: 26rpx; font-weight: 800; }
-.desc { margin-top: 22rpx; color: #606a80; font-size: 25rpx; line-height: 1.5; }
-.visibility-row { display: flex; justify-content: space-between; align-items: center; margin-top: 22rpx; padding: 18rpx; border-radius: 12rpx; background: #f8fafc; color: #111827; font-size: 25rpx; font-weight: 700; }
-.visibility-row button { margin: 0; height: 54rpx; line-height: 54rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 23rpx; }
-.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10rpx; margin-top: 24rpx; }
-.actions button { margin: 0; height: 60rpx; line-height: 60rpx; border-radius: 10rpx; background: #eef4ff; color: #2264d1; font-size: 23rpx; }
-.section-title { color: #111827; font-size: 28rpx; font-weight: 800; margin-bottom: 12rpx; }
-.history { padding: 14rpx 0; border-top: 1rpx solid #eef2f7; color: #384257; font-size: 24rpx; }
-.history text { display: block; margin-top: 6rpx; color: #7b8498; }
-.modal { position: fixed; inset: 0; z-index: 99; display: flex; align-items: flex-end; background: rgba(17,24,39,.46); }
-.modal-body { width: 100%; box-sizing: border-box; padding: 34rpx 30rpx 42rpx; border-radius: 24rpx 24rpx 0 0; background: #fff; }
-.picker-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12rpx; }
-.picker-field text { display: block; margin-bottom: 8rpx; color: #7b8498; font-size: 22rpx; }
-.picker-field picker view { padding: 20rpx 8rpx; border-radius: 10rpx; background: #f8fafc; color: #111827; font-size: 24rpx; text-align: center; }
-.primary, .secondary { margin-top: 18rpx; border-radius: 999rpx; }
-.primary { background: #2264d1; color: #fff; }
-.secondary { background: #f3f6fb; color: #606a80; }
-.reflection-input { width: 100%; height: 180rpx; box-sizing: border-box; padding: 18rpx; border-radius: 12rpx; background: #f8fafc; font-size: 25rpx; }
-.counter { margin-top: 8rpx; color: #8a92a6; font-size: 21rpx; text-align: right; }
+.page{min-height:100vh;box-sizing:border-box;padding:28rpx 28rpx 190rpx;background:linear-gradient(180deg,#fff0f7,#fffaf0 44%,#f7fbff);color:#4b2b3f}.hero{padding:34rpx;border-radius:34rpx;background:linear-gradient(135deg,#ff8fab,#ffc36a);color:#fff;box-shadow:0 20rpx 44rpx rgba(255,143,171,.26)}.hero-top,.card-head{display:flex;align-items:center;justify-content:space-between}.plan-name{font-size:23rpx;font-weight:800}.pill{padding:8rpx 16rpx;border-radius:99rpx;background:rgba(255,255,255,.24);font-size:21rpx;font-weight:900}.title{margin-top:20rpx;font-size:40rpx;font-weight:900}.timer{margin-top:28rpx;font-size:64rpx;font-weight:900;letter-spacing:2rpx}.timer-label{margin-top:6rpx;color:rgba(255,255,255,.9);font-size:23rpx}.objective-card,.card{margin-top:18rpx;padding:28rpx;border-radius:28rpx;background:#fff;border:1rpx solid #ffe0ea;box-shadow:0 12rpx 28rpx rgba(255,143,171,.09)}.objective-card{background:linear-gradient(135deg,#fff8ea,#fff)}.card-kicker{color:#c87818;font-size:21rpx;font-weight:900}.objective{margin-top:10rpx;color:#4b2b3f;font-size:29rpx;line-height:1.55;font-weight:800}.facts{display:grid;grid-template-columns:1fr 1fr;gap:12rpx;margin-top:18rpx}.facts>view{padding:20rpx;border-radius:20rpx;background:#fff;border:1rpx solid #ffe7ee}.facts text,.facts strong{display:block}.facts text{color:#8a92a6;font-size:20rpx}.facts strong{margin-top:7rpx;color:#4b2b3f;font-size:24rpx}.card-title{font-size:27rpx;font-weight:900}.body-text{margin-top:12rpx;color:#606a80;font-size:24rpx;line-height:1.6}.muted{color:#9aa0ae}.card-head button{margin:0;padding:0 18rpx;height:50rpx;line-height:50rpx;border-radius:99rpx;background:#fff0f6;color:#ff6f91;font-size:21rpx}.privacy{display:flex;align-items:center;justify-content:space-between;gap:20rpx}.privacy>view{flex:1}.privacy-desc{margin-top:8rpx;color:#7b8498;font-size:22rpx;line-height:1.5}.history{padding:14rpx 0;border-bottom:1rpx solid #eef1f5;font-size:23rpx}.history text{display:block;margin-top:5rpx;color:#8a92a6}.anchor{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;gap:14rpx;padding:20rpx 28rpx 34rpx;background:rgba(255,255,255,.96);box-shadow:0 -10rpx 32rpx rgba(75,43,63,.1)}.anchor button{margin:0;border-radius:99rpx}.anchor .more{width:150rpx;background:#f3f6fb;color:#606a80}.anchor .primary{flex:1;background:linear-gradient(135deg,#ff7aa2,#ffb45c);color:#fff;font-weight:900}.complete-summary{flex:1;padding:22rpx;border-radius:99rpx;background:#eff9f4;color:#438467;text-align:center;font-weight:900}.sheet{position:fixed;inset:0;z-index:99;display:flex;align-items:flex-end;background:rgba(48,34,43,.46)}.sheet-body{width:100%;box-sizing:border-box;padding:34rpx 30rpx 44rpx;border-radius:30rpx 30rpx 0 0;background:#fff}.sheet-title{margin-bottom:22rpx;font-size:32rpx;font-weight:900}.sheet-body>button{margin-top:12rpx;border-radius:99rpx;background:#fff3f7;color:#d85e82}.sheet-body .cancel{background:#f3f6fb;color:#606a80}.sheet-body .sheet-primary{background:linear-gradient(135deg,#ff7aa2,#ffb45c);color:#fff}.pickers{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10rpx}.pickers text{display:block;margin-bottom:8rpx;color:#8a92a6;font-size:20rpx}.pickers picker view{padding:18rpx 6rpx;border-radius:12rpx;background:#f8fafc;text-align:center;font-size:22rpx}.reflection{box-sizing:border-box;width:100%;height:180rpx;padding:18rpx;border-radius:16rpx;background:#f8fafc;font-size:25rpx}.counter{margin-top:8rpx;color:#8a92a6;text-align:right;font-size:21rpx}
+.fact-value{display:block;margin-top:7rpx;color:#4b2b3f;font-size:24rpx;font-weight:700}
 </style>

@@ -88,6 +88,14 @@ func GeneratePlan(c *gin.Context) {
 		api.Fail(c, http.StatusBadGateway, "AI plan validation failed: "+err.Error())
 		return
 	}
+	if err := validateAIPreviewSchedule(db.DB, uid, preview); err != nil {
+		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
+		if respondScheduleError(c, err) {
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "validate AI schedule failed: "+err.Error())
+		return
+	}
 	services.RecordAIGenerationUsage(uid, cfg.Provider, "success", mode+" preview generated")
 	api.OK(c, gin.H{"preview": preview, "mode": mode, "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
 }
@@ -104,6 +112,13 @@ func CommitAIPlan(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "invalid preview: "+err.Error())
 		return
 	}
+	if err := validateAIPreviewSchedule(db.DB, uid, req.Preview); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "validate AI schedule failed: "+err.Error())
+		return
+	}
 	first, last := req.Preview.Tasks[0], req.Preview.Tasks[len(req.Preview.Tasks)-1]
 	plan := models.Plan{UserID: uid, Title: req.Preview.Title, Description: req.Preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: int(req.Preview.EstimatedTotalHours), AIGenerated: true, StartDate: first.Date, EndDate: last.Date, DefaultPlannedStart: first.PlannedStart, DefaultPlannedEnd: first.PlannedEnd}
 	for _, previewTask := range req.Preview.Tasks {
@@ -111,6 +126,9 @@ func CommitAIPlan(c *gin.Context) {
 	}
 	var tasks []models.DailyTask
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateAIPreviewSchedule(tx, uid, req.Preview); err != nil {
+			return err
+		}
 		if err := tx.Create(&plan).Error; err != nil {
 			return err
 		}
@@ -124,10 +142,21 @@ func CommitAIPlan(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "commit ai plan failed: "+err.Error())
 		return
 	}
 	api.OK(c, gin.H{"plan": plan, "tasks": tasks})
+}
+
+func validateAIPreviewSchedule(tx *gorm.DB, uid uint, preview services.PlanPreview) error {
+	tasks := make([]models.DailyTask, 0, len(preview.Tasks))
+	for _, row := range preview.Tasks {
+		tasks = append(tasks, models.DailyTask{UserID: uid, Date: row.Date, Title: row.Title, PlannedStart: row.PlannedStart, PlannedEnd: row.PlannedEnd})
+	}
+	return validateScheduleMutation(tx, uid, tasks)
 }
 
 func RegeneratePlan(c *gin.Context) { GeneratePlan(c) }

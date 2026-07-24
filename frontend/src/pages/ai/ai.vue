@@ -15,6 +15,7 @@
       <view class="field"><text>追加说明</text><textarea v-model="refinement" placeholder="例如：周末少一点，工作日晚间安排" /></view>
       <button class="primary" @click="generate">生成建议</button>
       <button class="secondary" v-if="preview" @click="commit">确认保存</button>
+      <view class="error-panel" v-if="errorMessage">{{ errorMessage }}</view>
     </view>
 
     <view class="result" v-if="preview">
@@ -44,6 +45,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { AIApi } from '@/api'
+import { formatScheduleConflicts, validateScheduleUnion } from '@/utils/schedule'
 
 const goal = ref('学习 Go 语言')
 const hours = ref(1)
@@ -52,8 +54,10 @@ const availableStart = ref('20:00')
 const availableEnd = ref('21:00')
 const refinement = ref('')
 const preview = ref<any>(null)
+const errorMessage = ref('')
 
 async function generate() {
+  errorMessage.value = ''
   if (!goal.value.trim()) {
     uni.showToast({ title: '请输入学习目标', icon: 'none' })
     return
@@ -67,7 +71,7 @@ async function generate() {
     preview.value = resp.preview || resp.data?.preview || resp
     uni.showToast({ title: '已生成预览', icon: 'success' })
   } catch (e: any) {
-    uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
+    errorMessage.value = apiScheduleError(e) || e?.message || '生成失败'
   }
 }
 
@@ -76,9 +80,15 @@ function removeTask(index: number) {
 }
 
 async function commit() {
+  errorMessage.value = ''
   const invalid = preview.value?.tasks?.find((task: any) => !task.objective?.trim() || task.objective.trim().toLowerCase() === task.title?.trim().toLowerCase())
   if (invalid) {
     uni.showToast({ title: '每个任务需填写比标题更具体的目标', icon: 'none' })
+    return
+  }
+  const conflicts = validateScheduleUnion((preview.value?.tasks || []).map((task: any, index: number) => ({ id: task.id || index, title: task.title || `任务 ${index + 1}`, date: task.date, start: task.planned_start, end: task.planned_end })))
+  if (conflicts.length) {
+    errorMessage.value = `时间安排需要调整：\n${formatScheduleConflicts(conflicts)}`
     return
   }
   try {
@@ -86,8 +96,13 @@ async function commit() {
     uni.showToast({ title: '已保存', icon: 'success' })
     uni.reLaunch({ url: '/pages/plans/plans' })
   } catch (e: any) {
-    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+    errorMessage.value = apiScheduleError(e) || e?.message || '保存失败'
   }
+}
+function apiScheduleError(error: any) {
+  const rows = error?.raw?.invalid_tasks
+  if (!Array.isArray(rows)) return ''
+  return `时间安排需要调整：\n${rows.map((row: any) => `${row.date ? `${row.date} ` : ''}「${row.title}」重叠覆盖 ${row.covered_minutes} 分钟${row.covered_intervals?.length ? `（${row.covered_intervals.map((range: any) => `${range.start}-${range.end}`).join('、')}）` : ''}`).join('\n')}`
 }
 </script>
 
@@ -111,4 +126,5 @@ async function commit() {
 .task-head { display: flex; align-items: center; justify-content: space-between; }
 .task-title { color: #111827; font-size: 27rpx; font-weight: 700; }
 .link-btn { margin: 0; padding: 0; background: transparent; color: #cf1322; font-size: 24rpx; }
+.error-panel { margin-top: 18rpx; padding: 18rpx; border-radius: 12rpx; background: #fff1f3; color: #b4455b; font-size: 23rpx; line-height: 1.55; white-space: pre-line; }
 </style>

@@ -66,7 +66,18 @@ type shiftPlanReq struct {
 }
 
 type invitePlanReq struct {
-	UserID uint `json:"user_id" binding:"required"`
+	InviteTargetID string `json:"invite_target_id"`
+}
+
+type planListView struct {
+	models.Plan
+	TotalTasks     int64 `json:"total_tasks"`
+	CompletedTasks int64 `json:"completed_tasks"`
+	CompletionRate *int  `json:"completion_rate"`
+}
+
+type planVisibilityReq struct {
+	PublicToGroup bool `json:"public_to_group"`
 }
 
 // ListPlans 当前用户的计划列表
@@ -84,7 +95,25 @@ func ListPlans(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query plans failed: "+err.Error())
 		return
 	}
-	api.OK(c, plans)
+	views := make([]planListView, 0, len(plans))
+	for _, plan := range plans {
+		var total, completed int64
+		if err := db.DB.Model(&models.DailyTask{}).Where("plan_id = ? AND user_id = ?", plan.ID, uid).Count(&total).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "query plan progress failed: "+err.Error())
+			return
+		}
+		if err := db.DB.Model(&models.DailyTask{}).Where("plan_id = ? AND user_id = ? AND status = ?", plan.ID, uid, models.TaskStatusCompleted).Count(&completed).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "query plan progress failed: "+err.Error())
+			return
+		}
+		var rate *int
+		if total > 0 {
+			value := int(completed * 100 / total)
+			rate = &value
+		}
+		views = append(views, planListView{Plan: plan, TotalTasks: total, CompletedTasks: completed, CompletionRate: rate})
+	}
+	api.OK(c, views)
 }
 
 // GetPlan 获取单个计划详情
@@ -96,6 +125,24 @@ func GetPlan(c *gin.Context) {
 	}
 	db.DB.Preload("ScheduleOverrides").First(plan, plan.ID)
 	api.OK(c, plan)
+}
+
+func UpdatePlanVisibility(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req planVisibilityReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if err := db.DB.Model(plan).Update("public_to_group", req.PublicToGroup).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "update visibility failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"plan_id": plan.ID, "public_to_group": req.PublicToGroup})
 }
 
 // CreatePlan 创建学习计划（含超负荷校验）
@@ -158,6 +205,9 @@ func CreatePlan(c *gin.Context) {
 		}
 		return generateTasksForPlan(tx, uid, plan, strings.TrimSpace(req.Objective))
 	}); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "create plan failed: "+err.Error())
 		return
 	}
@@ -255,15 +305,49 @@ func UpdatePlan(c *gin.Context) {
 		api.OK(c, plan)
 		return
 	}
+	scheduleChanged := req.DefaultPlannedStart != nil || req.DefaultPlannedEnd != nil || req.StudyWeekdays != nil || req.StudyDates != nil || req.ScheduleOverrides != nil
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		var planTasks []models.DailyTask
+		if scheduleChanged {
+			candidatePlan := *plan
+			candidatePlan.DefaultPlannedStart, candidatePlan.DefaultPlannedEnd = start, end
+			candidatePlan.StudyWeekdays, candidatePlan.StudyDates = weekdays, dates
+			candidateOverrides := make([]models.PlanScheduleOverride, 0, len(overrides))
+			for _, row := range overrides {
+				candidateOverrides = append(candidateOverrides, models.PlanScheduleOverride{PlanID: plan.ID, Weekday: row.Weekday, Date: row.Date, PlannedStart: row.PlannedStart, PlannedEnd: row.PlannedEnd})
+			}
+			if err := tx.Where("user_id = ? AND plan_id = ? AND status <> ?", uid, plan.ID, models.TaskStatusCompleted).Find(&planTasks).Error; err != nil {
+				return err
+			}
+			for index := range planTasks {
+				day, parseErr := time.Parse(dateLayout, planTasks[index].Date)
+				if parseErr != nil {
+					return parseErr
+				}
+				planTasks[index].PlannedStart, planTasks[index].PlannedEnd = resolvePlanSchedule(candidatePlan, candidateOverrides, day)
+			}
+			if err := validateScheduleMutation(tx, uid, planTasks); err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&plan).Updates(updates).Error; err != nil {
 			return err
 		}
 		if req.ScheduleOverrides != nil {
-			return replaceScheduleOverrides(tx, plan.ID, *req.ScheduleOverrides)
+			if err := replaceScheduleOverrides(tx, plan.ID, *req.ScheduleOverrides); err != nil {
+				return err
+			}
+		}
+		for _, task := range planTasks {
+			if err := tx.Model(&models.DailyTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{"planned_start": task.PlannedStart, "planned_end": task.PlannedEnd}).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "update plan failed: "+err.Error())
 		return
 	}
@@ -327,8 +411,8 @@ func ShiftPlan(c *gin.Context) {
 		return
 	}
 	var req shiftPlanReq
-	if err := c.ShouldBindJSON(&req); err != nil || req.Days == 0 {
-		api.Fail(c, http.StatusBadRequest, "invalid request: days required")
+	if err := c.ShouldBindJSON(&req); err != nil || req.Days <= 0 {
+		api.Fail(c, http.StatusBadRequest, "invalid request: positive days required")
 		return
 	}
 	startDate := req.StartDate
@@ -343,6 +427,9 @@ func ShiftPlan(c *gin.Context) {
 		return shiftPlanTasks(tx, uid, plan, req.Days, startDate)
 	})
 	if err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "shift plan failed: "+err.Error())
 		return
 	}
@@ -356,34 +443,34 @@ func InvitePlanMember(c *gin.Context) {
 		return
 	}
 	var req invitePlanReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-	if req.UserID == uid {
-		api.Fail(c, http.StatusBadRequest, "cannot invite yourself")
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.InviteTargetID) == "" {
+		api.Fail(c, http.StatusBadRequest, "invite_target_id is required")
 		return
 	}
 	var user models.User
-	if err := db.DB.First(&user, req.UserID).Error; err != nil {
-		api.Fail(c, http.StatusNotFound, "user not found")
+	now := time.Now()
+	if err := db.DB.Where("invite_target_id = ? AND account_status = ? AND nickname_normalized <> '' AND (banned_until IS NULL OR banned_until <= ?)", strings.TrimSpace(req.InviteTargetID), models.AccountStatusActive, now).First(&user).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "invitation target not found")
 		return
 	}
-	now := time.Now()
+	if user.ID == uid {
+		api.Fail(c, http.StatusBadRequest, "cannot invite yourself")
+		return
+	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		if e := tx.Model(plan).Update("is_shared", true).Error; e != nil {
 			return e
 		}
 		owner := models.PlanMember{PlanID: plan.ID, UserID: uid, Role: "owner", JoinedAt: now}
 		_ = tx.Where("plan_id = ? AND user_id = ?", plan.ID, uid).FirstOrCreate(&owner).Error
-		member := models.PlanMember{PlanID: plan.ID, UserID: req.UserID, Role: "member", JoinedAt: now}
-		return tx.Where("plan_id = ? AND user_id = ?", plan.ID, req.UserID).FirstOrCreate(&member).Error
+		member := models.PlanMember{PlanID: plan.ID, UserID: user.ID, Role: "member", JoinedAt: now}
+		return tx.Where("plan_id = ? AND user_id = ?", plan.ID, user.ID).FirstOrCreate(&member).Error
 	})
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "invite failed: "+err.Error())
 		return
 	}
-	api.OK(c, gin.H{"plan_id": plan.ID, "user_id": req.UserID})
+	api.OK(c, gin.H{"plan_id": plan.ID, "user_id": user.ID})
 }
 
 func JoinPlan(c *gin.Context) {
@@ -474,6 +561,20 @@ func checkTaskSlotConflicts(uid uint, startDate, endDate, plannedStart, plannedE
 }
 
 func shiftPlanTasks(tx *gorm.DB, uid uint, plan *models.Plan, days int, startDate string) error {
+	var tasks []models.DailyTask
+	if err := tx.Where("plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", plan.ID, uid, models.TaskStatusCompleted, startDate).Find(&tasks).Error; err != nil {
+		return err
+	}
+	for index := range tasks {
+		parsed, err := time.Parse(dateLayout, tasks[index].Date)
+		if err != nil {
+			return err
+		}
+		tasks[index].Date = parsed.AddDate(0, 0, days).Format(dateLayout)
+	}
+	if err := validateScheduleMutation(tx, uid, tasks); err != nil {
+		return err
+	}
 	if plan.StartDate != "" {
 		if t, e := time.Parse(dateLayout, plan.StartDate); e == nil {
 			plan.StartDate = t.AddDate(0, 0, days).Format(dateLayout)
@@ -487,7 +588,12 @@ func shiftPlanTasks(tx *gorm.DB, uid uint, plan *models.Plan, days int, startDat
 	if e := tx.Save(plan).Error; e != nil {
 		return e
 	}
-	return tx.Exec("UPDATE daily_tasks SET date = date(date, ? || ' day') WHERE plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", days, plan.ID, uid, models.TaskStatusCompleted, startDate).Error
+	for _, task := range tasks {
+		if err := tx.Model(&models.DailyTask{}).Where("id = ?", task.ID).Update("date", task.Date).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // mustGetOwnedPlan 取回路径参数对应的计划，并校验归属当前用户
@@ -528,6 +634,7 @@ func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan, objective str
 	if err := tx.Where("plan_id = ?", plan.ID).Find(&overrides).Error; err != nil {
 		return err
 	}
+	tasks := make([]models.DailyTask, 0)
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		date := d.Format(dateLayout)
 		if !planStudiesOn(plan, d) {
@@ -548,10 +655,16 @@ func generateTasksForPlan(tx *gorm.DB, uid uint, plan models.Plan, objective str
 			Status:           models.TaskStatusPending,
 			SortOrder:        order,
 		}
-		if err := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, plan.ID, task.Date).FirstOrCreate(&task).Error; err != nil {
+		tasks = append(tasks, task)
+		order++
+	}
+	if err := validateScheduleMutation(tx, uid, tasks); err != nil {
+		return err
+	}
+	for index := range tasks {
+		if err := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, plan.ID, tasks[index].Date).FirstOrCreate(&tasks[index]).Error; err != nil {
 			return err
 		}
-		order++
 	}
 	return nil
 }

@@ -109,6 +109,19 @@ func TestRequireAdminRejectsNonAdmin(t *testing.T) {
 	}
 }
 
+func TestRequireNicknameDoesNotExemptAdminRole(t *testing.T) {
+	g := gin.New()
+	g.GET("/plans", func(c *gin.Context) {
+		c.Set(middleware.CtxRoleKey, models.RoleAdmin)
+		c.Set(middleware.CtxUserKey, models.User{Role: models.RoleAdmin})
+	}, middleware.RequireNickname(), func(c *gin.Context) { c.Status(http.StatusOK) })
+	recorder := httptest.NewRecorder()
+	g.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/plans", nil))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("nickname gate must apply to WeChat users regardless of role, got %d", recorder.Code)
+	}
+}
+
 func TestRequirePhoneBoundIsOptionalByDefault(t *testing.T) {
 	previous := config.App
 	t.Cleanup(func() { config.App = previous })
@@ -128,7 +141,7 @@ func TestRequirePhoneBoundIsOptionalByDefault(t *testing.T) {
 	}
 }
 
-func TestRequirePhoneBoundRejectsWhenEnabled(t *testing.T) {
+func TestRequirePhoneBoundNeverGatesStudy(t *testing.T) {
 	previous := config.App
 	t.Cleanup(func() { config.App = previous })
 	config.App = &config.Config{PhoneBindingRequired: true}
@@ -142,8 +155,8 @@ func TestRequirePhoneBoundRejectsWhenEnabled(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/plans", nil)
 	g.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected required phone gate to reject request, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected retired phone gate to allow request, got %d", rec.Code)
 	}
 }
 

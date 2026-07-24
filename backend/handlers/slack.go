@@ -168,6 +168,27 @@ func awardSlackIfNeeded(tx *gorm.DB, uid uint, checkin *models.Checkin) error {
 	return recordSlackDelta(tx, uid, "完成今日打卡", minutes)
 }
 
+func awardDailySlackIfNeeded(tx *gorm.DB, uid uint, checkin *models.DailyCheckin) error {
+	if !checkin.Completed || checkin.Rewarded {
+		return nil
+	}
+	minutes := slackRewardMinutes(uid)
+	result := tx.Model(&models.DailyCheckin{}).Where("id = ? AND completed = ? AND rewarded = ?", checkin.ID, true, false).Update("rewarded", true)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return result.Error
+	}
+	if minutes > 0 {
+		if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("slack_balance", gorm.Expr("slack_balance + ?", minutes)).Error; err != nil {
+			return err
+		}
+		if err := recordSlackDelta(tx, uid, "完成今日打卡", minutes); err != nil {
+			return err
+		}
+	}
+	checkin.Rewarded = true
+	return nil
+}
+
 func ensureDefaultSlackConfig() error {
 	var cfg models.SlackConfig
 	err := db.DB.Where("user_id IS NULL").First(&cfg).Error

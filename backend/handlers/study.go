@@ -59,6 +59,10 @@ type reflectionReq struct {
 	Reflection string `json:"reflection"`
 }
 
+type taskVisibilityReq struct {
+	PublicToGroup bool `json:"public_to_group"`
+}
+
 type taskTimerView struct {
 	models.DailyTask
 	TargetMinutes      int                  `json:"target_minutes"`
@@ -141,7 +145,15 @@ func CreatePlanTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := db.DB.Create(&task).Error; err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateScheduleMutation(tx, uid, []models.DailyTask{task}); err != nil {
+			return err
+		}
+		return tx.Create(&task).Error
+	}); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "create task failed: "+err.Error())
 		return
 	}
@@ -178,6 +190,8 @@ func StartTask(c *gin.Context) {
 	}
 	now := time.Now()
 	var session models.StudySession
+	var activeTask models.DailyTask
+	var activeConflict bool
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ? AND user_id = ?", task.ID, uid).First(task).Error; err != nil {
 			return err
@@ -185,9 +199,13 @@ func StartTask(c *gin.Context) {
 		if task.Status == models.TaskStatusCompleted {
 			return errTaskCompleted
 		}
-		err := tx.Where("task_id = ? AND user_id = ? AND end_time IS NULL", task.ID, uid).First(&session).Error
+		err := tx.Where("user_id = ? AND end_time IS NULL", uid).First(&session).Error
 		if err == nil {
-			return nil
+			if session.TaskID == task.ID {
+				return nil
+			}
+			activeConflict = true
+			return tx.First(&activeTask, session.TaskID).Error
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -206,11 +224,21 @@ func StartTask(c *gin.Context) {
 		api.Fail(c, http.StatusConflict, "completed task cannot be restarted")
 		return
 	}
+	if activeConflict {
+		api.Conflict(c, "another task is already active", gin.H{"active_task_id": activeTask.ID, "active_task_title": activeTask.Title, "active_session_id": session.ID})
+		return
+	}
 	if err != nil && isUniqueConstraintError(err) {
-		if queryErr := db.DB.Where("task_id = ? AND user_id = ? AND end_time IS NULL", task.ID, uid).First(&session).Error; queryErr == nil {
-			db.DB.First(task, task.ID)
-			api.OK(c, gin.H{"task": task, "session": session})
-			return
+		if queryErr := db.DB.Where("user_id = ? AND end_time IS NULL", uid).First(&session).Error; queryErr == nil {
+			if session.TaskID == task.ID {
+				db.DB.First(task, task.ID)
+				api.OK(c, gin.H{"task": task, "session": session})
+				return
+			}
+			if db.DB.First(&activeTask, session.TaskID).Error == nil {
+				api.Conflict(c, "another task is already active", gin.H{"active_task_id": activeTask.ID, "active_task_title": activeTask.Title, "active_session_id": session.ID})
+				return
+			}
 		}
 	}
 	if err != nil {
@@ -420,8 +448,21 @@ func UpdateTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	proposed := *task
+	if req.Date != nil {
+		proposed.Date = *req.Date
+	}
+	proposed.PlannedStart, proposed.PlannedEnd = plannedStart, plannedEnd
 	if len(updates) > 0 {
-		if err := db.DB.Model(task).Updates(updates).Error; err != nil {
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := validateScheduleMutation(tx, uid, []models.DailyTask{proposed}); err != nil {
+				return err
+			}
+			return tx.Model(task).Updates(updates).Error
+		}); err != nil {
+			if respondScheduleError(c, err) {
+				return
+			}
 			api.Fail(c, http.StatusInternalServerError, "update task failed: "+err.Error())
 			return
 		}
@@ -504,17 +545,13 @@ func PostponeTask(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	conflicts, err := findTaskSlotConflicts(uid, task.ID, req.Date, plannedStart, plannedEnd)
-	if err != nil {
-		api.Fail(c, http.StatusInternalServerError, "query task conflicts failed: "+err.Error())
-		return
-	}
-	if len(conflicts) > 0 && !req.ConfirmConflict {
-		api.Fail(c, http.StatusConflict, "schedule conflict, confirm_conflict required")
-		return
-	}
+	proposed := *task
+	proposed.Date, proposed.PlannedStart, proposed.PlannedEnd = req.Date, plannedStart, plannedEnd
 	record := models.PostponeRecord{TaskID: task.ID, UserID: uid, PlanID: task.PlanID, OldDate: task.Date, NewDate: req.Date, Reason: req.Reason}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateScheduleMutation(tx, uid, []models.DailyTask{proposed}); err != nil {
+			return err
+		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -525,6 +562,9 @@ func PostponeTask(c *gin.Context) {
 		task.NeedsDecision = false
 		return tx.Save(task).Error
 	}); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
 		api.Fail(c, http.StatusInternalServerError, "postpone task failed: "+err.Error())
 		return
 	}
@@ -625,13 +665,36 @@ func MakeupTask(c *gin.Context) {
 
 func PendingDecisionTasks(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	date := c.DefaultQuery("date", time.Now().Format(dateLayout))
+	date := c.DefaultQuery("date", shanghaiToday())
 	var tasks []models.DailyTask
-	if err := db.DB.Where("user_id = ? AND date = ? AND (status = ? OR needs_decision = ?)", uid, date, models.TaskStatusInProgress, true).Find(&tasks).Error; err != nil {
+	if err := db.DB.Where("user_id = ? AND date = ? AND needs_decision = ?", uid, date, true).Find(&tasks).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "query tasks failed: "+err.Error())
 		return
 	}
-	api.OK(c, tasks)
+	rows := make([]gin.H, 0, len(tasks))
+	for _, task := range tasks {
+		rows = append(rows, gin.H{"task": task, "decision_reason": "interrupted_session"})
+	}
+	api.OK(c, rows)
+}
+
+func UpdateTaskVisibility(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	task, ok := getOwnedTask(c, uid)
+	if !ok {
+		return
+	}
+	var req taskVisibilityReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if err := db.DB.Model(task).Update("public_to_group", req.PublicToGroup).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "update visibility failed: "+err.Error())
+		return
+	}
+	task.PublicToGroup = req.PublicToGroup
+	api.OK(c, gin.H{"task_id": task.ID, "public_to_group": task.PublicToGroup})
 }
 
 func CompensateMidnightTasks(c *gin.Context) {

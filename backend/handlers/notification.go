@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"study_plan_backend/api"
 	"study_plan_backend/db"
@@ -40,7 +42,7 @@ func UnsubscribeNotification(c *gin.Context) {
 
 func DueNotificationEvents(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	date := c.DefaultQuery("date", time.Now().Format(dateLayout))
+	date := c.DefaultQuery("date", shanghaiToday())
 	if _, err := time.Parse(dateLayout, date); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
 		return
@@ -50,15 +52,13 @@ func DueNotificationEvents(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query notification tasks failed: "+err.Error())
 		return
 	}
-	var checkins []models.Checkin
-	if err := db.DB.Where("user_id = ? AND date = ?", uid, date).Find(&checkins).Error; err != nil {
-		api.Fail(c, http.StatusInternalServerError, "query notification checkins failed: "+err.Error())
+	var checkin models.DailyCheckin
+	checkinErr := db.DB.Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).First(&checkin).Error
+	if checkinErr != nil && !errors.Is(checkinErr, gorm.ErrRecordNotFound) {
+		api.Fail(c, http.StatusInternalServerError, "query notification checkins failed: "+checkinErr.Error())
 		return
 	}
-	checked := map[uint]bool{}
-	for _, row := range checkins {
-		checked[row.PlanID] = row.Completed
-	}
+	checked := checkinErr == nil
 	events := make([]notificationEvent, 0)
 	for _, task := range tasks {
 		if task.Status == models.TaskStatusPending && task.ActualStart == nil {
@@ -68,7 +68,7 @@ func DueNotificationEvents(c *gin.Context) {
 			events = append(events, notificationEvent{Type: "completion", Task: task, Message: "计划完成提醒"})
 			events = append(events, notificationEvent{Type: "decision_2330", Task: task, Message: "23:30 超时决策提醒"})
 		}
-		if !checked[task.PlanID] && task.Status != models.TaskStatusCompleted {
+		if !checked && task.Status != models.TaskStatusCompleted {
 			events = append(events, notificationEvent{Type: "missed_checkin", Task: task, Message: "未打卡提醒"})
 		}
 	}

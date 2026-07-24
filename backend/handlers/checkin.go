@@ -2,10 +2,8 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +21,11 @@ type checkinReq struct {
 	Completed *bool  `json:"completed"`               // nil=toggle, true=打勾, false=取消
 }
 
+type dailyCheckinReq struct {
+	Date      string `json:"date" binding:"required"`
+	Completed bool   `json:"completed"`
+}
+
 const dateLayout = "2006-01-02"
 
 // ListCheckins 获取指定日期的打卡状态（返回该用户所有计划在 date 的完成情况）
@@ -30,7 +33,7 @@ func ListCheckins(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	date := c.Query("date")
 	if date == "" {
-		date = time.Now().Format(dateLayout)
+		date = shanghaiToday()
 	}
 	if _, err := time.Parse(dateLayout, date); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
@@ -64,16 +67,16 @@ func ListCheckins(c *gin.Context) {
 	out := make([]checkinfo, 0, len(plans))
 
 	if len(planIDs) > 0 {
-		var rows []models.Checkin
-		if err := db.DB.Where("user_id = ? AND date = ? AND plan_id IN ?", uid, date, planIDs).Find(&rows).Error; err != nil {
-			api.Fail(c, http.StatusInternalServerError, "query checkins failed: "+err.Error())
+		var daily models.DailyCheckin
+		dailyErr := db.DB.Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).First(&daily).Error
+		if dailyErr != nil && !errors.Is(dailyErr, gorm.ErrRecordNotFound) {
+			api.Fail(c, http.StatusInternalServerError, "query checkins failed: "+dailyErr.Error())
 			return
 		}
-		checked := map[uint]bool{}
-		for _, r := range rows {
-			if r.Completed {
-				checked[r.PlanID] = true
-			}
+		var completedToday int64
+		if err := db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date = ? AND status = ?", uid, date, models.TaskStatusCompleted).Count(&completedToday).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "query completed tasks failed: "+err.Error())
+			return
 		}
 		for _, p := range plans {
 			var tasks []models.DailyTask
@@ -115,8 +118,8 @@ func ListCheckins(c *gin.Context) {
 				TaskStatus:     tasks[0].Status,
 				Date:           date,
 				StudyMinutes:   studyMinutes,
-				Completed:      checked[p.ID],
-				Eligible:       remaining == 0,
+				Completed:      dailyErr == nil,
+				Eligible:       completedToday > 0,
 				RemainingTasks: remaining,
 				Task:           &view,
 			})
@@ -138,45 +141,70 @@ func ToggleCheckin(c *gin.Context) {
 		return
 	}
 
-	newVal := true
-	if req.Completed != nil {
-		newVal = *req.Completed
-	}
-	if !newVal {
+	if req.Completed != nil && !*req.Completed {
 		api.Fail(c, http.StatusBadRequest, "completed check-in cannot be reopened")
 		return
 	}
-	var existing models.Checkin
+	finalizeDailyCheckin(c, uid, req.Date, req.PlanID)
+}
+
+func GetDailyCheckin(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	date := c.DefaultQuery("date", shanghaiToday())
+	if _, err := time.Parse(dateLayout, date); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
+		return
+	}
+	view, err := dailyCheckinView(db.DB, uid, date)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query daily checkin failed: "+err.Error())
+		return
+	}
+	api.OK(c, view)
+}
+
+func CompleteDailyCheckin(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req dailyCheckinReq
+	if err := c.ShouldBindJSON(&req); err != nil || !req.Completed {
+		api.Fail(c, http.StatusBadRequest, "date and completed=true required")
+		return
+	}
+	if _, err := time.Parse(dateLayout, req.Date); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid date, expect YYYY-MM-DD")
+		return
+	}
+	finalizeDailyCheckin(c, uid, req.Date, 0)
+}
+
+func finalizeDailyCheckin(c *gin.Context, uid uint, date string, legacyPlanID uint) {
+	var existing models.DailyCheckin
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		var plan models.Plan
-		if err := tx.First(&plan, req.PlanID).Error; err != nil {
-			return err
+		if legacyPlanID != 0 {
+			var plan models.Plan
+			if err := tx.First(&plan, legacyPlanID).Error; err != nil {
+				return err
+			}
+			if plan.UserID != uid {
+				return errNotPlanOwner
+			}
 		}
-		if plan.UserID != uid {
-			return errNotPlanOwner
-		}
-		queryErr := tx.Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).First(&existing).Error
+		queryErr := tx.Where("user_id = ? AND date = ?", uid, date).First(&existing).Error
 		if queryErr == nil && existing.Completed {
 			return nil
 		}
 		if queryErr != nil && !errors.Is(queryErr, gorm.ErrRecordNotFound) {
 			return queryErr
 		}
-		var total, remaining int64
-		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ?", uid, req.PlanID, req.Date).Count(&total).Error; err != nil {
+		var completed int64
+		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND date = ? AND status = ?", uid, date, models.TaskStatusCompleted).Count(&completed).Error; err != nil {
 			return err
 		}
-		if total == 0 {
-			return errDailyTaskNotFound
-		}
-		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date = ? AND status <> ?", uid, req.PlanID, req.Date, models.TaskStatusCompleted).Count(&remaining).Error; err != nil {
-			return err
-		}
-		if remaining > 0 {
-			return fmt.Errorf("%w: %d", errTasksRemaining, remaining)
+		if completed == 0 {
+			return errTasksRemaining
 		}
 		if errors.Is(queryErr, gorm.ErrRecordNotFound) {
-			existing = models.Checkin{UserID: uid, PlanID: req.PlanID, Date: req.Date, Completed: true}
+			existing = models.DailyCheckin{UserID: uid, Date: date, Completed: true}
 			if err := tx.Create(&existing).Error; err != nil {
 				return err
 			}
@@ -186,11 +214,12 @@ func ToggleCheckin(c *gin.Context) {
 			}
 			existing.Completed = true
 		}
-		return awardSlackIfNeeded(tx, uid, &existing)
+		return awardDailySlackIfNeeded(tx, uid, &existing)
 	})
 	if err != nil && isUniqueConstraintError(err) {
-		if queryErr := db.DB.Where("user_id = ? AND plan_id = ? AND date = ? AND completed = ?", uid, req.PlanID, req.Date, true).First(&existing).Error; queryErr == nil {
-			api.OK(c, existing)
+		if queryErr := db.DB.Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).First(&existing).Error; queryErr == nil {
+			view, _ := dailyCheckinView(db.DB, uid, date)
+			api.OK(c, view)
 			return
 		}
 	}
@@ -202,19 +231,16 @@ func ToggleCheckin(c *gin.Context) {
 		api.Fail(c, http.StatusForbidden, "not your plan")
 		return
 	}
-	if errors.Is(err, errDailyTaskNotFound) {
-		api.Fail(c, http.StatusBadRequest, "daily task not found")
-		return
-	}
 	if errors.Is(err, errTasksRemaining) {
-		api.Fail(c, http.StatusBadRequest, "complete today's tasks before check-in; remaining_tasks="+strings.TrimPrefix(err.Error(), errTasksRemaining.Error()+": "))
+		api.Fail(c, http.StatusBadRequest, "complete at least one task before daily check-in")
 		return
 	}
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "create checkin failed: "+err.Error())
 		return
 	}
-	api.OK(c, existing)
+	view, _ := dailyCheckinView(db.DB, uid, date)
+	api.OK(c, view)
 }
 
 var (
@@ -226,38 +252,72 @@ var (
 // Streak 连续打卡天数（MVP：连续多少天所有 active 计划都打满了卡）
 func Streak(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-
-	var plans []models.Plan
-	if err := db.DB.Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Find(&plans).Error; err != nil {
-		api.Fail(c, http.StatusInternalServerError, "query plans failed: "+err.Error())
+	streak, todayQualified, err := consecutiveCheckins(db.DB, uid)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query consecutive checkins failed: "+err.Error())
 		return
 	}
-	if len(plans) == 0 {
-		api.OK(c, gin.H{"streak": 0})
-		return
-	}
-	planIDs := make([]uint, 0, len(plans))
-	for _, p := range plans {
-		planIDs = append(planIDs, p.ID)
-	}
+	api.OK(c, gin.H{"streak": streak, "consecutive_checkin_days": streak, "today_qualified": todayQualified, "display_text": strconv.Itoa(streak) + " 天"})
+}
 
+func dailyCheckinView(tx *gorm.DB, uid uint, date string) (gin.H, error) {
+	var completedCount int64
+	if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND date = ? AND status = ?", uid, date, models.TaskStatusCompleted).Count(&completedCount).Error; err != nil {
+		return nil, err
+	}
+	var row models.DailyCheckin
+	err := tx.Where("user_id = ? AND date = ? AND completed = ?", uid, date, true).First(&row).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return gin.H{"date": date, "completed_task_count": completedCount, "eligible": completedCount > 0, "completed": err == nil, "rewarded": err == nil && row.Rewarded}, nil
+}
+
+func consecutiveCheckins(tx *gorm.DB, uid uint) (int, bool, error) {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	today := time.Now().In(loc).Format(dateLayout)
+	var dates []string
+	if err := tx.Model(&models.DailyTask{}).Distinct("date").Where("user_id = ? AND date <= ?", uid, today).Order("date DESC").Pluck("date", &dates).Error; err != nil {
+		return 0, false, err
+	}
+	checked := map[string]bool{}
+	var rows []models.DailyCheckin
+	if err := tx.Where("user_id = ? AND completed = ?", uid, true).Find(&rows).Error; err != nil {
+		return 0, false, err
+	}
+	for _, row := range rows {
+		checked[row.Date] = true
+	}
+	var completedDates []string
+	if err := tx.Model(&models.DailyTask{}).Distinct("date").Where("user_id = ? AND status = ?", uid, models.TaskStatusCompleted).Pluck("date", &completedDates).Error; err != nil {
+		return 0, false, err
+	}
+	completed := map[string]bool{}
+	for _, date := range completedDates {
+		completed[date] = true
+	}
+	todayQualified := checked[today] && completed[today]
 	streak := 0
-	date := time.Now()
-	for {
-		dateStr := date.Format(dateLayout)
-		var cnt int64
-		db.DB.Model(&models.Checkin{}).
-			Where("user_id = ? AND date = ? AND plan_id IN ? AND completed = ?", uid, dateStr, planIDs, true).
-			Count(&cnt)
-		if int(cnt) < len(planIDs) {
+	for _, date := range dates {
+		if date == today && (!checked[date] || !completed[date]) {
+			continue
+		}
+		if !checked[date] || !completed[date] {
 			break
 		}
 		streak++
-		date = date.AddDate(0, 0, -1)
-		// 安全上限，避免历史数据太多时无限循环
-		if streak > 366 {
-			break
-		}
 	}
-	api.OK(c, gin.H{"streak": streak, "streak_str": strconv.Itoa(streak) + " 天"})
+	return streak, todayQualified, nil
+}
+
+func shanghaiToday() string {
+	return shanghaiNow().Format(dateLayout)
+}
+
+func shanghaiNow() time.Time {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.Now()
+	}
+	return time.Now().In(loc)
 }

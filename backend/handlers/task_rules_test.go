@@ -395,8 +395,8 @@ func TestPlanDateValidationAndActiveSessionIndex(t *testing.T) {
 	}
 
 	setupTestDB(t)
-	if !db.DB.Migrator().HasIndex(&models.StudySession{}, "idx_study_sessions_active_task") {
-		t.Fatal("expected active session partial unique index")
+	if !db.DB.Migrator().HasIndex(&models.StudySession{}, "idx_study_sessions_active_user") {
+		t.Fatal("expected user-level active session partial unique index")
 	}
 	session := models.StudySession{TaskID: 1, UserID: 1, StartTime: time.Now()}
 	if err := db.DB.Create(&session).Error; err != nil {
@@ -404,6 +404,9 @@ func TestPlanDateValidationAndActiveSessionIndex(t *testing.T) {
 	}
 	if err := db.DB.Create(&models.StudySession{TaskID: 1, UserID: 1, StartTime: time.Now()}).Error; err == nil {
 		t.Fatal("expected duplicate active session rejection")
+	}
+	if err := db.DB.Create(&models.StudySession{TaskID: 2, UserID: 1, StartTime: time.Now()}).Error; err == nil {
+		t.Fatal("expected another task for the same user to be rejected")
 	}
 	end := time.Now()
 	db.DB.Model(&session).Update("end_time", end)

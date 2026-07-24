@@ -348,7 +348,8 @@ func NudgeStudyGroupMember(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, "target must be an active member")
 		return
 	}
-	start := time.Now().Truncate(24 * time.Hour)
+	now := shanghaiNow()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var sameTarget int64
 	db.DB.Model(&models.StudyGroupNudge{}).Where("group_id = ? AND sender_user_id = ? AND target_user_id = ? AND created_at >= ?", group.ID, uid, targetID, start).Count(&sameTarget)
 	if sameTarget > 0 {
@@ -585,33 +586,8 @@ func buildGroupMemberView(member models.StudyGroupMember) (groupMemberView, erro
 }
 
 func memberCurrentStreak(uid uint) (int, error) {
-	var plans []models.Plan
-	if err := db.DB.Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Find(&plans).Error; err != nil {
-		return 0, err
-	}
-	if len(plans) == 0 {
-		return 0, nil
-	}
-	planIDs := make([]uint, 0, len(plans))
-	for _, p := range plans {
-		planIDs = append(planIDs, p.ID)
-	}
-	streak := 0
-	date := time.Now()
-	for {
-		dateStr := date.Format(dateLayout)
-		var cnt int64
-		db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date = ? AND plan_id IN ? AND completed = ?", uid, dateStr, planIDs, true).Count(&cnt)
-		if int(cnt) < len(planIDs) {
-			break
-		}
-		streak++
-		date = date.AddDate(0, 0, -1)
-		if streak > 366 {
-			break
-		}
-	}
-	return streak, nil
+	streak, _, err := consecutiveCheckins(db.DB, uid)
+	return streak, err
 }
 
 func memberGroupMetrics(uid uint) (int, int, bool, error) {
@@ -629,23 +605,12 @@ func memberGroupMetrics(uid uint) (int, int, bool, error) {
 	if totalTasks > 0 {
 		completionRate = int(completedTasks * 100 / totalTasks)
 	}
-	today := time.Now().Format(dateLayout)
-	var activePlans []models.Plan
-	if err := db.DB.Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Find(&activePlans).Error; err != nil {
-		return 0, 0, false, err
-	}
-	if len(activePlans) == 0 {
-		return int(studyMinutes), completionRate, false, nil
-	}
-	planIDs := make([]uint, 0, len(activePlans))
-	for _, p := range activePlans {
-		planIDs = append(planIDs, p.ID)
-	}
+	today := shanghaiToday()
 	var todayCompleted int64
-	if err := db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date = ? AND plan_id IN ? AND completed = ?", uid, today, planIDs, true).Count(&todayCompleted).Error; err != nil {
+	if err := db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND date = ? AND completed = ?", uid, today, true).Count(&todayCompleted).Error; err != nil {
 		return 0, 0, false, err
 	}
-	return int(studyMinutes), completionRate, int(todayCompleted) == len(planIDs), nil
+	return int(studyMinutes), completionRate, todayCompleted > 0, nil
 }
 
 func memberLevel(streak int) int {

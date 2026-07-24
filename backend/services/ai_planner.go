@@ -94,7 +94,7 @@ func BuildPlanningContext(input PlanGenerationInput) (PlanningContext, error) {
 
 func BuildPlanningPrompt(ctx PlanningContext) string {
 	return fmt.Sprintf(
-		"You are a study planning agent. Return only JSON for an editable plan preview with title, summary, estimated_total_hours, rationale, and tasks. Each task must include date, planned_start, planned_end, title, objective, description, estimated_minutes, and difficulty. Goal: %s. Days: %d. Hours per day: %d. Available time slot: %s. Completion rate: %.2f. Average study minutes: %d. Active plans: %d. Weekly target hours: %d. Postponed tasks: %d. Conflicting dates: %s. Respect skip dates and max 30 days.",
+		"You are a study planning agent. Return only JSON for an editable plan preview with title, summary, estimated_total_hours, rationale, and tasks. Each task must include date, planned_start, planned_end, title, objective, description, estimated_minutes, and difficulty. Every task must have fewer than 60 distinct planned minutes covered by other tasks on the same date; merge overlapping covered intervals before counting. A/B/C example: if A covers the first 30 minutes of B and C covers a different 30 minutes of B, B has 60 covered minutes and is invalid while A and C each have 30; if A and C cover the same 30 minutes of B, B has only 30 covered minutes. Goal: %s. Days: %d. Hours per day: %d. Available time slot: %s. Completion rate: %.2f. Average study minutes: %d. Active plans: %d. Weekly target hours: %d. Postponed tasks: %d. Conflicting dates: %s. Respect skip dates and max 30 days.",
 		ctx.Input.Goal,
 		boundedDays(ctx.Input.Days),
 		ctx.Input.HoursPerDay,
@@ -109,13 +109,14 @@ func BuildPlanningPrompt(ctx PlanningContext) string {
 }
 
 func GetUserLearningProfile(userID uint) (LearningProfile, error) {
-	from := time.Now().AddDate(0, 0, -30).Format(aiPlanDateLayout)
+	now := shanghaiTimeNow()
+	from := now.AddDate(0, 0, -30).Format(aiPlanDateLayout)
 	var total int64
 	var completed int64
-	if err := db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date >= ?", userID, from).Count(&total).Error; err != nil {
+	if err := db.DB.Model(&models.DailyTask{}).Distinct("date").Where("user_id = ? AND date >= ?", userID, from).Count(&total).Error; err != nil {
 		return LearningProfile{}, err
 	}
-	if err := db.DB.Model(&models.Checkin{}).Where("user_id = ? AND date >= ? AND completed = ?", userID, from, true).Count(&completed).Error; err != nil {
+	if err := db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND date >= ? AND completed = ?", userID, from, true).Count(&completed).Error; err != nil {
 		return LearningProfile{}, err
 	}
 	var sessions []models.StudySession
@@ -154,14 +155,14 @@ func GetActivePlanLoad(userID uint) (ActivePlanLoad, error) {
 }
 
 func GetRecentTaskOutcomes(userID uint) (RecentTaskOutcomes, error) {
-	from := time.Now().AddDate(0, 0, -30)
+	from := shanghaiTimeNow().AddDate(0, 0, -30)
 	var completed int64
 	var missed int64
 	var postponed int64
 	if err := db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND updated_at >= ? AND status = ?", userID, from, models.TaskStatusCompleted).Count(&completed).Error; err != nil {
 		return RecentTaskOutcomes{}, err
 	}
-	if err := db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date < ? AND status <> ?", userID, time.Now().Format(aiPlanDateLayout), models.TaskStatusCompleted).Count(&missed).Error; err != nil {
+	if err := db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND date < ? AND status <> ?", userID, shanghaiTimeNow().Format(aiPlanDateLayout), models.TaskStatusCompleted).Count(&missed).Error; err != nil {
 		return RecentTaskOutcomes{}, err
 	}
 	if err := db.DB.Model(&models.PostponeRecord{}).Where("user_id = ? AND created_at >= ?", userID, from).Count(&postponed).Error; err != nil {
@@ -237,7 +238,7 @@ func defaultString(value, fallback string) string {
 }
 
 func previewDateList(input PlanGenerationInput) []string {
-	start := time.Now()
+	start := shanghaiTimeNow()
 	if input.StartDate != "" {
 		if parsed, err := time.Parse(aiPlanDateLayout, input.StartDate); err == nil {
 			start = parsed
@@ -257,6 +258,14 @@ func previewDateList(input PlanGenerationInput) []string {
 		result = append(result, date)
 	}
 	return result
+}
+
+func shanghaiTimeNow() time.Time {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.Now()
+	}
+	return time.Now().In(loc)
 }
 
 func boundedDays(days int) int {

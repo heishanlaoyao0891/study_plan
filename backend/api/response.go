@@ -18,6 +18,15 @@ func Fail(c *gin.Context, code int, message string) {
 	})
 }
 
+// Conflict returns a real HTTP conflict while preserving the API envelope.
+func Conflict(c *gin.Context, message string, data interface{}) {
+	c.JSON(409, gin.H{
+		"code":    409,
+		"message": message,
+		"data":    data,
+	})
+}
+
 // Warn 带警告但仍创建成功的响应（用于计划超负荷校验等场景）
 func Warn(c *gin.Context, data interface{}, warnings []string) {
 	c.JSON(200, gin.H{

@@ -118,7 +118,7 @@ func GetAdminUserDetail(c *gin.Context) {
 	var planCount int64
 	var checkinCount int64
 	db.DB.Model(&models.Plan{}).Where("user_id = ?", user.ID).Count(&planCount)
-	db.DB.Model(&models.Checkin{}).Where("user_id = ?", user.ID).Count(&checkinCount)
+	db.DB.Model(&models.DailyCheckin{}).Where("user_id = ? AND completed = ?", user.ID, true).Count(&checkinCount)
 	api.OK(c, gin.H{
 		"user":          user,
 		"plan_count":    planCount,
@@ -132,10 +132,10 @@ func AdminOverview(c *gin.Context) {
 	var activePlans int64
 	var checkinsToday int64
 	var bannedUsers int64
-	today := time.Now().Format(dateLayout)
+	today := shanghaiToday()
 	db.DB.Model(&models.User{}).Count(&users)
 	db.DB.Model(&models.Plan{}).Where("status = ?", models.PlanStatusActive).Count(&activePlans)
-	db.DB.Model(&models.Checkin{}).Where("date = ?", today).Count(&checkinsToday)
+	db.DB.Model(&models.DailyCheckin{}).Where("date = ? AND completed = ?", today, true).Count(&checkinsToday)
 	db.DB.Model(&models.User{}).Where("banned_until IS NOT NULL AND banned_until > ?", time.Now()).Count(&bannedUsers)
 	api.OK(c, gin.H{"users": users, "active_plans": activePlans, "checkins_today": checkinsToday, "banned_users": bannedUsers})
 }

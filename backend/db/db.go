@@ -3,13 +3,16 @@ package db
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
 	"study_plan_backend/config"
+	"study_plan_backend/identity"
 	"study_plan_backend/models"
 )
 
@@ -43,6 +46,8 @@ func AutoMigrate() error {
 		&models.PostponeRecord{},
 		&models.DailyMotivation{},
 		&models.Checkin{},
+		&models.DailyCheckin{},
+		&models.PlanActionLayout{},
 		&models.SlackConfig{},
 		&models.SlackRecord{},
 		&models.AdminCredential{},
@@ -79,9 +84,30 @@ func AutoMigrate() error {
 	).Error; err != nil {
 		return err
 	}
-	if err := DB.Exec(
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_study_sessions_active_task ON study_sessions (task_id) WHERE end_time IS NULL",
-	).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DROP INDEX IF EXISTS idx_study_sessions_active_task").Error; err != nil {
+			return err
+		}
+		if err := resolveDuplicateOpenSessions(tx); err != nil {
+			return err
+		}
+		return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_study_sessions_active_user ON study_sessions (user_id) WHERE end_time IS NULL").Error
+	}); err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins (user_id, date)").Error; err != nil {
+		return err
+	}
+	if err := auditLegacyNicknames(); err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_normalized ON users (nickname_normalized) WHERE nickname_normalized <> '' AND deleted_at IS NULL").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_target_id ON users (invite_target_id) WHERE invite_target_id <> ''").Error; err != nil {
+		return err
+	}
+	if err := migrateLegacyCheckins(); err != nil {
 		return err
 	}
 
@@ -98,6 +124,101 @@ func AutoMigrate() error {
 		return err
 	}
 	return bootstrapAdminCredential()
+}
+
+func resolveDuplicateOpenSessions(tx *gorm.DB) error {
+	type duplicate struct{ UserID uint }
+	var users []duplicate
+	if err := tx.Raw("SELECT user_id FROM study_sessions WHERE end_time IS NULL GROUP BY user_id HAVING COUNT(*) > 1").Scan(&users).Error; err != nil {
+		return err
+	}
+	for _, row := range users {
+		var sessions []models.StudySession
+		if err := tx.Where("user_id = ? AND end_time IS NULL", row.UserID).Order("start_time DESC, id DESC").Find(&sessions).Error; err != nil {
+			return err
+		}
+		for _, session := range sessions[1:] {
+			end := time.Now()
+			seconds := int(end.Sub(session.StartTime).Seconds())
+			if seconds < 0 {
+				seconds = 0
+			}
+			session.EndTime = &end
+			session.DurationSec = seconds
+			session.DurationMin = seconds / 60
+			session.Note = "migration closed duplicate open session; duration requires decision"
+			if err := tx.Save(&session).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.DailyTask{}).Where("id = ?", session.TaskID).Updates(map[string]interface{}{
+				"status":         models.TaskStatusPending,
+				"needs_decision": true,
+				"study_seconds":  gorm.Expr("study_seconds + ?", session.DurationSec),
+				"study_minutes":  gorm.Expr("study_minutes + ?", session.DurationMin),
+				"actual_end":     &end,
+			}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func auditLegacyNicknames() error {
+	var users []models.User
+	if err := DB.Unscoped().Order("id ASC").Find(&users).Error; err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, user := range users {
+		updates := map[string]interface{}{}
+		if user.InviteTargetID == "" {
+			targetID, err := identity.NewInviteTargetID()
+			if err != nil {
+				return err
+			}
+			updates["invite_target_id"] = targetID
+		}
+		_, key, err := identity.Validate(user.Nickname)
+		if err == nil && !seen[key] && user.DeletedAt.Valid == false {
+			updates["nickname_normalized"] = key
+			seen[key] = true
+		} else if user.NicknameNormalized != "" {
+			updates["nickname_normalized"] = ""
+		}
+		if len(updates) > 0 {
+			if err := DB.Unscoped().Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func migrateLegacyCheckins() error {
+	type legacy struct {
+		UserID   uint
+		Date     string
+		Rewarded bool
+	}
+	var rows []legacy
+	if err := DB.Model(&models.Checkin{}).Select("user_id, date, MAX(CASE WHEN rewarded THEN 1 ELSE 0 END) AS rewarded").Where("completed = ?", true).Group("user_id, date").Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		checkin := models.DailyCheckin{UserID: row.UserID, Date: row.Date, Completed: true, Rewarded: row.Rewarded, Migrated: true, CreatedAt: time.Now()}
+		if err := DB.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "date"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"completed": true,
+				"migrated":  true,
+				"rewarded":  gorm.Expr("daily_checkins.rewarded OR excluded.rewarded"),
+			}),
+		}).Create(&checkin).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureDefaultAdminConfigs() error {

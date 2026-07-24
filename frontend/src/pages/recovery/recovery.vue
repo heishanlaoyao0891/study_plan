@@ -1,57 +1,84 @@
 <template>
   <view class="page">
-    <view class="panel">
+    <view class="hero">
+      <view class="kicker">把落下的节奏轻轻接回来</view>
       <view class="title">重新安排</view>
-      <view class="desc">当你落后时，系统会把未完成任务排进未来几天，确认后才会生效。</view>
-      <view class="meta">{{ preview?.mode || 'rule' }} · 落后 {{ preview?.missed_days || 0 }} 天 · {{ preview?.overdue_tasks || 0 }} 个任务待整理</view>
-      <button class="primary" @click="load">刷新预览</button>
+      <view class="desc">先预览、选择和调整日期时间，确认后才会移动任务。</view>
+      <view class="meta">{{ preview?.mode || '规则安排' }} · {{ preview?.overdue_tasks || 0 }} 个逾期任务</view>
     </view>
 
-    <view class="panel" v-if="preview?.actions?.length">
-      <view class="section-title">调整计划</view>
-      <view class="row" v-for="a in preview.actions" :key="a.task_id">
-        <view>
-          <view class="row-title">{{ a.title }}</view>
-          <view class="row-sub">{{ a.old_date }} → {{ a.new_date }}</view>
+    <view class="notice" v-if="preview && !previewToken">当前预览缺少版本 token，已禁止应用。请等待后端升级后刷新预览。</view>
+    <view class="notice" v-else-if="preview && !hasServerOccupancy">当前 API 未提供现有日程占用，前端仅检查本次选择之间的重叠；应用时仍会由服务端完整校验。</view>
+    <view class="conflict" v-if="conflictMessage"><view class="conflict-title">需要调整时间</view><view>{{ conflictMessage }}</view></view>
+
+    <view class="empty" v-if="!loading && !rows.length">没有需要重新安排的任务</view>
+    <view class="group" v-for="group in groupedRows" :key="group.name">
+      <view class="group-title">{{ group.name }}</view>
+      <view class="task" v-for="row in group.rows" :key="row.action.task_id" :class="{ deselected: !row.selected }">
+        <view class="task-head"><view><view class="task-title">{{ row.action.title }}</view><view class="old-date">原安排 {{ row.action.old_date }}</view></view><switch color="#ff7aa2" :checked="row.selected" @change="setSelected(row, $event)" /></view>
+        <view class="reason">{{ row.action.reason || '根据未来学习日与可用时段安排' }}</view>
+        <view class="pickers">
+          <view><text>新日期</text><picker mode="date" :value="row.action.new_date" :start="today" @change="setValue(row, 'new_date', $event)"><view>{{ row.action.new_date }}</view></picker></view>
+          <view><text>开始</text><picker mode="time" :value="row.action.planned_start" @change="setValue(row, 'planned_start', $event)"><view>{{ row.action.planned_start }}</view></picker></view>
+          <view><text>结束</text><picker mode="time" :value="row.action.planned_end" @change="setValue(row, 'planned_end', $event)"><view>{{ row.action.planned_end }}</view></picker></view>
         </view>
+        <view class="row-warning" v-if="row.action.validation_message">{{ row.action.validation_message }}</view>
       </view>
-      <button class="primary" @click="apply">确认应用</button>
     </view>
+
+    <view class="footer" v-if="rows.length"><view class="footer-copy">已选择 {{ selectedRows.length }}/{{ rows.length }} 项</view><button :disabled="!canApply || applying" :loading="applying" @click="apply">应用重新安排</button></view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { RecoveryApi } from '@/api'
+import { RecoveryApi, type RecoveryAction, type RecoveryPreview } from '@/api'
+import { localDateKey } from '@/utils/date'
+import { formatScheduleConflicts, validateScheduleUnion } from '@/utils/schedule'
 
-const preview = ref<any>(null)
+interface EditableRow { action: RecoveryAction; selected: boolean }
+const preview = ref<RecoveryPreview | null>(null), rows = ref<EditableRow[]>([]), loading = ref(false), applying = ref(false)
+const today = localDateKey()
+const previewToken = computed(() => preview.value?.preview_token || preview.value?.token || preview.value?.version || '')
+const selectedRows = computed(() => rows.value.filter(row => row.selected))
+const occupancy = computed(() => preview.value?.occupancy || preview.value?.occupied_intervals || [])
+const hasServerOccupancy = computed(() => !!(preview.value?.occupancy || preview.value?.occupied_intervals))
+const conflicts = computed(() => validateScheduleUnion([
+  ...selectedRows.value.map(row => ({ id: row.action.task_id, title: row.action.title, date: row.action.new_date, start: row.action.planned_start, end: row.action.planned_end })),
+  ...occupancy.value.map((row, index) => ({ id: row.task_id ?? row.id ?? `occupancy-${index}`, title: row.title || '现有任务', date: row.date, start: row.planned_start || row.start || '', end: row.planned_end || row.end || '' })),
+]).filter(conflict => selectedRows.value.some(row => row.action.task_id === conflict.id)))
+const conflictMessage = computed(() => formatScheduleConflicts(conflicts.value))
+const invalidRange = computed(() => selectedRows.value.some(row => !row.action.new_date || !row.action.planned_start || !row.action.planned_end || row.action.planned_start >= row.action.planned_end || row.action.valid === false))
+const canApply = computed(() => !!previewToken.value && selectedRows.value.length > 0 && !invalidRange.value && !conflicts.value.length)
+const groupedRows = computed(() => { const groups = new Map<string, EditableRow[]>(); rows.value.forEach(row => { const name = row.action.plan_title || '学习计划'; groups.set(name, [...(groups.get(name) || []), row]) }); return Array.from(groups, ([name, grouped]) => ({ name, rows: grouped })) })
 
 async function load() {
-  preview.value = await RecoveryApi.preview().catch(() => null)
+  loading.value = true
+  try {
+    preview.value = await RecoveryApi.preview()
+    rows.value = (preview.value.actions || []).map(action => ({ selected: action.valid !== false, action: { ...action, planned_start: action.planned_start || '20:00', planned_end: action.planned_end || '21:00', reason: action.reason || '根据未来学习日与可用时段安排' } }))
+  } catch (error: any) { uni.showToast({ title: error?.message || '预览加载失败', icon: 'none' }) }
+  finally { loading.value = false }
 }
-
+function setValue(row: EditableRow, field: 'new_date' | 'planned_start' | 'planned_end', event: any) { row.action[field] = event.detail.value; row.action.valid = !!row.action.new_date && !!row.action.planned_start && !!row.action.planned_end && row.action.planned_start < row.action.planned_end; row.action.validation_message = row.action.valid ? '' : '结束时间须晚于开始时间' }
+function setSelected(row: EditableRow, event: any) { row.selected = !!event.detail.value }
 async function apply() {
-  if (!preview.value?.actions?.length) return
-  const ok = await new Promise<boolean>(resolve => {
-    uni.showModal({ title: '应用恢复', content: '确认按建议重新安排未完成任务吗？', success: res => resolve(!!res.confirm) })
-  })
-  if (!ok) return
-  const res = await RecoveryApi.apply(preview.value.actions)
-  uni.showToast({ title: `已调整 ${res.applied} 个任务`, icon: 'success' })
-  await load()
+  if (!selectedRows.value.length) return
+  if (!canApply.value) return
+  const confirmed = await new Promise<boolean>(resolve => uni.showModal({ title: '应用重新安排', content: `确认移动已选择的 ${selectedRows.value.length} 个任务？`, success: result => resolve(result.confirm) }))
+  if (!confirmed) return
+  applying.value = true
+  try {
+    const result = await RecoveryApi.apply(previewToken.value, selectedRows.value.map(row => ({ ...row.action })))
+    uni.showToast({ title: `已调整 ${result.moved ?? result.applied} 项${result.skipped ? `，跳过 ${result.skipped} 项` : ''}`, icon: 'none' })
+    await load()
+  } catch (error: any) { const stale = error?.code === 409 && error?.raw?.stale; uni.showModal({ title: stale ? '预览已失效' : '应用失败', content: error?.message || (stale ? '正在刷新预览，请重新选择' : '请调整后重试'), showCancel: false }); if (stale) await load() }
+  finally { applying.value = false }
 }
-
 onShow(load)
 </script>
 
 <style lang="scss">
-.page { min-height: 100vh; padding: 28rpx; box-sizing: border-box; background: #f6f7fb; }
-.panel { padding: 30rpx; margin-bottom: 18rpx; border-radius: 16rpx; background: #fff; border: 1rpx solid #e9edf5; }
-.title { color: #111827; font-size: 34rpx; font-weight: 800; }
-.desc, .meta, .row-sub { margin-top: 10rpx; color: #7b8498; font-size: 24rpx; line-height: 1.5; }
-.section-title { color: #111827; font-size: 28rpx; font-weight: 800; margin-bottom: 14rpx; }
-.row { padding: 16rpx 0; border-top: 1rpx solid #eef2f7; }
-.row-title { color: #111827; font-size: 26rpx; font-weight: 700; }
-.primary { margin-top: 18rpx; background: #111827; color: #fff; border-radius: 10rpx; }
+.page{min-height:100vh;box-sizing:border-box;padding:28rpx 28rpx 180rpx;background:linear-gradient(180deg,#fff0f7,#fffaf0 46%,#f7fbff)}.hero{padding:34rpx;border-radius:32rpx;background:linear-gradient(135deg,#ff8fab,#ffc36a);color:#fff;box-shadow:0 18rpx 40rpx rgba(255,143,171,.24)}.kicker{font-size:22rpx;font-weight:800}.title{margin-top:10rpx;font-size:43rpx;font-weight:900}.desc{margin-top:10rpx;color:rgba(255,255,255,.9);font-size:24rpx;line-height:1.5}.meta{margin-top:18rpx;padding:10rpx 16rpx;border-radius:99rpx;background:rgba(255,255,255,.2);font-size:22rpx;display:inline-block}.notice,.conflict{margin-top:18rpx;padding:22rpx;border-radius:18rpx;font-size:23rpx;line-height:1.55}.notice{background:#fff5df;color:#8b601f;border:1rpx solid #ffe0a8}.conflict{background:#fff1f3;color:#b4455b;border:1rpx solid #ffcbd5;white-space:pre-line}.conflict-title{margin-bottom:6rpx;font-weight:900}.group{margin-top:24rpx}.group-title{margin:0 6rpx 12rpx;color:#4b2b3f;font-size:29rpx;font-weight:900}.task{margin-bottom:14rpx;padding:26rpx;border-radius:26rpx;background:#fff;border:1rpx solid #ffe0ea;box-shadow:0 10rpx 26rpx rgba(255,143,171,.09)}.task.deselected{opacity:.52}.task-head{display:flex;align-items:center;justify-content:space-between}.task-title{color:#382333;font-size:28rpx;font-weight:900}.old-date{margin-top:5rpx;color:#8a92a6;font-size:21rpx}.reason{margin-top:14rpx;color:#706274;font-size:23rpx}.pickers{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:10rpx;margin-top:18rpx}.pickers text{display:block;margin-bottom:7rpx;color:#8a92a6;font-size:20rpx}.pickers picker view{padding:18rpx 6rpx;border-radius:12rpx;background:#f8fafc;color:#382333;font-size:22rpx;text-align:center}.row-warning{margin-top:12rpx;color:#c44b61;font-size:22rpx}.empty{margin-top:24rpx;padding:48rpx;border-radius:24rpx;background:#fff;color:#7b8498;text-align:center}.footer{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;align-items:center;gap:20rpx;padding:20rpx 28rpx 34rpx;background:rgba(255,255,255,.96);box-shadow:0 -10rpx 32rpx rgba(75,43,63,.1)}.footer-copy{color:#606a80;font-size:23rpx}.footer button{flex:1;margin:0;border-radius:99rpx;background:linear-gradient(135deg,#ff7aa2,#ffb45c);color:#fff;font-weight:800}.footer button[disabled]{background:#e8ebf0;color:#8a92a6}
 </style>

@@ -96,20 +96,39 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 		var decoded struct {
 			Choices []struct {
 				Message struct {
-					Content string `json:"content"`
+					Content json.RawMessage `json:"content"`
 				} `json:"message"`
 			} `json:"choices"`
 		}
-		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 || strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
+		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 {
 			lastErr = fmt.Errorf("provider returned invalid completion")
 			continue
 		}
-		return strings.TrimSpace(decoded.Choices[0].Message.Content), nil
+		content, err := decodeCompletionContent(decoded.Choices[0].Message.Content)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return content, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("provider request failed")
 	}
 	return "", lastErr
+}
+
+func decodeCompletionContent(raw json.RawMessage) (string, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		if text = strings.TrimSpace(text); text != "" {
+			return text, nil
+		}
+		return "", fmt.Errorf("provider returned empty completion")
+	}
+	if len(raw) == 0 || string(raw) == "null" || !json.Valid(raw) {
+		return "", fmt.Errorf("provider returned invalid completion")
+	}
+	return string(raw), nil
 }
 
 func decodeAIKey(cfg models.AIConfig) string {

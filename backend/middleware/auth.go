@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"study_plan_backend/config"
 	"study_plan_backend/db"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
@@ -63,23 +62,20 @@ func Auth() gin.HandlerFunc {
 
 func RequirePhoneBound() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if config.App == nil || !config.App.PhoneBindingRequired {
-			c.Next()
-			return
-		}
-		role, _ := c.Get(CtxRoleKey)
-		if role == models.RoleAdmin {
-			c.Next()
-			return
-		}
+		c.Next()
+	}
+}
+
+func RequireNickname() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		value, ok := c.Get(CtxUserKey)
-		if !ok {
+		user, valid := value.(models.User)
+		if !ok || !valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "user not found"})
 			return
 		}
-		user, ok := value.(models.User)
-		if !ok || user.PhoneNumber == "" || user.PhoneVerifiedAt == nil {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "phone number binding required", "phone_required": true})
+		if user.NicknameNormalized == "" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "nickname setup required", "data": gin.H{"nickname_required": true}})
 			return
 		}
 		c.Next()

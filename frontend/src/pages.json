@@ -9,11 +9,11 @@
     { "path": "pages/group/group", "style": { "navigationBarTitleText": "学习小组" } },
     { "path": "pages/recovery/recovery", "style": { "navigationBarTitleText": "重新安排" } },
     { "path": "pages/ops/ops", "style": { "navigationBarTitleText": "设置与说明" } },
-    { "path": "pages/account/account", "style": { "navigationBarTitleText": "账户设置" } },
+    { "path": "pages/account/account", "style": { "navigationBarTitleText": "账号与数据" } },
+    { "path": "pages/nickname/nickname", "style": { "navigationBarTitleText": "设置昵称", "navigationStyle": "default" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
     { "path": "pages/onboarding/onboarding", "style": { "navigationBarTitleText": "新手引导" } },
-    { "path": "pages/bind/bind", "style": { "navigationBarTitleText": "绑定手机号", "navigationStyle": "default" } },
     { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
   ],
   "globalStyle": {

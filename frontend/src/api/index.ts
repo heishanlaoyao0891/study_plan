@@ -4,11 +4,8 @@ import { api } from './request'
 // ---------- 类型 ----------
 export interface User {
   id: number
-  openid: string
   nickname: string
   avatar_url: string
-  phone_number?: string
-  phone_verified_at?: string
   weekly_hours: number
   slack_balance: number
   role: 'user' | 'admin'
@@ -20,6 +17,7 @@ export interface User {
 export interface LoginResp {
   token: string
   user: User
+  nickname_required: boolean
 }
 
 export interface Plan {
@@ -42,6 +40,9 @@ export interface Plan {
   sort_order: number
   created_at: string
   updated_at: string
+  total_tasks: number
+  completed_tasks: number
+  completion_rate?: number | null
 }
 
 export interface ScheduleOverride {
@@ -89,6 +90,7 @@ export interface DailyTask {
   study_seconds: number
   created_at: string
   updated_at: string
+  decision_reason?: string
 }
 
 export interface TimerTask extends DailyTask {
@@ -206,10 +208,88 @@ export interface CheckinInfo {
   task: TimerTask
 }
 
-export interface CreateCheckinReq {
-  plan_id: number
+export interface DailyCheckin {
   date: string
-  completed?: boolean | null
+  completed_task_count: number
+  eligible: boolean
+  completed: boolean
+  reward_awarded?: boolean
+  reward_minutes?: number
+}
+
+export interface ConsecutiveCheckin {
+  consecutive_checkin_days: number
+  today_qualified: boolean
+  display_text: string
+  streak?: number
+}
+
+export type PlanActionId = 'toggle_status' | 'edit' | 'postpone' | 'invite' | 'delete'
+
+export interface PlanActionLayout {
+  direct: PlanActionId[]
+  overflow: PlanActionId[]
+}
+
+export interface PlanDelayResult {
+  plan?: Plan
+  moved?: number
+  moved_tasks?: number
+  moved_task_count?: number
+  old_start_date?: string
+  old_end_date?: string
+  new_start_date?: string
+  new_end_date?: string
+}
+
+export interface UserSearchResult {
+  invite_target_id: string
+  nickname: string
+  avatar_url?: string
+}
+
+export interface RecoveryAction {
+  task_id: number
+  title: string
+  plan_id?: number
+  plan_title?: string
+  old_date: string
+  new_date: string
+  planned_start: string
+  planned_end: string
+  reason: string
+  valid?: boolean
+  validation_message?: string
+}
+
+export interface RecoveryPreview {
+  mode: string
+  missed_days: number
+  overdue_tasks: number
+  pending_decisions: number
+  preview_token?: string
+  token?: string
+  version?: string
+  actions: RecoveryAction[]
+  occupancy?: RecoveryOccupancy[]
+  occupied_intervals?: RecoveryOccupancy[]
+}
+
+export interface RecoveryOccupancy {
+  task_id?: number
+  id?: number | string
+  title?: string
+  date: string
+  planned_start?: string
+  planned_end?: string
+  start?: string
+  end?: string
+}
+
+export interface RecoveryApplyResult {
+  applied: number
+  skipped?: number
+  moved?: number
 }
 
 // ---------- 接口 ----------
@@ -220,8 +300,8 @@ export const AuthApi = {
   me() {
     return api.get<User>('/api/auth/me')
   },
-  bindPhone(code: string, phone_number = '') {
-    return api.post<User>('/api/auth/phone', { code, phone_number })
+  setNickname(nickname: string) {
+    return api.put<User>('/api/auth/nickname', { nickname })
   },
   updateAvatar(avatar_url: string) {
     return api.put<User>('/api/auth/avatar', { avatar_url })
@@ -254,11 +334,14 @@ export const PlanApi = {
   resume(id: number) {
     return api.put<Plan>(`/api/plans/${id}/resume`)
   },
+  delay(id: number, days: number) {
+    return api.put<PlanDelayResult>(`/api/plans/${id}/shift`, { days })
+  },
   shift(id: number, days: number, start_date = '') {
     return api.put<Plan>(`/api/plans/${id}/shift`, { days, start_date })
   },
-  invite(id: number, user_id: number) {
-    return api.post<any>(`/api/plans/${id}/invite`, { user_id })
+  invite(id: number, invite_target_id: string) {
+    return api.post<any>(`/api/plans/${id}/invite`, { invite_target_id })
   },
   tasks(id: number) {
     return api.get<TimerTask[]>(`/api/plans/${id}/tasks`)
@@ -318,10 +401,10 @@ export const GroupApi = {
 
 export const RecoveryApi = {
   preview() {
-    return api.get<{ mode: string; missed_days: number; overdue_tasks: number; pending_decisions: number; actions: Array<{ task_id: number; title: string; old_date: string; new_date: string }> }>('/api/recovery/preview')
+    return api.get<RecoveryPreview>('/api/recovery/preview')
   },
-  apply(actions: Array<{ task_id: number; title: string; old_date: string; new_date: string }>) {
-    return api.post<{ applied: number }>('/api/recovery/apply', { actions })
+  apply(preview_token: string, actions: RecoveryAction[]) {
+    return api.post<RecoveryApplyResult>('/api/recovery/apply', { token: preview_token, actions })
   },
 }
 
@@ -339,11 +422,14 @@ export const CheckinApi = {
     const q = date ? `?date=${date}` : ''
     return api.get<CheckinInfo[]>(`/api/checkins${q}`)
   },
-  toggle(data: CreateCheckinReq) {
-    return api.post<any>(`/api/checkins`, data)
+  daily(date: string) {
+    return api.get<DailyCheckin>(`/api/checkins/daily?date=${date}`)
   },
-  streak() {
-    return api.get<{ streak: number; streak_str: string }>(`/api/checkins/streak`)
+  completeDaily(date: string) {
+    return api.post<DailyCheckin>('/api/checkins/daily', { date, completed: true })
+  },
+  consecutive() {
+    return api.get<ConsecutiveCheckin>('/api/checkins/consecutive')
   },
 }
 
@@ -371,6 +457,9 @@ export const StudyTaskApi = {
   },
   update(id: number, data: Partial<Pick<DailyTask, 'date' | 'title' | 'description' | 'objective' | 'sort_order' | 'planned_start' | 'planned_end' | 'estimated_minutes' | 'difficulty' | 'public_to_group'>>) {
     return api.put<DailyTask>(`/api/tasks/${id}`, data)
+  },
+  visibility(id: number, public_to_group: boolean) {
+    return api.put<DailyTask>(`/api/tasks/${id}/visibility`, { public_to_group })
   },
   remove(id: number) {
     return api.delete<any>(`/api/tasks/${id}`)
@@ -440,6 +529,18 @@ export const AIApi = {
   },
   commitPlan(preview: any) {
     return api.post<any>('/api/ai/commit-plan', { preview })
+  },
+}
+
+export const UserApi = {
+  search(query: string) {
+    return api.get<UserSearchResult[]>(`/api/users/search?q=${encodeURIComponent(query)}`)
+  },
+  planActionLayout() {
+    return api.get<PlanActionLayout>('/api/users/me/plan-action-layout')
+  },
+  savePlanActionLayout(layout: PlanActionLayout) {
+    return api.put<PlanActionLayout>('/api/users/me/plan-action-layout', layout)
   },
 }
 

@@ -54,15 +54,17 @@ func main() {
 		auth.POST("/auth/phone", handlers.BindPhoneNumber)
 		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)
+		auth.PUT("/auth/nickname", handlers.UpdateNickname)
 	}
 
-	bound := apiGroup.Group("", middleware.Auth(), middleware.RequirePhoneBound())
+	bound := apiGroup.Group("", middleware.Auth(), middleware.RequireNickname())
 	{
 		// 计划
 		bound.GET("/plans", handlers.ListPlans)
 		bound.POST("/plans", handlers.CreatePlan)
 		bound.GET("/plans/:id", handlers.GetPlan)
 		bound.PUT("/plans/:id", handlers.UpdatePlan)
+		bound.PUT("/plans/:id/visibility", handlers.UpdatePlanVisibility)
 		bound.DELETE("/plans/:id", handlers.DeletePlan)
 		bound.PUT("/plans/:id/pause", handlers.PausePlan)
 		bound.PUT("/plans/:id/resume", handlers.ResumePlan)
@@ -94,6 +96,9 @@ func main() {
 		bound.GET("/checkins", handlers.ListCheckins)
 		bound.POST("/checkins", handlers.ToggleCheckin)
 		bound.GET("/checkins/streak", handlers.Streak)
+		bound.GET("/checkins/daily", handlers.GetDailyCheckin)
+		bound.POST("/checkins/daily", handlers.CompleteDailyCheckin)
+		bound.GET("/checkins/consecutive", handlers.Streak)
 
 		// 学习任务
 		bound.GET("/plans/:id/tasks", handlers.ListPlanTasks)
@@ -111,6 +116,7 @@ func main() {
 		bound.PUT("/tasks/:id/makeup", handlers.MakeupTask)
 		bound.PUT("/tasks/:id/complete", handlers.CompleteTask)
 		bound.PUT("/tasks/:id/reflection", handlers.UpdateTaskReflection)
+		bound.PUT("/tasks/:id/visibility", handlers.UpdateTaskVisibility)
 		bound.GET("/motivation/daily", handlers.DailyMotivation)
 		bound.GET("/tasks/pending-decision", handlers.PendingDecisionTasks)
 		bound.POST("/tasks/midnight-compensate", handlers.CompensateMidnightTasks)
@@ -141,6 +147,9 @@ func main() {
 
 		bound.GET("/ops/content/:kind", handlers.GetOpsContent)
 		bound.POST("/feedback", handlers.SubmitFeedback)
+		bound.GET("/users/search", handlers.SearchUsers)
+		bound.GET("/users/me/plan-action-layout", handlers.GetPlanActionLayout)
+		bound.PUT("/users/me/plan-action-layout", handlers.UpdatePlanActionLayout)
 	}
 
 	// 管理员
