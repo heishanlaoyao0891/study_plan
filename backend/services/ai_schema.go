@@ -56,9 +56,13 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 		skip[date] = true
 	}
 	seen := map[string]bool{}
+	availableStart, availableEnd, slotErr := parsePlanningSlot(input.AvailableTimeSlot)
 	for _, task := range preview.Tasks {
 		if strings.TrimSpace(task.Date) == "" {
 			return PlanValidationError{Message: "task date is required"}
+		}
+		if _, err := time.Parse(aiPlanDateLayout, task.Date); err != nil {
+			return PlanValidationError{Message: fmt.Sprintf("task date %s must use YYYY-MM-DD", task.Date)}
 		}
 		if skip[task.Date] {
 			return PlanValidationError{Message: fmt.Sprintf("task falls on skipped date %s", task.Date)}
@@ -87,6 +91,16 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 		end, endErr := time.Parse("15:04", task.PlannedEnd)
 		if startErr != nil || endErr != nil || !end.After(start) {
 			return PlanValidationError{Message: fmt.Sprintf("task %s has invalid planned time range", task.Date)}
+		}
+		plannedMinutes := int(end.Sub(start).Minutes())
+		if task.EstimatedMinutes != plannedMinutes {
+			return PlanValidationError{Message: fmt.Sprintf("task %s estimated minutes must match planned time range", task.Date)}
+		}
+		if slotErr == nil {
+			taskStart, taskEnd := start.Hour()*60+start.Minute(), end.Hour()*60+end.Minute()
+			if taskStart < availableStart || taskEnd > availableEnd {
+				return PlanValidationError{Message: fmt.Sprintf("task %s falls outside available time slot", task.Date)}
+			}
 		}
 	}
 	return nil

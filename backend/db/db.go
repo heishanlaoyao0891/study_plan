@@ -38,6 +38,7 @@ func AutoMigrate() error {
 		&models.RegistrationInvite{},
 		&models.PasswordResetCode{},
 		&models.Plan{},
+		&models.AIPlanCommit{},
 		&models.PlanMember{},
 		&models.PlanScheduleOverride{},
 		&models.StudyGroup{},

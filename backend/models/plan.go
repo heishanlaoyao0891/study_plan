@@ -25,6 +25,7 @@ type Plan struct {
 	StudyDates          []string               `gorm:"serializer:json" json:"study_dates"`
 	PublicToGroup       bool                   `gorm:"default:false" json:"public_to_group"`
 	AIGenerated         bool                   `gorm:"default:false" json:"ai_generated"`
+	GenerationSource    string                 `gorm:"size:32;not null;default:''" json:"generation_source"`
 	IsShared            bool                   `gorm:"default:false" json:"is_shared"`
 	SortOrder           int                    `gorm:"default:0" json:"sort_order"`
 	ScheduleOverrides   []PlanScheduleOverride `gorm:"foreignKey:PlanID" json:"schedule_overrides,omitempty"`
@@ -56,3 +57,14 @@ type PlanScheduleOverride struct {
 }
 
 func (PlanScheduleOverride) TableName() string { return "plan_schedule_overrides" }
+
+type AIPlanCommit struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	UserID         uint      `gorm:"uniqueIndex:idx_ai_plan_commit_user_key;not null" json:"user_id"`
+	IdempotencyKey string    `gorm:"uniqueIndex:idx_ai_plan_commit_user_key;size:64;not null" json:"idempotency_key"`
+	PlanID         uint      `gorm:"index;not null" json:"plan_id"`
+	PreviewHash    string    `gorm:"size:64;not null" json:"preview_hash"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (AIPlanCommit) TableName() string { return "ai_plan_commits" }

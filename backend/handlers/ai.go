@@ -1,7 +1,13 @@
 package handlers
 
 import (
+	"context"
+	"errors"
+	"math"
 	"net/http"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -24,129 +30,207 @@ type generatePlanReq struct {
 }
 
 type commitAIPlanReq struct {
-	Preview services.PlanPreview `json:"preview" binding:"required"`
+	Preview         services.PlanPreview `json:"preview" binding:"required"`
+	ProvenanceToken string               `json:"provenance_token" binding:"required"`
+	IdempotencyKey  string               `json:"idempotency_key" binding:"required"`
+	ConfirmOverload bool                 `json:"confirm_overload"`
 }
+
+const maxAIGenerateBodyBytes = 64 << 10
+const maxAICommitBodyBytes = 256 << 10
+const planningRequestBudget = 12 * time.Second
+const planningWorkBudget = 11500 * time.Millisecond
+const commitRaceAttempts = 5
+
+var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+var currentAIProvider = services.CurrentAIProviderContext
+var canUseAIGeneration = services.CanUseAIGenerationContext
+var validateAIConfigContext = services.ValidateAIConfigContext
 
 func GeneratePlan(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	cfg, provider, providerErr := services.CurrentAIProvider()
-	if providerErr != nil {
-		api.Fail(c, http.StatusServiceUnavailable, "AI configuration is unavailable")
-		return
-	}
-	if !cfg.Enabled {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "disabled", "AI generation is disabled")
-		api.Fail(c, http.StatusForbidden, "AI generation is disabled")
-		return
-	}
-	canUse, usedToday, err := services.CanUseAIGeneration(uid, cfg.DailyGenerationLimit)
-	if err != nil {
-		api.Fail(c, http.StatusInternalServerError, "query ai usage failed: "+err.Error())
-		return
-	}
-	if !canUse {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "limit_exceeded", "daily generation limit exceeded")
-		api.Fail(c, http.StatusTooManyRequests, "daily AI generation limit exceeded")
-		return
-	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAIGenerateBodyBytes)
 	var req generatePlanReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
-	if req.Days <= 0 {
-		req.Days = 7
-	}
-	if req.HoursPerDay <= 0 {
-		req.HoursPerDay = 1
-	}
-	ctx, err := services.BuildPlanningContext(services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, AvailableTimeSlot: req.AvailableTimeSlot, SkipDates: req.SkipDates, Refinement: req.Refinement})
+	started := time.Now()
+	requestContext, cancelRequest := context.WithTimeout(c.Request.Context(), planningRequestBudget)
+	defer cancelRequest()
+	workContext, cancelWork := context.WithTimeout(requestContext, planningWorkBudget)
+	defer cancelWork()
+	ctx, err := services.BuildPlanningContextWithContext(workContext, services.PlanGenerationInput{UserID: uid, Goal: req.Goal, HoursPerDay: req.HoursPerDay, Days: req.Days, StartDate: req.StartDate, AvailableTimeSlot: req.AvailableTimeSlot, SkipDates: req.SkipDates, Refinement: req.Refinement})
 	if err != nil {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
-		api.Fail(c, http.StatusInternalServerError, "build planning context failed: "+err.Error())
-		return
-	}
-	preview := services.PlanPreview{}
-	mode := "ai"
-	fallbackReason := ""
-	raw, generateErr := provider.Generate(ctx.Prompt, 4096)
-	if generateErr != nil {
-		mode = "fallback"
-		fallbackReason = "provider_error"
-		preview = services.FallbackPlanPreview(ctx)
-	} else {
-		preview, err = services.ParsePlanPreviewJSON(raw)
-		if err != nil || services.ValidatePlanPreview(preview, ctx.Input) != nil {
-			mode = "fallback"
-			fallbackReason = "invalid_provider_output"
-			preview = services.FallbackPlanPreview(ctx)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			api.Fail(c, http.StatusRequestTimeout, "planning request budget exhausted")
+			return
 		}
-	}
-	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
-		api.Fail(c, http.StatusBadGateway, "AI plan validation failed: "+err.Error())
+		api.Fail(c, http.StatusBadRequest, "invalid planning request: "+err.Error())
 		return
 	}
-	if err := validateAIPreviewSchedule(db.DB, uid, preview); err != nil {
-		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
+	contextDuration := time.Since(started)
+	localStarted := time.Now()
+	preview, err := services.BuildLocalPlan(ctx)
+	if err != nil {
+		api.Fail(c, http.StatusConflict, "build local plan failed: "+err.Error())
+		return
+	}
+	localDuration := time.Since(localStarted)
+	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "local plan validation failed: "+err.Error())
+		return
+	}
+	if err := validateAIPreviewSchedule(db.DB.WithContext(workContext), uid, preview); err != nil {
 		if respondScheduleError(c, err) {
 			return
 		}
 		api.Fail(c, http.StatusInternalServerError, "validate AI schedule failed: "+err.Error())
 		return
 	}
-	status := "success"
-	message := "AI preview generated"
-	if mode == "fallback" {
-		status = "fallback"
-		message = "rule-based fallback preview generated: " + fallbackReason
+	source := "local"
+	enrichmentStatus := "disabled"
+	enrichmentReason := "provider_disabled"
+	providerName, modelName := "", ""
+	usedToday, dailyLimit := int64(0), 0
+	enrichmentStarted := time.Now()
+	cfg, provider, providerErr := currentAIProvider(workContext)
+	if providerErr != nil {
+		enrichmentStatus, enrichmentReason = "configuration_error", "provider_configuration_unavailable"
+	} else {
+		providerName, modelName, dailyLimit = cfg.Provider, cfg.ModelName, maxPositive(cfg.DailyGenerationLimit, 5)
+		providerKind := services.NormalizeAIProvider(cfg.Provider)
+		if !cfg.Enabled || providerKind == services.AIProviderMock {
+			enrichmentStatus, enrichmentReason = "disabled", "provider_disabled"
+		} else {
+			if configErr := validateAIConfigContext(workContext, cfg, false); configErr != nil {
+				enrichmentStatus, enrichmentReason = "configuration_error", "invalid_provider_configuration"
+			} else if canUse, count, quotaErr := canUseAIGeneration(workContext, uid, cfg.DailyGenerationLimit); quotaErr != nil {
+				enrichmentStatus, enrichmentReason = "provider_error", "quota_check_failed"
+			} else if !canUse {
+				usedToday = count
+				enrichmentStatus, enrichmentReason = "quota_limited", "daily_enrichment_limit_reached"
+			} else if raw, generateErr := provider.GenerateContext(services.WithAIQuota(workContext, uid, cfg.Provider, cfg.DailyGenerationLimit, &usedToday), services.BuildPlanningPrompt(ctx, preview), 2048); generateErr != nil {
+				enrichmentStatus, enrichmentReason = classifyEnrichmentError(generateErr)
+			} else if enriched, parseErr := services.ParsePlanPreviewJSON(raw); parseErr != nil {
+				enrichmentStatus, enrichmentReason = "invalid_output", "invalid_provider_output"
+			} else if merged, mergeErr := services.MergePlanEnrichment(preview, enriched); mergeErr != nil || services.ValidatePlanPreview(merged, ctx.Input) != nil || validateAIPreviewSchedule(db.DB.WithContext(workContext), uid, merged) != nil {
+				enrichmentStatus, enrichmentReason = "invalid_output", "invalid_provider_output"
+			} else {
+				preview = merged
+				source, enrichmentStatus, enrichmentReason = "local_enriched", "success", ""
+			}
+		}
 	}
-	services.RecordAIGenerationUsage(uid, cfg.Provider, status, message)
-	api.OK(c, gin.H{"preview": preview, "mode": mode, "ai_status": gin.H{"mode": mode, "provider": cfg.Provider, "model": cfg.ModelName, "fallback_reason": fallbackReason}, "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
+	mode := "fallback"
+	if source == "local_enriched" {
+		mode = "ai"
+	}
+	if err := services.AssignPlanTaskIdentities(&preview); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "assign preview identities failed")
+		return
+	}
+	provenanceToken, err := services.SignPlanProvenance(uid, source, preview)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "sign preview provenance failed")
+		return
+	}
+	data := gin.H{
+		"preview": preview, "mode": mode, "source": source, "provenance_token": provenanceToken, "warnings": ctx.Warnings,
+		"enrichment":        gin.H{"status": enrichmentStatus, "reason": enrichmentReason, "provider": providerName, "model": modelName},
+		"ai_status":         gin.H{"mode": mode, "provider": providerName, "model": modelName, "fallback_reason": enrichmentReason},
+		"usage":             gin.H{"used_today": usedToday, "daily_limit": dailyLimit},
+		"request_budget_ms": planningRequestBudget.Milliseconds(),
+		"phase_timings_ms":  gin.H{"context": contextDuration.Milliseconds(), "local_planning": localDuration.Milliseconds(), "enrichment": time.Since(enrichmentStarted).Milliseconds(), "total": time.Since(started).Milliseconds()},
+	}
+	api.OK(c, data)
+}
+
+func classifyEnrichmentError(err error) (string, string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout", "enrichment_deadline_exceeded"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled", "request_cancelled"
+	}
+	if errors.Is(err, services.ErrAIQuotaExceeded) {
+		return "quota_limited", "daily_enrichment_limit_reached"
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "http 429") || strings.Contains(message, "quota") {
+		return "quota_limited", "provider_quota_limited"
+	}
+	return "provider_error", "provider_request_failed"
 }
 
 func CommitAIPlan(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAICommitBodyBytes)
 	var req commitAIPlanReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
-	input := services.PlanGenerationInput{UserID: uid, Goal: req.Preview.Title, Days: len(req.Preview.Tasks)}
-	if err := services.ValidatePlanPreview(req.Preview, input); err != nil {
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if !idempotencyKeyPattern.MatchString(req.IdempotencyKey) {
+		api.Fail(c, http.StatusBadRequest, "invalid idempotency_key")
+		return
+	}
+	provenance, err := services.ParsePlanProvenance(req.ProvenanceToken, uid)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := services.ValidateCommittedPlanProvenance(req.Preview, provenance); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	preview, err := services.NormalizeCommittedPlanPreview(req.Preview)
+	if err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid preview: "+err.Error())
 		return
 	}
-	if err := validateAIPreviewSchedule(db.DB, uid, req.Preview); err != nil {
+	committedHash := services.HashPlanPreview(preview)
+	if handled := respondExistingAIPlanCommit(c, uid, req.IdempotencyKey, committedHash); handled {
+		return
+	}
+	weeklyTarget := recomputeWeeklyTarget(preview)
+	if _, err := checkOverload(uid, weeklyTarget, req.ConfirmOverload); err != nil {
+		if respondExistingAIPlanCommit(c, uid, req.IdempotencyKey, committedHash) {
+			return
+		}
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateAIPreviewSchedule(db.DB, uid, preview); err != nil {
+		if respondExistingAIPlanCommit(c, uid, req.IdempotencyKey, committedHash) {
+			return
+		}
 		if respondScheduleError(c, err) {
 			return
 		}
 		api.Fail(c, http.StatusInternalServerError, "validate AI schedule failed: "+err.Error())
 		return
 	}
-	first, last := req.Preview.Tasks[0], req.Preview.Tasks[len(req.Preview.Tasks)-1]
-	plan := models.Plan{UserID: uid, Title: req.Preview.Title, Description: req.Preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: int(req.Preview.EstimatedTotalHours), AIGenerated: true, StartDate: first.Date, EndDate: last.Date, DefaultPlannedStart: first.PlannedStart, DefaultPlannedEnd: first.PlannedEnd}
-	for _, previewTask := range req.Preview.Tasks {
-		plan.StudyDates = append(plan.StudyDates, previewTask.Date)
-	}
+	var plan models.Plan
 	var tasks []models.DailyTask
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := validateAIPreviewSchedule(tx, uid, req.Preview); err != nil {
-			return err
+	for attempt := 0; attempt < commitRaceAttempts; attempt++ {
+		plan, tasks, err = createAIPlanCommit(uid, req.IdempotencyKey, committedHash, provenance.Source, preview, weeklyTarget, req.ConfirmOverload)
+		if err == nil {
+			break
 		}
-		if err := tx.Create(&plan).Error; err != nil {
-			return err
+		if respondExistingAIPlanCommit(c, uid, req.IdempotencyKey, committedHash) {
+			return
 		}
-		for i, previewTask := range req.Preview.Tasks {
-			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Objective: previewTask.Objective, Description: previewTask.Description, SortOrder: i, PlannedStart: previewTask.PlannedStart, PlannedEnd: previewTask.PlannedEnd, EstimatedMinutes: previewTask.EstimatedMinutes, Difficulty: previewTask.Difficulty, Status: models.TaskStatusPending}
-			if err := tx.Create(&task).Error; err != nil {
-				return err
-			}
-			tasks = append(tasks, task)
+		if !isSQLiteCommitRace(err) {
+			break
 		}
-		return nil
-	})
+		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+	}
+	if err != nil && respondExistingAIPlanCommit(c, uid, req.IdempotencyKey, committedHash) {
+		return
+	}
 	if err != nil {
 		if respondScheduleError(c, err) {
 			return
@@ -155,6 +239,79 @@ func CommitAIPlan(c *gin.Context) {
 		return
 	}
 	api.OK(c, gin.H{"plan": plan, "tasks": tasks})
+}
+
+func createAIPlanCommit(uid uint, idempotencyKey, committedHash, source string, preview services.PlanPreview, weeklyTarget int, confirmOverload bool) (models.Plan, []models.DailyTask, error) {
+	first, last := preview.Tasks[0], preview.Tasks[len(preview.Tasks)-1]
+	plan := models.Plan{UserID: uid, Title: preview.Title, Description: preview.Summary, Status: models.PlanStatusActive, WeeklyTargetHours: weeklyTarget, AIGenerated: true, GenerationSource: source, StartDate: first.Date, EndDate: last.Date, DefaultPlannedStart: first.PlannedStart, DefaultPlannedEnd: first.PlannedEnd}
+	for _, previewTask := range preview.Tasks {
+		plan.StudyDates = append(plan.StudyDates, previewTask.Date)
+	}
+	tasks := make([]models.DailyTask, 0, len(preview.Tasks))
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		var existing models.AIPlanCommit
+		if err := tx.Where("user_id = ? AND idempotency_key = ?", uid, idempotencyKey).First(&existing).Error; err == nil {
+			return gorm.ErrDuplicatedKey
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if _, err := checkOverloadWithDB(tx, uid, weeklyTarget, confirmOverload); err != nil {
+			return err
+		}
+		if err := validateAIPreviewSchedule(tx, uid, preview); err != nil {
+			return err
+		}
+		if err := tx.Create(&plan).Error; err != nil {
+			return err
+		}
+		for i, previewTask := range preview.Tasks {
+			task := models.DailyTask{UserID: uid, PlanID: plan.ID, Date: previewTask.Date, Title: previewTask.Title, Objective: previewTask.Objective, Description: previewTask.Description, SortOrder: i, PlannedStart: previewTask.PlannedStart, PlannedEnd: previewTask.PlannedEnd, EstimatedMinutes: previewTask.EstimatedMinutes, Difficulty: previewTask.Difficulty, Status: models.TaskStatusPending}
+			if err := tx.Create(&task).Error; err != nil {
+				return err
+			}
+			tasks = append(tasks, task)
+		}
+		return tx.Create(&models.AIPlanCommit{UserID: uid, IdempotencyKey: idempotencyKey, PlanID: plan.ID, PreviewHash: committedHash}).Error
+	})
+	return plan, tasks, err
+}
+
+func respondExistingAIPlanCommit(c *gin.Context, uid uint, key, previewHash string) bool {
+	var commit models.AIPlanCommit
+	err := db.DB.Where("user_id = ? AND idempotency_key = ?", uid, key).First(&commit).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	if commit.PreviewHash != previewHash {
+		api.Fail(c, http.StatusConflict, "idempotency_key was already used for a different preview")
+		return true
+	}
+	var plan models.Plan
+	var tasks []models.DailyTask
+	if err := db.DB.Where("id = ? AND user_id = ?", commit.PlanID, uid).First(&plan).Error; err != nil {
+		return false
+	}
+	if err := db.DB.Where("plan_id = ? AND user_id = ?", commit.PlanID, uid).Order("sort_order ASC").Find(&tasks).Error; err != nil {
+		return false
+	}
+	api.OK(c, gin.H{"plan": plan, "tasks": tasks, "idempotent_replay": true})
+	return true
+}
+
+func isSQLiteCommitRace(err error) bool {
+	message := strings.ToLower(err.Error())
+	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(message, "unique constraint") || strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked") || strings.Contains(message, "sqlite_busy")
+}
+
+func recomputeWeeklyTarget(preview services.PlanPreview) int {
+	first, _ := time.Parse("2006-01-02", preview.Tasks[0].Date)
+	last, _ := time.Parse("2006-01-02", preview.Tasks[len(preview.Tasks)-1].Date)
+	calendarDays := int(last.Sub(first).Hours()/24) + 1
+	weeks := int(math.Ceil(float64(calendarDays) / 7))
+	return int(math.Ceil(preview.EstimatedTotalHours / float64(weeks)))
 }
 
 func validateAIPreviewSchedule(tx *gorm.DB, uid uint, preview services.PlanPreview) error {

@@ -78,6 +78,7 @@ export interface Plan {
   schedule_overrides?: ScheduleOverride[]
   public_to_group: boolean
   ai_generated: boolean
+  generation_source: '' | 'local' | 'local_enriched'
   is_shared: boolean
   sort_order: number
   created_at: string
@@ -347,6 +348,42 @@ export interface RecoveryApplyResult {
   applied: number
   skipped?: number
   moved?: number
+}
+
+export interface PlanningPreviewTask {
+  identity: string
+  date: string
+  planned_start: string
+  planned_end: string
+  title: string
+  objective: string
+  description: string
+  estimated_minutes: number
+  difficulty: string
+}
+
+export interface PlanningPreview {
+  title: string
+  summary: string
+  estimated_total_hours: number
+  rationale: string
+  tasks: PlanningPreviewTask[]
+}
+
+export interface PlanningResponse {
+  preview: PlanningPreview
+  mode: 'ai' | 'fallback'
+  source: 'local' | 'local_enriched'
+  provenance_token: string
+  warnings: string[]
+  enrichment: {
+    status: 'success' | 'disabled' | 'configuration_error' | 'quota_limited' | 'timeout' | 'cancelled' | 'invalid_output' | 'provider_error'
+    reason: string
+    provider: string
+    model: string
+  }
+  phase_timings_ms: Record<string, number>
+  request_budget_ms: number
 }
 
 export type FeedbackCategory = 'issue' | 'suggestion' | 'content' | 'account' | 'other'
@@ -623,13 +660,13 @@ export const StatsApi = {
 
 export const AIApi = {
   generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {
-    return api.post<any>('/api/ai/generate-plan', data)
+    return api.post<PlanningResponse>('/api/ai/generate-plan', data)
   },
   regeneratePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {
-    return api.post<any>('/api/ai/regenerate', data)
+    return api.post<PlanningResponse>('/api/ai/regenerate', data)
   },
-  commitPlan(preview: any) {
-    return api.post<any>('/api/ai/commit-plan', { preview })
+  commitPlan(preview: PlanningPreview, provenance_token: string, idempotency_key: string, confirm_overload = false) {
+    return api.post<any>('/api/ai/commit-plan', { preview, provenance_token, idempotency_key, confirm_overload })
   },
 }
 

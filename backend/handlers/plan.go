@@ -621,8 +621,12 @@ func changePlanStatus(c *gin.Context, status string) {
 // checkOverload 校验是否超负荷。返回 warnings 空切片表示无警告。
 // 若有警告但未 confirm_overload，则返回错误阻止创建。
 func checkOverload(uid uint, newHours int, confirmed bool) ([]string, error) {
+	return checkOverloadWithDB(db.DB, uid, newHours, confirmed)
+}
+
+func checkOverloadWithDB(tx *gorm.DB, uid uint, newHours int, confirmed bool) ([]string, error) {
 	var activePlans []models.Plan
-	if err := db.DB.Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Find(&activePlans).Error; err != nil {
+	if err := tx.Where("user_id = ? AND status = ?", uid, models.PlanStatusActive).Find(&activePlans).Error; err != nil {
 		return nil, err
 	}
 

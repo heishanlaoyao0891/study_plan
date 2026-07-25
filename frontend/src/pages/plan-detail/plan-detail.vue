@@ -12,7 +12,7 @@
       <view class="secondary-actions"><button @click="openPlanEdit">编辑计划</button><button @click="openInvite">邀请伙伴</button><button @click="showMore = true">更多操作</button></view>
     </view>
 
-    <view class="properties"><view><text>学习日</text><view class="property-value">{{ weekdaySummary(plan.study_weekdays) }}</view></view><view><text>默认时段</text><view class="property-value">{{ plan.default_planned_start }}-{{ plan.default_planned_end }}</view></view><view><text>小组可见</text><view class="property-value">{{ plan.public_to_group ? '是' : '否' }}</view></view><view><text>来源</text><view class="property-value">{{ plan.ai_generated ? 'AI 生成' : '手动创建' }}</view></view></view>
+    <view class="properties"><view><text>学习日</text><view class="property-value">{{ weekdaySummary(plan.study_weekdays) }}</view></view><view><text>默认时段</text><view class="property-value">{{ plan.default_planned_start }}-{{ plan.default_planned_end }}</view></view><view><text>小组可见</text><view class="property-value">{{ plan.public_to_group ? '是' : '否' }}</view></view><view><text>来源</text><view class="property-value">{{ generationSource(plan) }}</view></view></view>
     <view class="section-head"><view>任务安排</view><button @click="openTaskEdit()">＋ 新建任务</button></view>
     <view class="empty" v-if="!tasks.length">这个计划还没有任务</view>
     <view class="task" v-for="task in tasks" :key="task.id" @click="openTask(task)"><view class="task-date">{{ task.date }} · {{ task.planned_start }}-{{ task.planned_end }}</view><view class="task-head"><view class="task-title">{{ task.title }}</view><view class="task-status">{{ taskStatus(task.status) }}</view></view><view class="objective">{{ task.objective }}</view><view class="task-actions" @click.stop><button @click="openTaskEdit(task)">编辑</button><button class="danger" v-if="task.status !== 'in_progress'" @click="removeTask(task)">删除</button></view></view>
@@ -78,6 +78,7 @@ function openInvite() { query.value = ''; results.value = []; inviting.value = t
 function search() { if (searchTimer) clearTimeout(searchTimer); results.value = []; if (query.value.trim().length < 2) return; searchTimer = setTimeout(async () => { searching.value = true; try { results.value = await UserApi.search(query.value.trim()) } finally { searching.value = false } }, 300) }
 async function sendInvite(user: UserSearchResult) { try { await PlanApi.invite(planId.value, user.invite_target_id); inviting.value = false; uni.showToast({ title: '邀请已发送', icon: 'success' }) } catch (error: any) { uni.showToast({ title: error?.message || '邀请失败', icon: 'none' }) } }
 function openTask(task: TimerTask) { uni.navigateTo({ url: `/pages/task/task?id=${task.id}` }) }
+function generationSource(value: Plan) { if (value.generation_source === 'local_enriched') return 'AI 增强'; if (value.generation_source === 'local') return '本地智能规划'; return value.ai_generated ? '历史 AI 生成' : '手动创建' }
 function statusText(status: string) { return status === 'paused' ? '已暂停' : status === 'archived' ? '已归档' : '进行中' }
 function taskStatus(status: string) { return status === 'completed' ? '已完成' : status === 'in_progress' ? '学习中' : '待执行' }
 function weekdaySummary(selected: number[] = []) { return selected.length === 7 ? '每天' : selected.length ? `周${selected.map(value => weekdays.find(day => day.value === value)?.label).join('、')}` : '按指定日期' }

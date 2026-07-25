@@ -163,6 +163,43 @@ func TestProviderResponseBodyIsBounded(t *testing.T) {
 	}
 }
 
+func TestProviderDoesNotRetryInvalidOutput(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		_, _ = w.Write([]byte(`{"choices":[]}`))
+	}))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, DailyGenerationLimit: 5, Enabled: true, APIKeyCiphertext: "key"}
+	if _, err := NewAIProvider(cfg).Generate("test", 64); err == nil {
+		t.Fatal("expected invalid output error")
+	}
+	if attempts != 1 {
+		t.Fatalf("invalid output must not be retried, got %d attempts", attempts)
+	}
+}
+
+func TestProvider429RetriesConsumeQuotaPerAttempt(t *testing.T) {
+	setupAIUsageTestDB(t)
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, DailyGenerationLimit: 2, Enabled: true, APIKeyCiphertext: "key"}
+	ctx := WithAIQuota(context.Background(), 4, cfg.Provider, 2, nil)
+	if _, err := NewAIProvider(cfg).GenerateContext(ctx, "test", 64); err == nil {
+		t.Fatal("expected provider 429 failure")
+	}
+	_, count, err := CanUseAIGeneration(4, 2)
+	if err != nil || attempts != 2 || count != 2 {
+		t.Fatalf("each 429 attempt must consume quota: attempts=%d count=%d err=%v", attempts, count, err)
+	}
+}
+
 func TestProviderRedirectCannotChangeOrigin(t *testing.T) {
 	finalReached := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -20,6 +20,7 @@ import (
 type AIProvider interface {
 	Test() error
 	Generate(prompt string, maxTokens int) (string, error)
+	GenerateContext(ctx context.Context, prompt string, maxTokens int) (string, error)
 }
 
 const (
@@ -86,6 +87,9 @@ func (p *UnsupportedAIProvider) Test() error {
 func (p *UnsupportedAIProvider) Generate(string, int) (string, error) {
 	return "", p.Test()
 }
+func (p *UnsupportedAIProvider) GenerateContext(context.Context, string, int) (string, error) {
+	return "", p.Test()
+}
 
 type MockAIProvider struct {
 	Config models.AIConfig
@@ -94,6 +98,10 @@ type MockAIProvider struct {
 func (p *MockAIProvider) Test() error { return nil }
 
 func (p *MockAIProvider) Generate(prompt string, maxTokens int) (string, error) {
+	return p.GenerateContext(context.Background(), prompt, maxTokens)
+}
+
+func (p *MockAIProvider) GenerateContext(_ context.Context, prompt string, maxTokens int) (string, error) {
 	if strings.Contains(prompt, "study planning agent") {
 		return "", fmt.Errorf("mock provider does not generate structured plans")
 	}
@@ -121,21 +129,32 @@ func (p *OpenAICompatibleProvider) Test() error {
 }
 
 func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (string, error) {
+	return p.GenerateContext(context.Background(), prompt, maxTokens)
+}
+
+func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt string, maxTokens int) (string, error) {
 	if !p.Config.Enabled {
 		return "", fmt.Errorf("provider is disabled")
 	}
-	if err := ValidateAIConfig(p.Config, false); err != nil {
+	if err := ValidateAIConfigContext(ctx, p.Config, false); err != nil {
 		return "", err
 	}
 	reqBody := buildCompletionRequest(p.Config, prompt, maxTokens)
 	body, _ := json.Marshal(reqBody)
-	client, err := restrictedProviderClient(p.Config.BaseURL, time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30))*time.Second)
+	timeout := time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30)) * time.Second
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < timeout {
+		timeout = time.Until(deadline)
+	}
+	client, err := restrictedProviderClientContext(ctx, p.Config.BaseURL, timeout)
 	if err != nil {
 		return "", err
 	}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		req, err := http.NewRequest(http.MethodPost, completionEndpoint(p.Config.BaseURL), bytes.NewReader(body))
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, completionEndpoint(p.Config.BaseURL), bytes.NewReader(body))
 		if err != nil {
 			return "", err
 		}
@@ -147,9 +166,15 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 		if key = strings.TrimSpace(key); key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
+		if err := ReserveAIProviderAttempt(ctx); err != nil {
+			return "", err
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
 			continue
 		}
 		responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
@@ -159,11 +184,13 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 			continue
 		}
 		if len(responseBody) > maxProviderResponseBytes {
-			lastErr = fmt.Errorf("provider response exceeds %d bytes", maxProviderResponseBytes)
-			continue
+			return "", fmt.Errorf("provider response exceeds %d bytes", maxProviderResponseBytes)
 		}
 		if resp.StatusCode >= 400 {
 			lastErr = fmt.Errorf("provider returned http %d", resp.StatusCode)
+			if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+				return "", lastErr
+			}
 			continue
 		}
 		var decoded struct {
@@ -174,13 +201,11 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 			} `json:"choices"`
 		}
 		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 {
-			lastErr = fmt.Errorf("provider returned invalid completion")
-			continue
+			return "", fmt.Errorf("provider returned invalid completion")
 		}
 		content, err := decodeCompletionContent(decoded.Choices[0].Message.Content)
 		if err != nil {
-			lastErr = err
-			continue
+			return "", err
 		}
 		return content, nil
 	}
@@ -236,7 +261,13 @@ func completionEndpoint(baseURL string) string {
 }
 
 func restrictedProviderClient(baseURL string, timeout time.Duration) (*http.Client, error) {
-	parsed, err := validateAIBaseURL(baseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return restrictedProviderClientContext(ctx, baseURL, timeout)
+}
+
+func restrictedProviderClientContext(ctx context.Context, baseURL string, timeout time.Duration) (*http.Client, error) {
+	parsed, err := validateAIBaseURLContext(ctx, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +305,12 @@ func restrictedProviderClient(baseURL string, timeout time.Duration) (*http.Clie
 }
 
 func validateAIBaseURL(baseURL string) (*url.URL, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return validateAIBaseURLContext(ctx, baseURL)
+}
+
+func validateAIBaseURLContext(ctx context.Context, baseURL string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("base_url must be an absolute HTTP(S) URL without credentials, query, or fragment")
@@ -281,8 +318,6 @@ func validateAIBaseURL(baseURL string) (*url.URL, error) {
 	if NormalizeAIProviderURLHost(parsed.Hostname()) == "" {
 		return nil, fmt.Errorf("base_url host is invalid")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if _, err := resolvePublicProviderIPs(ctx, parsed.Hostname()); err != nil {
 		return nil, err
 	}
@@ -330,7 +365,11 @@ func isPublicProviderIP(ip net.IP) bool {
 }
 
 func CurrentAIProvider() (models.AIConfig, AIProvider, error) {
-	cfg, err := loadAIConfig()
+	return CurrentAIProviderContext(context.Background())
+}
+
+func CurrentAIProviderContext(ctx context.Context) (models.AIConfig, AIProvider, error) {
+	cfg, err := loadAIConfigContext(ctx)
 	if err != nil {
 		return cfg, nil, err
 	}
@@ -351,6 +390,12 @@ func ProviderTestError(cfg models.AIConfig) error {
 }
 
 func ValidateAIConfig(cfg models.AIConfig, requireEncryptedKey bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return ValidateAIConfigContext(ctx, cfg, requireEncryptedKey)
+}
+
+func ValidateAIConfigContext(ctx context.Context, cfg models.AIConfig, requireEncryptedKey bool) error {
 	provider := NormalizeAIProvider(cfg.Provider)
 	if provider != AIProviderMock && provider != AIProviderOpenAICompatible && provider != AIProviderSiliconFlow {
 		return fmt.Errorf("provider must be one of mock, openai_compatible, or siliconflow")
@@ -370,7 +415,7 @@ func ValidateAIConfig(cfg models.AIConfig, requireEncryptedKey bool) error {
 	if strings.TrimSpace(cfg.ModelName) == "" {
 		return fmt.Errorf("model name is required")
 	}
-	parsed, err := validateAIBaseURL(cfg.BaseURL)
+	parsed, err := validateAIBaseURLContext(ctx, cfg.BaseURL)
 	if err != nil {
 		return err
 	}
@@ -400,11 +445,16 @@ func SetAIProviderConfig(cfg models.AIConfig) error {
 }
 
 func loadAIConfig() (models.AIConfig, error) {
+	return loadAIConfigContext(context.Background())
+}
+
+func loadAIConfigContext(ctx context.Context) (models.AIConfig, error) {
 	var cfg models.AIConfig
-	err := db.DB.Order("id ASC").First(&cfg).Error
+	database := db.DB.WithContext(ctx)
+	err := database.Order("id ASC").First(&cfg).Error
 	if err != nil {
 		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
-		if createErr := db.DB.Create(&cfg).Error; createErr != nil {
+		if createErr := database.Create(&cfg).Error; createErr != nil {
 			return cfg, createErr
 		}
 		err = nil
@@ -412,7 +462,7 @@ func loadAIConfig() (models.AIConfig, error) {
 	original := cfg
 	NormalizeAIConfig(&cfg)
 	if err == nil && (cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName) {
-		if updateErr := db.DB.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error; updateErr != nil {
+		if updateErr := database.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error; updateErr != nil {
 			return cfg, updateErr
 		}
 	}

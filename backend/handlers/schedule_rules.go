@@ -59,6 +59,9 @@ func validateScheduleTasks(tasks []models.DailyTask) error {
 func validateScheduleTasksWithPlanTitles(tasks []models.DailyTask, planTitles map[uint]string) error {
 	byDate := map[string][]models.DailyTask{}
 	for _, task := range tasks {
+		if task.Status == models.TaskStatusCompleted {
+			continue
+		}
 		if plannedRangeMinutes(task.PlannedStart, task.PlannedEnd) > 0 {
 			byDate[task.Date] = append(byDate[task.Date], task)
 		}
@@ -130,7 +133,7 @@ func validateScheduleMutation(tx *gorm.DB, uid uint, proposed []models.DailyTask
 		}
 	}
 	var persisted []models.DailyTask
-	if err := tx.Where("user_id = ? AND date IN ?", uid, dates).Find(&persisted).Error; err != nil {
+	if err := tx.Where("user_id = ? AND date IN ? AND status <> ?", uid, dates, models.TaskStatusCompleted).Find(&persisted).Error; err != nil {
 		return err
 	}
 	result := make([]models.DailyTask, 0, len(persisted)+len(proposed))

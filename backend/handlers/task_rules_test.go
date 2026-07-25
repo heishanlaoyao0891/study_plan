@@ -63,6 +63,24 @@ func TestFindTaskSlotConflictsSkipsCompletedTasks(t *testing.T) {
 	}
 }
 
+func TestScheduleMutationExcludesCompletedButRetainsPendingConflicts(t *testing.T) {
+	setupTestDB(t)
+	uid := uint(11)
+	plan := models.Plan{UserID: uid, Title: "Existing"}
+	db.DB.Create(&plan)
+	db.DB.Create(&models.DailyTask{UserID: uid, PlanID: plan.ID, Date: "2026-08-01", Title: "Done", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusCompleted})
+	proposed := []models.DailyTask{{UserID: uid, Date: "2026-08-01", Title: "New", PlannedStart: "20:00", PlannedEnd: "21:00", Status: models.TaskStatusPending}}
+	if err := validateScheduleMutation(db.DB, uid, proposed); err != nil {
+		t.Fatalf("completed task must not occupy final validation: %v", err)
+	}
+	if err := db.DB.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ?", uid, plan.ID).Update("status", models.TaskStatusPending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := validateScheduleMutation(db.DB, uid, proposed); err == nil {
+		t.Fatal("pending task must remain an active schedule conflict")
+	}
+}
+
 func TestCloseOvernightTasks(t *testing.T) {
 	setupTestDB(t)
 	loc, _ := time.LoadLocation("Asia/Shanghai")
