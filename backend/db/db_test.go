@@ -88,3 +88,31 @@ func TestAutoMigrateGuardsOneActiveStudyGroupPerUser(t *testing.T) {
 		t.Fatalf("non-active history membership should remain valid: %v", err)
 	}
 }
+
+func TestAutoMigrateAddsTemplateIDToExistingSubscriptions(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := DB.Exec(`CREATE TABLE notification_subscriptions (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		user_id integer NOT NULL,
+		reminder_type text NOT NULL,
+		subscribed numeric DEFAULT true,
+		created_at datetime,
+		updated_at datetime
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Exec("INSERT INTO notification_subscriptions (user_id, reminder_type, subscribed) VALUES (1, 'study_start', 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrate(); err != nil {
+		t.Fatalf("migrate existing subscriptions: %v", err)
+	}
+	var templateID string
+	if err := DB.Raw("SELECT template_id FROM notification_subscriptions WHERE user_id = 1").Scan(&templateID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if templateID != "" {
+		t.Fatalf("legacy authorization must require reauthorization, got %q", templateID)
+	}
+}

@@ -76,7 +76,7 @@ type NotificationSubscription struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"uniqueIndex:idx_user_reminder;not null" json:"user_id"`
 	ReminderType string    `gorm:"uniqueIndex:idx_user_reminder;size:32;not null" json:"reminder_type"`
-	TemplateID   string    `gorm:"size:128;not null" json:"template_id"`
+	TemplateID   string    `gorm:"size:128;not null;default:''" json:"template_id"`
 	Subscribed   bool      `gorm:"default:true" json:"subscribed"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
