@@ -91,4 +91,4 @@ jobs:
           SERVER_USER="${SERVER_USER:-root}"
           DEPLOY_PATH="${DEPLOY_PATH:-/opt/study-plan}"
           SSH="ssh -i ~/.ssh/deploy_key -p $SERVER_PORT -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes"
-          $SSH "$SERVER_USER@$SERVER_HOST" "cd '$DEPLOY_PATH' && COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans"
+          $SSH "$SERVER_USER@$SERVER_HOST" "cd '$DEPLOY_PATH' && COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans && (docker network connect study-plan_default nginx-server 2>/dev/null || true) && docker exec nginx-server nginx -t && docker exec nginx-server nginx -s reload"
