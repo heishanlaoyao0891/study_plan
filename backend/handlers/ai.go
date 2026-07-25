@@ -29,8 +29,12 @@ type commitAIPlanReq struct {
 
 func GeneratePlan(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
-	var cfg models.AIConfig
-	if err := db.DB.Order("id ASC").First(&cfg).Error; err == nil && !cfg.Enabled {
+	cfg, provider, providerErr := services.CurrentAIProvider()
+	if providerErr != nil {
+		api.Fail(c, http.StatusServiceUnavailable, "AI configuration is unavailable")
+		return
+	}
+	if !cfg.Enabled {
 		services.RecordAIGenerationUsage(uid, cfg.Provider, "disabled", "AI generation is disabled")
 		api.Fail(c, http.StatusForbidden, "AI generation is disabled")
 		return
@@ -65,23 +69,19 @@ func GeneratePlan(c *gin.Context) {
 	}
 	preview := services.PlanPreview{}
 	mode := "ai"
-	_, provider, providerErr := services.CurrentAIProvider()
-	if providerErr == nil {
-		raw, generateErr := provider.Generate(ctx.Prompt, 4096)
-		if generateErr == nil {
-			preview, err = services.ParsePlanPreviewJSON(raw)
-			if err != nil {
-				services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", "invalid provider response: "+err.Error())
-				api.Fail(c, http.StatusBadGateway, "AI returned an invalid plan: "+err.Error())
-				return
-			}
-		} else {
+	fallbackReason := ""
+	raw, generateErr := provider.Generate(ctx.Prompt, 4096)
+	if generateErr != nil {
+		mode = "fallback"
+		fallbackReason = "provider_error"
+		preview = services.FallbackPlanPreview(ctx)
+	} else {
+		preview, err = services.ParsePlanPreviewJSON(raw)
+		if err != nil || services.ValidatePlanPreview(preview, ctx.Input) != nil {
 			mode = "fallback"
+			fallbackReason = "invalid_provider_output"
 			preview = services.FallbackPlanPreview(ctx)
 		}
-	} else {
-		mode = "fallback"
-		preview = services.FallbackPlanPreview(ctx)
 	}
 	if err := services.ValidatePlanPreview(preview, ctx.Input); err != nil {
 		services.RecordAIGenerationUsage(uid, cfg.Provider, "failed", err.Error())
@@ -96,8 +96,14 @@ func GeneratePlan(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "validate AI schedule failed: "+err.Error())
 		return
 	}
-	services.RecordAIGenerationUsage(uid, cfg.Provider, "success", mode+" preview generated")
-	api.OK(c, gin.H{"preview": preview, "mode": mode, "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
+	status := "success"
+	message := "AI preview generated"
+	if mode == "fallback" {
+		status = "fallback"
+		message = "rule-based fallback preview generated: " + fallbackReason
+	}
+	services.RecordAIGenerationUsage(uid, cfg.Provider, status, message)
+	api.OK(c, gin.H{"preview": preview, "mode": mode, "ai_status": gin.H{"mode": mode, "provider": cfg.Provider, "model": cfg.ModelName, "fallback_reason": fallbackReason}, "usage": gin.H{"used_today": usedToday + 1, "daily_limit": maxPositive(cfg.DailyGenerationLimit, 5)}})
 }
 
 func CommitAIPlan(c *gin.Context) {

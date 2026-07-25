@@ -41,6 +41,25 @@ export interface NotificationDeliveryResult {
   message?: string
 }
 
+export interface NotificationTemplateMetadata {
+  platform: string
+  templates: NotificationTemplate[]
+}
+
+export interface NotificationTemplate {
+  reminder_type: string
+  template_id: string
+}
+
+export interface NotificationSubscription {
+  id: number
+  reminder_type: string
+  template_id: string
+  subscribed: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type WechatLoginResp = LoginResp | RegistrationRequiredResp
 
 export interface Plan {
@@ -330,6 +349,20 @@ export interface RecoveryApplyResult {
   moved?: number
 }
 
+export type FeedbackCategory = 'issue' | 'suggestion' | 'content' | 'account' | 'other'
+export type FeedbackStatus = 'open' | 'processing' | 'resolved' | 'closed'
+
+export interface FeedbackReport {
+  id: number
+  category: FeedbackCategory
+  content: string
+  status: FeedbackStatus
+  public_response?: string
+  responded_at?: string
+  created_at: string
+  updated_at: string
+}
+
 // ---------- 接口 ----------
 export const AuthApi = {
   login(code: string) {
@@ -474,8 +507,11 @@ export const OpsApi = {
   content(kind: 'privacy' | 'agreement' | 'announcement' | 'version') {
     return api.get<{ kind: string; title: string; body: string; updated_at: string }>(`/api/ops/content/${kind}`)
   },
-  feedback(data: { category?: string; content: string; contact?: string }) {
-    return api.post<any>('/api/feedback', data)
+  feedback(data: { category: FeedbackCategory; content: string; contact?: string }) {
+    return api.post<FeedbackReport>('/api/feedback', data)
+  },
+  feedbackHistory() {
+    return api.get<FeedbackReport[]>('/api/feedback')
   },
 }
 
@@ -611,13 +647,13 @@ export const UserApi = {
 
 export const NotificationApi = {
   list() {
-    return api.get<any[]>('/api/notifications/subscriptions')
+    return api.get<NotificationSubscription[]>('/api/notifications/subscriptions')
   },
   templates() {
-	return api.get<{ platform: string; templates: Array<{ reminder_type: string; template_id: string }> }>('/api/notifications/templates')
+    return api.get<NotificationTemplateMetadata>('/api/notifications/templates')
   },
-  subscribe(results: Record<string, string>) {
-	return api.post<{ accepted: string[] }>('/api/notifications/subscribe', { results })
+  subscribe(reminderType: string, templateId: string, result: string) {
+    return api.post<{ accepted: string[] }>('/api/notifications/subscribe', { reminder_type: reminderType, template_id: templateId, result })
   },
   unsubscribe() {
     return api.delete<any>('/api/notifications/subscribe')

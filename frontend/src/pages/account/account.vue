@@ -11,6 +11,11 @@
       <button class="secondary" @click="logout">退出当前设备</button>
     </view>
 
+    <view class="support" @click="goFeedback">
+      <view><view class="support-title">反馈与问题报告</view><view class="desc">提交问题，并查看处理进度与回复</view></view>
+      <view class="support-arrow">›</view>
+    </view>
+
     <view class="panel">
       <view class="title">修改密码</view>
       <input v-model="currentPassword" class="input" password maxlength="72" placeholder="当前密码" />
@@ -44,6 +49,7 @@ async function load() {
 }
 
 function goNickname() { uni.navigateTo({ url: '/pages/nickname/nickname?mode=edit' }) }
+function goFeedback() { uni.navigateTo({ url: '/pages/feedback/feedback' }) }
 function logout() {
   clearToken()
   uni.reLaunch({ url: '/pages/login/login' })
@@ -88,6 +94,10 @@ onShow(load)
 <style lang="scss">
 .page { min-height: 100vh; box-sizing: border-box; padding: 28rpx; background: linear-gradient(180deg,#fff0f7,#fffaf0 46%,#f7fbff); }
 .panel { margin-bottom: 20rpx; padding: 30rpx; border: 1rpx solid #ffe0ea; border-radius: 28rpx; background: #fff; box-shadow: 0 14rpx 32rpx rgba(255,143,171,.1); }
+.support { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; padding: 30rpx; border-radius: 28rpx; background: linear-gradient(135deg,#ff769f,#ffb35c); color: #fff; box-shadow: 0 14rpx 32rpx rgba(255,111,145,.2); }
+.support-title { font-size: 31rpx; font-weight: 900; }
+.support .desc { color: rgba(255,255,255,.88); }
+.support-arrow { font-size: 52rpx; line-height: 1; }
 .title { margin-bottom: 20rpx; color: #4b2b3f; font-size: 32rpx; font-weight: 900; }
 .profile { display: flex; align-items: center; gap: 18rpx; }
 .avatar { width: 82rpx; height: 82rpx; border-radius: 24rpx; background: #fff0f6; }

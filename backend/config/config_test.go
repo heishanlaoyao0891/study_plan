@@ -35,3 +35,21 @@ func TestStagingEnvironmentIsNotProduction(t *testing.T) {
 		t.Fatal("expected staging environment to be recognized")
 	}
 }
+
+func TestProductionRequiresAIKeyEncryptionSecret(t *testing.T) {
+	cfg := &Config{
+		AppEnv:          "production",
+		DBPath:          "study.db",
+		JWTSecret:       "strong-jwt-secret",
+		WeChatAppID:     "appid",
+		WeChatSecret:    "wechat-secret",
+		WeChatLoginMock: false,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected production validation to require AI key encryption secret")
+	}
+	cfg.AIKeySecret = "strong-ai-key-secret"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected complete production config to pass: %v", err)
+	}
+}

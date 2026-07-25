@@ -108,14 +108,17 @@ type OpsContent struct {
 func (OpsContent) TableName() string { return "ops_contents" }
 
 type FeedbackReport struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index;not null" json:"user_id"`
-	Category  string    `gorm:"size:32;not null" json:"category"`
-	Content   string    `gorm:"size:1024;not null" json:"content"`
-	Contact   string    `gorm:"size:128" json:"contact"`
-	Status    string    `gorm:"size:24;default:open;index" json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	UserID         uint       `gorm:"index;not null" json:"user_id"`
+	Category       string     `gorm:"size:32;not null" json:"category"`
+	Content        string     `gorm:"size:1024;not null" json:"content"`
+	Contact        string     `gorm:"size:128" json:"contact"`
+	Status         string     `gorm:"size:24;default:open;index" json:"status"`
+	PublicResponse *string    `gorm:"type:text" json:"public_response,omitempty"`
+	RespondedAt    *time.Time `json:"responded_at,omitempty"`
+	RespondedBy    *uint      `gorm:"index" json:"-"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 func (FeedbackReport) TableName() string { return "feedback_reports" }

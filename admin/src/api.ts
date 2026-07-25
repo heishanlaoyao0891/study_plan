@@ -63,6 +63,9 @@ export interface AIConfig {
   enabled: boolean
   api_key_masked?: string
   has_api_key?: boolean
+  key_storage?: 'missing' | 'plaintext' | 'encrypted'
+  effective_mode?: 'disabled' | 'fallback' | 'ai'
+  fallback_enabled?: boolean
 }
 
 export interface SubscriptionConfig {
@@ -117,8 +120,12 @@ export interface FeedbackReport {
   category: string
   content: string
   contact?: string
-  status: string
+  user_nickname?: string
+  status: 'open' | 'processing' | 'resolved' | 'closed'
+  public_response?: string
+  responded_at?: string
   created_at: string
+  updated_at: string
 }
 
 export interface AdminLoginResp {
@@ -248,8 +255,15 @@ export const AdminApi = {
   saveOpsContent(kind: string, data: { title: string; body: string }) {
     return request<OpsContent>(`/api/admin/ops-contents/${kind}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  feedback() {
-    return request<FeedbackReport[]>('/api/admin/feedback')
+  feedback(params: { category?: string; status?: string } = {}) {
+    const query = new URLSearchParams()
+    if (params.category) query.set('category', params.category)
+    if (params.status) query.set('status', params.status)
+    const qs = query.toString()
+    return request<FeedbackReport[]>(`/api/admin/feedback${qs ? `?${qs}` : ''}`)
+  },
+  updateFeedback(id: number, data: { status: FeedbackReport['status']; public_response?: string; clear_public_response?: boolean }) {
+    return request<FeedbackReport>(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   invitations() {
     return request<InvitationListResp | RegistrationInvitation[]>('/api/admin/invitations')

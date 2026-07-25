@@ -21,10 +21,7 @@ ADMIN_PASSWORD=<initial-admin-password>
 WECHAT_APPID=<mini-program-appid>
 WECHAT_SECRET=<mini-program-secret>
 WECHAT_LOGIN_MOCK=false
-AI_PROVIDER=mock
-AI_API_KEY=<optional-ai-key>
-AI_BASE_URL=<optional-ai-base-url>
-AI_KEY_ENCRYPTION_SECRET=<optional-server-side-secret>
+AI_KEY_ENCRYPTION_SECRET=<strong-random-server-side-secret>
 AVATAR_STORAGE=minio
 AVATAR_BASE_URL=https://assets.example.com/avatars
 ARCHIVE_ENABLED=false
@@ -39,6 +36,8 @@ Before release, verify the WeChat phone-number component capability, account qua
 3. Run the backend behind a process manager such as `systemd`, listening on `127.0.0.1:8080`.
 
 4. Put Nginx or another reverse proxy in front of it. `deploy/nginx.study-plan.conf` contains a minimal HTTP proxy example. Production mini programs require HTTPS, so terminate TLS before exposing the API domain to WeChat.
+
+5. In the admin AI configuration, select the recommended `siliconflow` provider, keep the pinned Base URL `https://api.siliconflow.cn/v1`, use model `deepseek-ai/DeepSeek-V3.2`, and enter a SiliconFlow API key. The backend sends OpenAI-compatible `POST /chat/completions` requests and requires `AI_KEY_ENCRYPTION_SECRET` to store the key securely.
 
 ### SQLite backup
 
@@ -97,6 +96,6 @@ npm run build
 ## Notes
 
 - Personal mini programs can publish this app without WeChat Pay because the product uses slack-time points, not real-money payments.
-- Real AI integration is currently represented by provider configuration and mock generation. Replace the mock provider before production AI billing is needed.
+- AI planning supports the recommended SiliconFlow preset, generic OpenAI-compatible providers, and deterministic mock fallback. Run the structured provider test before enabling production traffic.
 - SQLite is suitable for personal/friends usage. Move to MySQL/PostgreSQL before wider public usage.
 - If MinIO is used for avatars, keep it behind HTTPS and private to the backend. The mini program should only receive public or signed URLs.

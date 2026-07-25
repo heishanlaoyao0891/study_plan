@@ -88,6 +88,9 @@ func (c *Config) Validate() error {
 	if c.WeChatLoginMock {
 		missing = append(missing, "WECHAT_LOGIN_MOCK=false")
 	}
+	if strings.TrimSpace(c.AIKeySecret) == "" || c.AIKeySecret == "change-me-before-deploy" {
+		missing = append(missing, "AI_KEY_ENCRYPTION_SECRET")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing or invalid production configuration: %s", strings.Join(missing, ", "))
 	}

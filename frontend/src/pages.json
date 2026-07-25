@@ -10,6 +10,7 @@
     { "path": "pages/group/group", "style": { "navigationBarTitleText": "学习小组" } },
     { "path": "pages/recovery/recovery", "style": { "navigationBarTitleText": "重新安排" } },
     { "path": "pages/ops/ops", "style": { "navigationBarTitleText": "设置与说明" } },
+    { "path": "pages/feedback/feedback", "style": { "navigationBarTitleText": "反馈与问题报告" } },
     { "path": "pages/account/account", "style": { "navigationBarTitleText": "账号与数据" } },
     { "path": "pages/nickname/nickname", "style": { "navigationBarTitleText": "设置昵称", "navigationStyle": "default" } },
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },

@@ -38,7 +38,7 @@
 - [x] Add stable daily motivation card above today's tasks without pushing core tasks below the intended first screen.
 - [x] Add live elapsed/remaining/overtime timer display and lifecycle reconciliation.
 - [x] Replace free-text makeup/postpone dialogs with date/time picker forms and confirmation summaries.
-- [ ] Configure plan default schedule, weekday selection, and weekday override UI.
+- [x] Configure plan default schedule, weekday selection, and weekday override UI.
 - [x] Distinguish resumable pause from confirmed `结束本次学习` and highlight `完成任务` after the target duration.
 - [x] Keep task cards focused on timer actions and move makeup/postponement into `更多` and task detail.
 - [x] Add optional completion reflection panel with save-and-complete and skip-and-complete actions.

@@ -1,13 +1,7 @@
 package handlers
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,7 +11,6 @@ import (
 	"gorm.io/gorm"
 
 	"study_plan_backend/api"
-	"study_plan_backend/config"
 	"study_plan_backend/db"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
@@ -48,7 +41,7 @@ type aiConfigReq struct {
 	BaseURL               string `json:"base_url"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	DailyGenerationLimit  int    `json:"daily_generation_limit"`
-	Enabled               bool   `json:"enabled"`
+	Enabled               *bool  `json:"enabled"`
 	APIKey                string `json:"api_key"`
 }
 
@@ -331,35 +324,35 @@ func UpdateAIConfig(c *gin.Context) {
 		return
 	}
 	if req.Provider == "" {
-		req.Provider = "mock"
-	}
-	if req.RequestTimeoutSeconds <= 0 {
-		req.RequestTimeoutSeconds = 30
-	}
-	if req.DailyGenerationLimit < 0 {
-		api.Fail(c, http.StatusBadRequest, "daily_generation_limit must be non-negative")
-		return
+		req.Provider = services.AIProviderMock
 	}
 	cfg, err := firstAIConfig()
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "query ai config failed: "+err.Error())
 		return
 	}
-	cfg.Provider = strings.TrimSpace(req.Provider)
+	cfg.Provider = req.Provider
 	cfg.ModelName = strings.TrimSpace(req.ModelName)
 	cfg.BaseURL = strings.TrimSpace(req.BaseURL)
+	services.NormalizeAIConfig(&cfg)
 	cfg.RequestTimeoutSeconds = req.RequestTimeoutSeconds
 	cfg.DailyGenerationLimit = req.DailyGenerationLimit
-	cfg.Enabled = req.Enabled
+	if req.Enabled != nil {
+		cfg.Enabled = *req.Enabled
+	}
 	cfg.UpdatedBy = &adminID
 	if req.APIKey != "" {
-		stored, encrypted, err := protectAIAPIKey(req.APIKey)
+		stored, err := services.ProtectAIAPIKey(req.APIKey)
 		if err != nil {
-			api.Fail(c, http.StatusInternalServerError, "encrypt api key failed: "+err.Error())
+			api.Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 		cfg.APIKeyCiphertext = stored
-		cfg.APIKeyEncrypted = encrypted
+		cfg.APIKeyEncrypted = true
+	}
+	if err := services.ValidateAIConfig(cfg, true); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := db.DB.Save(&cfg).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "save ai config failed: "+err.Error())
@@ -380,6 +373,7 @@ func TestAIProvider(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query ai config failed: "+err.Error())
 		return
 	}
+	persistedBaseURL := cfg.BaseURL
 	if req.Provider != "" {
 		cfg.Provider = req.Provider
 	}
@@ -389,6 +383,7 @@ func TestAIProvider(c *gin.Context) {
 	if req.BaseURL != "" {
 		cfg.BaseURL = req.BaseURL
 	}
+	services.NormalizeAIConfig(&cfg)
 	if req.RequestTimeoutSeconds > 0 {
 		cfg.RequestTimeoutSeconds = req.RequestTimeoutSeconds
 	}
@@ -396,11 +391,21 @@ func TestAIProvider(c *gin.Context) {
 		cfg.APIKeyCiphertext = req.APIKey
 		cfg.APIKeyEncrypted = false
 	}
+	if req.APIKey == "" && cfg.APIKeyCiphertext != "" && !services.SameAIProviderOrigin(persistedBaseURL, cfg.BaseURL) {
+		api.OK(c, gin.H{"ok": false, "message": "a new API key is required when testing a different provider origin"})
+		return
+	}
+	if req.DailyGenerationLimit > 0 {
+		cfg.DailyGenerationLimit = req.DailyGenerationLimit
+	}
+	if req.Enabled != nil {
+		cfg.Enabled = *req.Enabled
+	}
 	if err := services.ProviderTestError(cfg); err != nil {
 		api.OK(c, gin.H{"ok": false, "message": err.Error()})
 		return
 	}
-	api.OK(c, gin.H{"ok": true, "message": "provider test passed"})
+	api.OK(c, gin.H{"ok": true, "message": "provider returned a valid structured plan"})
 }
 
 func GetSubscriptionMessageConfig(c *gin.Context) {
@@ -479,8 +484,14 @@ func firstAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
 		err = db.DB.Create(&cfg).Error
+	} else if err == nil {
+		original := cfg
+		services.NormalizeAIConfig(&cfg)
+		if cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName {
+			err = db.DB.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error
+		}
 	}
 	return cfg, err
 }
@@ -496,6 +507,19 @@ func firstSubscriptionConfig() (models.SubscriptionMessageConfig, error) {
 }
 
 func aiConfigResp(cfg models.AIConfig) gin.H {
+	effectiveMode := "ai"
+	if !cfg.Enabled {
+		effectiveMode = "disabled"
+	} else if cfg.Provider == services.AIProviderMock {
+		effectiveMode = "fallback"
+	}
+	keyStorage := "missing"
+	if cfg.APIKeyCiphertext != "" {
+		keyStorage = "plaintext"
+		if cfg.APIKeyEncrypted {
+			keyStorage = "encrypted"
+		}
+	}
 	return gin.H{
 		"provider":                cfg.Provider,
 		"model_name":              cfg.ModelName,
@@ -505,6 +529,9 @@ func aiConfigResp(cfg models.AIConfig) gin.H {
 		"enabled":                 cfg.Enabled,
 		"has_api_key":             cfg.APIKeyCiphertext != "",
 		"api_key_masked":          maskSecret(cfg.APIKeyCiphertext),
+		"key_storage":             keyStorage,
+		"effective_mode":          effectiveMode,
+		"fallback_enabled":        true,
 	}
 }
 
@@ -534,27 +561,6 @@ func subscriptionConfigResp(cfg models.SubscriptionMessageConfig) gin.H {
 		"group_nudge_field_mapping":    cfg.GroupNudgeFieldMapping,
 		"recent_status":                recent,
 	}
-}
-
-func protectAIAPIKey(secret string) (string, bool, error) {
-	if config.App.AIKeySecret == "" {
-		return secret, false, nil
-	}
-	key := sha256.Sum256([]byte(config.App.AIKeySecret))
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return "", false, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", false, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", false, err
-	}
-	ciphertext := gcm.Seal(nonce, nonce, []byte(secret), nil)
-	return base64.StdEncoding.EncodeToString(ciphertext), true, nil
 }
 
 func maskSecret(secret string) string {

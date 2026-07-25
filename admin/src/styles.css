@@ -48,7 +48,7 @@ h2 { font-size: 28px; }
 h3 { font-size: 18px; }
 
 .field { display: grid; gap: 9px; color: #6c5664; font-size: 14px; font-weight: 800; }
-.field input, .field textarea, .toolbar input, .toolbar select, .config-row input {
+.field input, .field select, .field textarea, .toolbar input, .toolbar select, .config-row input {
   min-height: 42px;
   padding: 0 14px;
   border: 1px solid #f1ccd7;
@@ -59,7 +59,7 @@ h3 { font-size: 18px; }
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 .field textarea { padding: 12px 14px; resize: vertical; line-height: 1.6; }
-.field input:focus, .field textarea:focus, .toolbar input:focus, .toolbar select:focus, .config-row input:focus {
+.field input:focus, .field select:focus, .field textarea:focus, .toolbar input:focus, .toolbar select:focus, .config-row input:focus {
   border-color: #ff8fab;
   box-shadow: 0 0 0 4px rgba(255, 143, 171, .16);
 }
@@ -160,3 +160,7 @@ h3 { font-size: 18px; }
 .check-row { display: flex; align-items: center; gap: 10px; color: #604758; font-weight: 900; }
 .config-row { display: grid; grid-template-columns: 200px 1fr; gap: 14px; align-items: center; }
 .status-table { margin-top: 18px; }
+.page-note { max-width: 720px; margin: 10px 0 0; color: #7a6773; line-height: 1.6; }
+.config-summary { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; border-radius: 14px; color: #604758; background: #fff6da; font-size: 13px; font-weight: 800; }
+.config-summary span { padding-right: 10px; border-right: 1px solid #efd9aa; }
+.config-summary span:last-child { border-right: 0; }

@@ -31,7 +31,7 @@ WECHAT_LOGIN_MOCK=false
 PHONE_BINDING_REQUIRED=false
 ADMIN_USERNAME=<admin-username>
 ADMIN_PASSWORD=<initial-admin-password>
-AI_KEY_ENCRYPTION_SECRET=<optional-server-side-secret>
+AI_KEY_ENCRYPTION_SECRET=<strong-random-server-side-secret>
 AVATAR_STORAGE=minio
 AVATAR_BASE_URL=https://assets.example.com/study-plan-assets
 MINIO_ROOT_USER=<minio-admin-user>
@@ -63,6 +63,8 @@ ADMIN_API_BASE=
 For a production domain, put Nginx or a cloud load balancer in front of these ports and enable HTTPS. The backend SQLite database is stored in the Docker volume `study-plan-data` at `/data/study_plan.db` inside the backend container. MinIO object data is stored in the Docker volume `study-plan-minio-data`.
 
 The deployment creates the bucket from `MINIO_BUCKET` and sets anonymous download permission. The current app stores avatar URLs; upload workflow still needs to place files into MinIO and then save the resulting public URL through the avatar API.
+
+After deployment, configure AI through the admin console with provider `siliconflow`, pinned Base URL `https://api.siliconflow.cn/v1`, and recommended model `deepseek-ai/DeepSeek-V3.2`. SiliconFlow receives OpenAI-compatible `POST /chat/completions` requests; keep `AI_KEY_ENCRYPTION_SECRET` stable so stored API keys remain decryptable.
 
 ## Manual Server Deploy
 

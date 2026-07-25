@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,9 @@ import (
 var reminderTypes = []string{"study_start", "completion", "decision_2330", "missed_checkin", "group_nudge"}
 
 type subscriptionReq struct {
-	Results map[string]string `json:"results"`
+	ReminderType string `json:"reminder_type"`
+	TemplateID   string `json:"template_id"`
+	Result       string `json:"result"`
 }
 
 func NotificationTemplateMetadata(c *gin.Context) {
@@ -50,8 +53,14 @@ func NotificationSubscriptions(c *gin.Context) {
 func SubscribeNotification(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	var req subscriptionReq
-	if err := c.ShouldBindJSON(&req); err != nil || len(req.Results) == 0 {
-		api.Fail(c, http.StatusBadRequest, "per-template authorization results are required")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	req.ReminderType = strings.TrimSpace(req.ReminderType)
+	req.TemplateID = strings.TrimSpace(req.TemplateID)
+	if req.ReminderType == "" || req.TemplateID == "" || (req.Result != "accept" && req.Result != "reject" && req.Result != "ban") {
+		api.Fail(c, http.StatusBadRequest, "reminder_type, template_id, and a valid authorization result are required")
 		return
 	}
 	cfg, err := firstSubscriptionConfig()
@@ -59,29 +68,21 @@ func SubscribeNotification(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query subscription config failed: "+err.Error())
 		return
 	}
-	accepted := make([]string, 0)
+	template := services.TemplateFor(cfg, req.ReminderType)
+	if !template.Enabled || services.ValidateTemplate(template) != nil || template.TemplateID != req.TemplateID {
+		api.Fail(c, http.StatusBadRequest, "template is not the current enabled template for reminder_type")
+		return
+	}
+	accepted := make([]string, 0, 1)
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		for _, reminderType := range reminderTypes {
-			template := services.TemplateFor(cfg, reminderType)
-			result, submitted := req.Results[template.TemplateID]
-			if !submitted || template.TemplateID == "" {
-				continue
-			}
-			if result != "accept" {
-				if err := tx.Where("user_id = ? AND reminder_type = ?", uid, reminderType).Delete(&models.NotificationSubscription{}).Error; err != nil {
-					return err
-				}
-				continue
-			}
-			if !template.Enabled || services.ValidateTemplate(template) != nil {
-				continue
-			}
-			sub := models.NotificationSubscription{UserID: uid, ReminderType: reminderType, TemplateID: template.TemplateID, Subscribed: true}
-			if err := tx.Where("user_id = ? AND reminder_type = ?", uid, reminderType).Assign(models.NotificationSubscription{TemplateID: template.TemplateID, Subscribed: true}).FirstOrCreate(&sub).Error; err != nil {
-				return err
-			}
-			accepted = append(accepted, reminderType)
+		if req.Result != "accept" {
+			return tx.Where("user_id = ? AND reminder_type = ?", uid, req.ReminderType).Delete(&models.NotificationSubscription{}).Error
 		}
+		sub := models.NotificationSubscription{UserID: uid, ReminderType: req.ReminderType, TemplateID: req.TemplateID, Subscribed: true}
+		if err := tx.Where("user_id = ? AND reminder_type = ?", uid, req.ReminderType).Assign(models.NotificationSubscription{TemplateID: req.TemplateID, Subscribed: true}).FirstOrCreate(&sub).Error; err != nil {
+			return err
+		}
+		accepted = append(accepted, req.ReminderType)
 		return nil
 	})
 	if err != nil {

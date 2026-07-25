@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
+	"study_plan_backend/aikey"
 	"study_plan_backend/config"
 	"study_plan_backend/identity"
 	"study_plan_backend/models"
@@ -65,6 +66,9 @@ func AutoMigrate() error {
 	); err != nil {
 		return err
 	}
+	if err := migrateAIConfigs(); err != nil {
+		return err
+	}
 	// 复合唯一索引：同一用户/同一天/同一计划 只能有一条打卡记录
 	idx := &models.Checkin{}
 	if err := DB.Exec(
@@ -115,6 +119,12 @@ func AutoMigrate() error {
 	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_delivery_event_key ON notification_delivery_logs (event_key) WHERE event_key <> ''").Error; err != nil {
 		return err
 	}
+	if err := DB.Exec(`CREATE TRIGGER IF NOT EXISTS trg_feedback_reports_rate_limit
+		BEFORE INSERT ON feedback_reports
+		WHEN (SELECT COUNT(*) FROM feedback_reports WHERE user_id = NEW.user_id AND created_at >= datetime('now', '-10 minutes')) >= 3
+		BEGIN SELECT RAISE(ABORT, 'feedback rate limit exceeded'); END`).Error; err != nil {
+		return err
+	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := resolveDuplicateActiveGroupMemberships(tx); err != nil {
 			return err
@@ -158,6 +168,50 @@ func AutoMigrate() error {
 		return err
 	}
 	return bootstrapAdminCredential()
+}
+
+func migrateAIConfigs() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("UPDATE ai_configs SET provider = 'openai_compatible' WHERE lower(trim(provider)) IN ('openai', 'openai-compatible', 'openai_compatible')").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE ai_configs SET
+			provider = 'siliconflow',
+			base_url = 'https://api.siliconflow.cn/v1',
+			model_name = CASE WHEN trim(model_name) = 'deepseek-chat' THEN 'deepseek-ai/DeepSeek-V3.2' ELSE model_name END
+			WHERE lower(trim(provider)) = 'deepseek' AND (trim(base_url) = '' OR trim(base_url) = 'https://api.deepseek.com')`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("UPDATE ai_configs SET provider = 'openai_compatible' WHERE lower(trim(provider)) = 'deepseek'").Error; err != nil {
+			return err
+		}
+
+		var plaintextConfigs []models.AIConfig
+		if err := tx.Where("api_key_ciphertext <> '' AND api_key_encrypted = ?", false).Find(&plaintextConfigs).Error; err != nil {
+			return err
+		}
+		secret := ""
+		if config.App != nil {
+			secret = config.App.AIKeySecret
+		}
+		for _, cfg := range plaintextConfigs {
+			encrypted, err := aikey.Encrypt(cfg.APIKeyCiphertext, secret)
+			if err != nil {
+				return fmt.Errorf("encrypt legacy AI API key for config %d: %w", cfg.ID, err)
+			}
+			result := tx.Model(&models.AIConfig{}).Where("id = ? AND api_key_encrypted = ?", cfg.ID, false).Updates(map[string]interface{}{
+				"api_key_ciphertext": encrypted,
+				"api_key_encrypted":  true,
+			})
+			if result.Error != nil {
+				return fmt.Errorf("update encrypted AI API key for config %d: %w", cfg.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("update encrypted AI API key for config %d: row changed during migration", cfg.ID)
+			}
+		}
+		return nil
+	})
 }
 
 func resolveDuplicateActiveGroupMemberships(tx *gorm.DB) error {

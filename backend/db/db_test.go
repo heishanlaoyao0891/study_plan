@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"study_plan_backend/aikey"
 	"study_plan_backend/config"
 	"study_plan_backend/models"
 )
@@ -114,5 +115,136 @@ func TestAutoMigrateAddsTemplateIDToExistingSubscriptions(t *testing.T) {
 	}
 	if templateID != "" {
 		t.Fatalf("legacy authorization must require reauthorization, got %q", templateID)
+	}
+}
+
+func TestAutoMigrateNormalizesLegacyAIProviderAliases(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := DB.AutoMigrate(&models.AIConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"openai", "openai-compatible"} {
+		if err := DB.Create(&models.AIConfig{Provider: provider}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := DB.Model(&models.AIConfig{}).Where("provider = ?", "openai_compatible").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected both aliases normalized, got %d rows", count)
+	}
+}
+
+func TestAutoMigrateConvertsLegacyDeepSeekConfigWithoutOverwritingCustomValues(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{AIKeySecret: "migration-test-secret"}
+	if err := DB.AutoMigrate(&models.AIConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	configs := []models.AIConfig{
+		{Provider: "deepseek", BaseURL: "https://api.deepseek.com", ModelName: "deepseek-chat"},
+		{Provider: "deepseek", BaseURL: "", ModelName: "deepseek-chat"},
+		{Provider: "deepseek", BaseURL: "https://gateway.example/v1", ModelName: "deepseek-chat"},
+		{Provider: "deepseek", BaseURL: "https://api.deepseek.com", ModelName: "custom-model"},
+		{Provider: "deepseek", BaseURL: "https://gateway.example/v1", ModelName: "custom-model"},
+	}
+	for i := range configs {
+		if err := DB.Create(&configs[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	wants := []struct{ provider, baseURL, modelName string }{
+		{"siliconflow", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3.2"},
+		{"siliconflow", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3.2"},
+		{"openai_compatible", "https://gateway.example/v1", "deepseek-chat"},
+		{"siliconflow", "https://api.siliconflow.cn/v1", "custom-model"},
+		{"openai_compatible", "https://gateway.example/v1", "custom-model"},
+	}
+	for i := range configs {
+		var migrated models.AIConfig
+		if err := DB.First(&migrated, configs[i].ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if migrated.Provider != wants[i].provider || migrated.BaseURL != wants[i].baseURL || migrated.ModelName != wants[i].modelName {
+			t.Fatalf("row %d was corrupted during migration: %+v", i, migrated)
+		}
+	}
+}
+
+func TestAutoMigrateEncryptsLegacyPlaintextAIKeys(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{AIKeySecret: "migration-test-secret"}
+	if err := DB.AutoMigrate(&models.AIConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []models.AIConfig{
+		{Provider: "openai_compatible", APIKeyCiphertext: "sk-legacy-one"},
+		{Provider: "openai_compatible", APIKeyCiphertext: "sk-legacy-two"},
+	}
+	for i := range legacy {
+		if err := DB.Create(&legacy[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	for i := range legacy {
+		var migrated models.AIConfig
+		if err := DB.First(&migrated, legacy[i].ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !migrated.APIKeyEncrypted || migrated.APIKeyCiphertext == legacy[i].APIKeyCiphertext {
+			t.Fatalf("legacy key %d was not encrypted: %+v", i, migrated)
+		}
+		plaintext, err := aikey.Decrypt(migrated.APIKeyCiphertext, config.App.AIKeySecret)
+		if err != nil || plaintext != legacy[i].APIKeyCiphertext {
+			t.Fatalf("migrated key %d did not decrypt: value=%q err=%v", i, plaintext, err)
+		}
+	}
+}
+
+func TestAutoMigrateRejectsLegacyPlaintextAIKeyWithoutSecret(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := DB.AutoMigrate(&models.AIConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := models.AIConfig{Provider: "deepseek", BaseURL: "https://api.deepseek.com", APIKeyCiphertext: "sk-legacy-plaintext"}
+	if err := DB.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrate(); err == nil {
+		t.Fatal("expected startup migration to fail without encryption secret")
+	}
+	var unchanged models.AIConfig
+	if err := DB.First(&unchanged, legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Provider != "deepseek" || unchanged.APIKeyEncrypted || unchanged.APIKeyCiphertext != legacy.APIKeyCiphertext {
+		t.Fatalf("failed migration was not rolled back: %+v", unchanged)
+	}
+}
+
+func TestAutoMigrateAllowsAIConfigWithoutKeyAndSecret(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := DB.AutoMigrate(&models.AIConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&models.AIConfig{Provider: "mock"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrate(); err != nil {
+		t.Fatalf("config without an API key should migrate without a secret: %v", err)
 	}
 }

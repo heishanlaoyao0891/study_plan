@@ -157,6 +157,7 @@ func main() {
 
 		bound.GET("/ops/content/:kind", handlers.GetOpsContent)
 		bound.POST("/feedback", handlers.SubmitFeedback)
+		bound.GET("/feedback", handlers.ListOwnFeedback)
 		bound.GET("/users/search", handlers.SearchUsers)
 		bound.GET("/users/me/plan-action-layout", handlers.GetPlanActionLayout)
 		bound.PUT("/users/me/plan-action-layout", handlers.UpdatePlanActionLayout)
@@ -187,6 +188,7 @@ func main() {
 		admin.GET("/ops-contents", handlers.AdminListOpsContents)
 		admin.PUT("/ops-contents/:kind", handlers.AdminSaveOpsContent)
 		admin.GET("/feedback", handlers.AdminListFeedback)
+		admin.PUT("/feedback/:id", handlers.AdminUpdateFeedback)
 	}
 
 	addr := ":" + config.App.Port

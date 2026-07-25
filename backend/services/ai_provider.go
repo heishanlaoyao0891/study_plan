@@ -2,10 +2,13 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,13 +22,69 @@ type AIProvider interface {
 	Generate(prompt string, maxTokens int) (string, error)
 }
 
-func NewAIProvider(cfg models.AIConfig) AIProvider {
-	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
-	case "openai_compatible", "openai-compatible", "openai":
-		return &OpenAICompatibleProvider{Config: cfg}
+const (
+	AIProviderMock              = "mock"
+	AIProviderOpenAICompatible  = "openai_compatible"
+	AIProviderSiliconFlow       = "siliconflow"
+	SiliconFlowBaseURL          = "https://api.siliconflow.cn/v1"
+	SiliconFlowRecommendedModel = "deepseek-ai/DeepSeek-V3.2"
+	legacyDeepSeekBaseURL       = "https://api.deepseek.com"
+	legacyDeepSeekModel         = "deepseek-chat"
+	maxProviderResponseBytes    = 1 << 20
+)
+
+var (
+	lookupProviderIP = net.DefaultResolver.LookupIPAddr
+	dialProvider     = (&net.Dialer{}).DialContext
+)
+
+func NormalizeAIProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openai", "openai-compatible", AIProviderOpenAICompatible:
+		return AIProviderOpenAICompatible
+	case "deepseek":
+		return AIProviderSiliconFlow
 	default:
-		return &MockAIProvider{Config: cfg}
+		return strings.ToLower(strings.TrimSpace(provider))
 	}
+}
+
+func NormalizeAIConfig(cfg *models.AIConfig) {
+	legacyDeepSeek := strings.EqualFold(strings.TrimSpace(cfg.Provider), "deepseek")
+	if !legacyDeepSeek {
+		cfg.Provider = NormalizeAIProvider(cfg.Provider)
+		return
+	}
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" || baseURL == legacyDeepSeekBaseURL {
+		cfg.Provider = AIProviderSiliconFlow
+		cfg.BaseURL = SiliconFlowBaseURL
+		if strings.TrimSpace(cfg.ModelName) == legacyDeepSeekModel {
+			cfg.ModelName = SiliconFlowRecommendedModel
+		}
+		return
+	}
+	cfg.Provider = AIProviderOpenAICompatible
+}
+
+func NewAIProvider(cfg models.AIConfig) AIProvider {
+	switch NormalizeAIProvider(cfg.Provider) {
+	case AIProviderOpenAICompatible, AIProviderSiliconFlow:
+		return &OpenAICompatibleProvider{Config: cfg}
+	case AIProviderMock:
+		return &MockAIProvider{Config: cfg}
+	default:
+		return &UnsupportedAIProvider{Provider: cfg.Provider}
+	}
+}
+
+type UnsupportedAIProvider struct{ Provider string }
+
+func (p *UnsupportedAIProvider) Test() error {
+	return fmt.Errorf("unsupported provider %q", p.Provider)
+}
+func (p *UnsupportedAIProvider) Generate(string, int) (string, error) {
+	return "", p.Test()
 }
 
 type MockAIProvider struct {
@@ -46,19 +105,27 @@ type OpenAICompatibleProvider struct {
 }
 
 func (p *OpenAICompatibleProvider) Test() error {
-	_, err := p.Generate("ping", 16)
-	return err
+	prompt := "You are a study planning agent. Return only JSON with title, summary, estimated_total_hours, rationale, and exactly one task. The task must contain date 2026-01-02, planned_start 20:00, planned_end 21:00, title, objective distinct from title, description, estimated_minutes 60, and difficulty."
+	raw, err := p.Generate(prompt, 768)
+	if err != nil {
+		return err
+	}
+	preview, err := ParsePlanPreviewJSON(raw)
+	if err != nil {
+		return fmt.Errorf("provider did not return structured plan JSON: %w", err)
+	}
+	if err := ValidatePlanPreview(preview, PlanGenerationInput{Goal: "connection test", Days: 1}); err != nil {
+		return fmt.Errorf("provider returned invalid structured plan: %w", err)
+	}
+	return nil
 }
 
 func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (string, error) {
-	if strings.TrimSpace(p.Config.BaseURL) == "" {
-		return "", fmt.Errorf("base url is required")
-	}
-	if strings.TrimSpace(p.Config.ModelName) == "" {
-		return "", fmt.Errorf("model name is required")
-	}
 	if !p.Config.Enabled {
 		return "", fmt.Errorf("provider is disabled")
+	}
+	if err := ValidateAIConfig(p.Config, false); err != nil {
+		return "", err
 	}
 	reqBody := map[string]any{
 		"model":       p.Config.ModelName,
@@ -67,15 +134,22 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 		"max_tokens":  maxInt(maxTokens, 64),
 	}
 	body, _ := json.Marshal(reqBody)
-	client := &http.Client{Timeout: time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30)) * time.Second}
+	client, err := restrictedProviderClient(p.Config.BaseURL, time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30))*time.Second)
+	if err != nil {
+		return "", err
+	}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(p.Config.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, completionEndpoint(p.Config.BaseURL), bytes.NewReader(body))
 		if err != nil {
 			return "", err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if key := strings.TrimSpace(decodeAIKey(p.Config)); key != "" {
+		key, err := DecodeAIAPIKey(p.Config)
+		if err != nil {
+			return "", err
+		}
+		if key = strings.TrimSpace(key); key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 		resp, err := client.Do(req)
@@ -83,10 +157,14 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 			lastErr = err
 			continue
 		}
-		responseBody, readErr := io.ReadAll(resp.Body)
+		responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 		resp.Body.Close()
 		if readErr != nil {
 			lastErr = readErr
+			continue
+		}
+		if len(responseBody) > maxProviderResponseBytes {
+			lastErr = fmt.Errorf("provider response exceeds %d bytes", maxProviderResponseBytes)
 			continue
 		}
 		if resp.StatusCode >= 400 {
@@ -131,21 +209,113 @@ func decodeCompletionContent(raw json.RawMessage) (string, error) {
 	return string(raw), nil
 }
 
-func decodeAIKey(cfg models.AIConfig) string {
-	if cfg.APIKeyCiphertext == "" {
-		return ""
-	}
-	if !cfg.APIKeyEncrypted {
-		return cfg.APIKeyCiphertext
-	}
-	return cfg.APIKeyCiphertext
-}
-
 func maxInt(v, def int) int {
 	if v <= 0 {
 		return def
 	}
 	return v
+}
+
+func completionEndpoint(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
+		return baseURL + "/chat/completions"
+	}
+	return baseURL + "/v1/chat/completions"
+}
+
+func restrictedProviderClient(baseURL string, timeout time.Duration) (*http.Client, error) {
+	parsed, err := validateAIBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid provider address: %w", err)
+		}
+		addresses, err := resolvePublicProviderIPs(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		var lastErr error
+		for _, address := range addresses {
+			conn, err := dialProvider(ctx, network, net.JoinHostPort(address.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+	client := &http.Client{Transport: transport, Timeout: timeout}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if _, err := validateAIBaseURL(req.URL.String()); err != nil {
+			return err
+		}
+		if !SameAIProviderOrigin(parsed.String(), req.URL.String()) {
+			return fmt.Errorf("provider redirect changed origin")
+		}
+		return nil
+	}
+	return client, nil
+}
+
+func validateAIBaseURL(baseURL string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("base_url must be an absolute HTTP(S) URL without credentials, query, or fragment")
+	}
+	if NormalizeAIProviderURLHost(parsed.Hostname()) == "" {
+		return nil, fmt.Errorf("base_url host is invalid")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := resolvePublicProviderIPs(ctx, parsed.Hostname()); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func NormalizeAIProviderURLHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+}
+
+func SameAIProviderOrigin(first, second string) bool {
+	firstURL, firstErr := url.Parse(strings.TrimSpace(first))
+	secondURL, secondErr := url.Parse(strings.TrimSpace(second))
+	if firstErr != nil || secondErr != nil || firstURL.Scheme == "" || secondURL.Scheme == "" {
+		return false
+	}
+	return strings.EqualFold(firstURL.Scheme, secondURL.Scheme) && strings.EqualFold(firstURL.Host, secondURL.Host)
+}
+
+func resolvePublicProviderIPs(ctx context.Context, host string) ([]net.IPAddr, error) {
+	host = NormalizeAIProviderURLHost(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return nil, fmt.Errorf("base_url must not resolve to a local or private address")
+	}
+	var addresses []net.IPAddr
+	if literal := net.ParseIP(host); literal != nil {
+		addresses = []net.IPAddr{{IP: literal}}
+	} else {
+		var err error
+		addresses, err = lookupProviderIP(ctx, host)
+		if err != nil || len(addresses) == 0 {
+			return nil, fmt.Errorf("base_url host could not be resolved")
+		}
+	}
+	for _, address := range addresses {
+		if !isPublicProviderIP(address.IP) {
+			return nil, fmt.Errorf("base_url must not resolve to a local or private address")
+		}
+	}
+	return addresses, nil
+}
+
+func isPublicProviderIP(ip net.IP) bool {
+	return ip != nil && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !ip.IsUnspecified() && !ip.IsMulticast()
 }
 
 func CurrentAIProvider() (models.AIConfig, AIProvider, error) {
@@ -160,18 +330,52 @@ func ProviderTestError(cfg models.AIConfig) error {
 	if !cfg.Enabled {
 		return fmt.Errorf("provider is disabled")
 	}
-	if strings.TrimSpace(cfg.Provider) == "" {
-		cfg.Provider = "mock"
+	if err := ValidateAIConfig(cfg, false); err != nil {
+		return err
 	}
-	if strings.EqualFold(cfg.Provider, "openai_compatible") || strings.EqualFold(cfg.Provider, "openai-compatible") || strings.EqualFold(cfg.Provider, "openai") {
-		if strings.TrimSpace(cfg.BaseURL) == "" {
-			return fmt.Errorf("base url is required")
-		}
-		if strings.TrimSpace(cfg.ModelName) == "" {
-			return fmt.Errorf("model name is required")
-		}
+	if strings.EqualFold(strings.TrimSpace(cfg.Provider), AIProviderMock) {
+		return fmt.Errorf("mock mode uses deterministic fallback and cannot validate an AI connection")
 	}
 	return NewAIProvider(cfg).Test()
+}
+
+func ValidateAIConfig(cfg models.AIConfig, requireEncryptedKey bool) error {
+	provider := NormalizeAIProvider(cfg.Provider)
+	if provider != AIProviderMock && provider != AIProviderOpenAICompatible && provider != AIProviderSiliconFlow {
+		return fmt.Errorf("provider must be one of mock, openai_compatible, or siliconflow")
+	}
+	if cfg.RequestTimeoutSeconds < 1 || cfg.RequestTimeoutSeconds > 120 {
+		return fmt.Errorf("request_timeout_seconds must be between 1 and 120")
+	}
+	if cfg.DailyGenerationLimit < 1 || cfg.DailyGenerationLimit > 100 {
+		return fmt.Errorf("daily_generation_limit must be between 1 and 100")
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	if provider == AIProviderMock {
+		return nil
+	}
+	if strings.TrimSpace(cfg.ModelName) == "" {
+		return fmt.Errorf("model name is required")
+	}
+	parsed, err := validateAIBaseURL(cfg.BaseURL)
+	if err != nil {
+		return err
+	}
+	if provider == AIProviderSiliconFlow && (parsed.Scheme != "https" || NormalizeAIProviderURLHost(parsed.Hostname()) != "api.siliconflow.cn" || parsed.Port() != "" || parsed.EscapedPath() != "/v1") {
+		return fmt.Errorf("siliconflow base_url must be exactly %s", SiliconFlowBaseURL)
+	}
+	if config.App != nil && config.App.IsProduction() && parsed.Scheme != "https" {
+		return fmt.Errorf("base_url must use HTTPS in production")
+	}
+	if cfg.APIKeyCiphertext == "" {
+		return fmt.Errorf("api key is required for %s", provider)
+	}
+	if requireEncryptedKey && !cfg.APIKeyEncrypted {
+		return fmt.Errorf("API key must be encrypted at rest; configure AI_KEY_ENCRYPTION_SECRET and update the key")
+	}
+	return nil
 }
 
 func GetAIProviderConfig() models.AIConfig {
@@ -188,9 +392,17 @@ func loadAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if err != nil {
-		cfg = models.AIConfig{Provider: "mock", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
 		if createErr := db.DB.Create(&cfg).Error; createErr != nil {
 			return cfg, createErr
+		}
+		err = nil
+	}
+	original := cfg
+	NormalizeAIConfig(&cfg)
+	if err == nil && (cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName) {
+		if updateErr := db.DB.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error; updateErr != nil {
+			return cfg, updateErr
 		}
 	}
 	return cfg, err
