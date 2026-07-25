@@ -242,9 +242,22 @@ func allowActiveUser(c *gin.Context, user *models.User) bool {
 		api.Fail(c, http.StatusForbidden, "user banned")
 		return false
 	}
-	if user.AccountStatus != models.AccountStatusActive {
-		api.Fail(c, http.StatusForbidden, "account is inactive")
+	if user.AccountStatus == models.AccountStatusDeleted {
+		api.Fail(c, http.StatusForbidden, "account is deleted")
 		return false
+	}
+	if user.AccountStatus == models.AccountStatusInactive {
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(user).Updates(map[string]interface{}{"account_status": models.AccountStatusActive, "security_version": gorm.Expr("security_version + 1")}).Error; err != nil {
+				return err
+			}
+			return tx.Create(&models.AccountEvent{UserID: user.ID, EventType: "restore", Detail: "reactivated after credential login"}).Error
+		}); err != nil {
+			api.Fail(c, http.StatusInternalServerError, "restore account failed: "+err.Error())
+			return false
+		}
+		user.AccountStatus = models.AccountStatusActive
+		user.SecurityVersion++
 	}
 	return true
 }

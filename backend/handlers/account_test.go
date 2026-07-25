@@ -103,7 +103,7 @@ func TestAuthRejectsStaleAndInactiveTokens(t *testing.T) {
 	assertAuthStatus(http.StatusUnauthorized)
 }
 
-func TestAllowActiveUserRejectsInactiveAccount(t *testing.T) {
+func TestAllowActiveUserRestoresRetainedInactiveAccount(t *testing.T) {
 	setupGroupTestDB(t)
 	user := createPasswordUser(t, "inactive_user", "password1")
 	if err := db.DB.Model(&user).Update("account_status", models.AccountStatusInactive).Error; err != nil {
@@ -112,14 +112,28 @@ func TestAllowActiveUserRejectsInactiveAccount(t *testing.T) {
 	user.AccountStatus = models.AccountStatusInactive
 	response := performJSONRequestWithContext(func(c *gin.Context) {
 		if allowActiveUser(c, &user) {
+			api.OK(c, user)
+		}
+	}, nil, nil)
+	if recorderResponseCode(t, response) != 0 {
+		t.Fatalf("retained account was not restored: %s", response.Body.String())
+	}
+	if err := db.DB.First(&user, user.ID).Error; err != nil || user.AccountStatus != models.AccountStatusActive || user.SecurityVersion != 2 {
+		t.Fatalf("retained account was not reactivated safely: %+v err=%v", user, err)
+	}
+}
+
+func TestAllowActiveUserRejectsDeletedAccount(t *testing.T) {
+	setupGroupTestDB(t)
+	user := createPasswordUser(t, "deleted_user", "password1")
+	user.AccountStatus = models.AccountStatusDeleted
+	response := performJSONRequestWithContext(func(c *gin.Context) {
+		if allowActiveUser(c, &user) {
 			api.OK(c, gin.H{"allowed": true})
 		}
 	}, nil, nil)
 	if recorderResponseCode(t, response) != http.StatusForbidden {
-		t.Fatalf("inactive account was allowed to log in: %s", response.Body.String())
-	}
-	if err := db.DB.First(&user, user.ID).Error; err != nil || user.AccountStatus != models.AccountStatusInactive {
-		t.Fatalf("inactive account was reactivated: %+v err=%v", user, err)
+		t.Fatalf("deleted account was allowed to log in: %s", response.Body.String())
 	}
 }
 

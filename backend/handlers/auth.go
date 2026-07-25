@@ -104,9 +104,7 @@ func Login(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
 		return
 	} else {
-		// Existing accounts must be explicitly active before login.
-		if user.AccountStatus != models.AccountStatusActive {
-			api.Fail(c, http.StatusForbidden, "account is inactive")
+		if !allowActiveUser(c, &user) {
 			return
 		}
 		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {

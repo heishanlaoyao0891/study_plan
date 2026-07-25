@@ -24,6 +24,10 @@ func TestLoginMockCreatesUserAndBlockedUser(t *testing.T) {
 	if err := db.DB.Create(&models.User{OpenID: "mock_mock_blocked", Nickname: "B", BannedUntil: &blockedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
+	var blocked models.User
+	if err := db.DB.Where("open_id = ?", "mock_mock_blocked").First(&blocked).Error; err != nil || blocked.BannedUntil == nil || !blocked.BannedUntil.After(time.Now()) {
+		t.Fatalf("blocked user fixture was not persisted: %+v err=%v", blocked, err)
+	}
 
 	g := gin.New()
 	g.POST("/login", Login)
@@ -42,8 +46,8 @@ func TestLoginMockCreatesUserAndBlockedUser(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	g.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected blocked login, got %d", rec.Code)
+	if recorderResponseCode(t, rec) != http.StatusForbidden {
+		t.Fatalf("expected blocked login: %s", rec.Body.String())
 	}
 }
 
