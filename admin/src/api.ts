@@ -112,6 +112,28 @@ export interface AdminLoginResp {
   user: AdminUser
 }
 
+export interface RegistrationInvitation {
+  id: number
+  code_prefix: string
+  status: 'active' | 'used' | 'expired' | 'disabled'
+  created_at: string
+  expires_at: string
+  used_at?: string | null
+  user_id?: number | null
+  used_by_user?: AdminUser | null
+  used_by?: AdminUser | null
+  used_user?: AdminUser | null
+}
+
+export interface InvitationListResp {
+  invitations: RegistrationInvitation[]
+}
+
+export interface InvitationGenerateResp {
+  codes: string[]
+  invitations?: RegistrationInvitation[]
+}
+
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
@@ -210,5 +232,17 @@ export const AdminApi = {
   },
   feedback() {
     return request<FeedbackReport[]>('/api/admin/feedback')
+  },
+  invitations() {
+    return request<InvitationListResp | RegistrationInvitation[]>('/api/admin/invitations')
+  },
+  generateInvitations(count: number) {
+    return request<InvitationGenerateResp | string[]>('/api/admin/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    })
+  },
+  disableInvitation(id: number) {
+    return request<RegistrationInvitation | { disabled: boolean }>(`/api/admin/invitations/${id}`, { method: 'DELETE' })
   },
 }

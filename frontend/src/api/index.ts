@@ -4,6 +4,7 @@ import { api } from './request'
 // ---------- 类型 ----------
 export interface User {
   id: number
+  username?: string
   nickname: string
   avatar_url: string
   weekly_hours: number
@@ -19,6 +20,20 @@ export interface LoginResp {
   user: User
   nickname_required: boolean
 }
+
+export interface RegistrationRequiredResp {
+  registration_required: true
+  registration_token: string
+}
+
+export interface RegistrationReq {
+  invite_code: string
+  username: string
+  nickname: string
+  password: string
+}
+
+export type WechatLoginResp = LoginResp | RegistrationRequiredResp
 
 export interface Plan {
   id: number
@@ -294,8 +309,20 @@ export interface RecoveryApplyResult {
 
 // ---------- 接口 ----------
 export const AuthApi = {
-  login(code: string, nickname = '', avatar_url = '') {
-    return api.post<LoginResp>('/api/auth/login', { code, nickname, avatar_url }, { auth: false })
+  login(code: string) {
+    return api.post<WechatLoginResp>('/api/auth/login', { code }, { auth: false })
+  },
+  h5Register(data: RegistrationReq) {
+    return api.post<LoginResp>('/api/auth/h5/register', data, { auth: false })
+  },
+  h5Login(username: string, password: string) {
+    return api.post<LoginResp>('/api/auth/h5/login', { username, password }, { auth: false })
+  },
+  wechatRegister(data: RegistrationReq & { registration_token: string }) {
+    return api.post<LoginResp>('/api/auth/wechat/register', data, { auth: false })
+  },
+  wechatLink(data: { registration_token: string; username: string; password: string }) {
+    return api.post<LoginResp>('/api/auth/wechat/link', data, { auth: false })
   },
   me() {
     return api.get<User>('/api/auth/me')

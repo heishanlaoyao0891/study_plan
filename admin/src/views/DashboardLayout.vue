@@ -8,6 +8,7 @@
       <nav class="nav-list">
         <router-link to="/">运营总览</router-link>
         <router-link to="/users">用户管理</router-link>
+        <router-link to="/invitations">注册邀请</router-link>
         <router-link to="/slack-config">躺平币配置</router-link>
         <router-link to="/suspicious-records">异常记录</router-link>
         <router-link to="/ai-config">AI 配置</router-link>

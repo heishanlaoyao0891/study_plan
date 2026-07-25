@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm/clause"
 
 	"study_plan_backend/api"
-	"study_plan_backend/config"
 	"study_plan_backend/db"
 	"study_plan_backend/identity"
 	"study_plan_backend/middleware"
@@ -33,6 +32,11 @@ type loginResp struct {
 	NicknameRequired bool        `json:"nickname_required"`
 }
 
+type registrationRequiredResp struct {
+	RegistrationRequired bool   `json:"registration_required"`
+	RegistrationToken    string `json:"registration_token"`
+}
+
 type updateNicknameReq struct {
 	Nickname string `json:"nickname" binding:"required"`
 }
@@ -45,11 +49,6 @@ var userSearchLimits = struct {
 type adminLoginReq struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
-}
-
-type bindPhoneReq struct {
-	Code        string `json:"code"`
-	PhoneNumber string `json:"phone_number"`
 }
 
 type updateAvatarReq struct {
@@ -94,22 +93,13 @@ func Login(c *gin.Context) {
 	err = db.DB.Where("open_id = ?", s.OpenID).First(&user).Error
 
 	if err == gorm.ErrRecordNotFound {
-		targetID, targetErr := identity.NewInviteTargetID()
-		if targetErr != nil {
-			api.Fail(c, http.StatusInternalServerError, "create invitation identity failed: "+targetErr.Error())
+		registrationToken, signErr := services.SignRegistrationToken(s.OpenID)
+		if signErr != nil {
+			api.Fail(c, http.StatusInternalServerError, "sign registration token failed: "+signErr.Error())
 			return
 		}
-		// WeChat users never receive administrative privileges implicitly.
-		user = models.User{
-			OpenID:         s.OpenID,
-			AvatarURL:      req.AvatarURL,
-			InviteTargetID: targetID,
-			Role:           models.RoleUser,
-		}
-		if err := db.DB.Create(&user).Error; err != nil {
-			api.Fail(c, http.StatusInternalServerError, "create user failed: "+err.Error())
-			return
-		}
+		api.OK(c, registrationRequiredResp{RegistrationRequired: true, RegistrationToken: registrationToken})
+		return
 	} else if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
 		return
@@ -148,8 +138,17 @@ func Login(c *gin.Context) {
 			db.DB.Model(&user).Updates(updates)
 		}
 	}
+	if user.UsernameNormalized == "" || user.NicknameNormalized == "" || user.PasswordHash == nil {
+		registrationToken, signErr := services.SignRegistrationToken(s.OpenID)
+		if signErr != nil {
+			api.Fail(c, http.StatusInternalServerError, "sign registration token failed: "+signErr.Error())
+			return
+		}
+		api.OK(c, registrationRequiredResp{RegistrationRequired: true, RegistrationToken: registrationToken})
+		return
+	}
 
-	token, err := services.SignToken(user.ID, user.OpenID, user.Role)
+	token, err := services.SignToken(user.ID, s.OpenID, user.Role)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
@@ -294,47 +293,6 @@ func CurrentUser(c *gin.Context) {
 	api.OK(c, user)
 }
 
-func BindPhoneNumber(c *gin.Context) {
-	uid := c.GetUint(middleware.CtxUserIDKey)
-	var req bindPhoneReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-	phone := strings.TrimSpace(req.PhoneNumber)
-	if req.Code != "" {
-		wxPhone, err := services.GetPhoneNumber(req.Code)
-		if err != nil {
-			api.Fail(c, http.StatusBadGateway, "wechat phone binding failed: "+err.Error())
-			return
-		}
-		phone = wxPhone
-	} else if !config.App.WeChatLoginMock {
-		api.Fail(c, http.StatusBadRequest, "wechat phone binding code is required")
-		return
-	}
-	if phone == "" {
-		api.Fail(c, http.StatusBadRequest, "phone binding code is required")
-		return
-	}
-	now := time.Now()
-	var user models.User
-	if err := db.DB.First(&user, uid).Error; err != nil {
-		api.Fail(c, http.StatusNotFound, "user not found")
-		return
-	}
-	if err := db.DB.Model(&user).Updates(map[string]interface{}{"phone_number": phone, "phone_verified_at": &now}).Error; err != nil {
-		api.Fail(c, http.StatusInternalServerError, "bind phone failed: "+err.Error())
-		return
-	}
-	if user.PhoneNumber != "" && user.PhoneNumber != phone {
-		db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "phone_rebind", Detail: user.PhoneNumber + " -> " + phone})
-	}
-	user.PhoneNumber = phone
-	user.PhoneVerifiedAt = &now
-	api.OK(c, user)
-}
-
 func DeactivateAccount(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	var req deactivateAccountReq
@@ -362,11 +320,13 @@ func DeactivateAccount(c *gin.Context) {
 			return err
 		}
 		return tx.Model(&user).Updates(map[string]interface{}{
+			"open_id":             "",
+			"username":            "",
+			"username_normalized": "",
+			"password_hash":       nil,
 			"nickname":            "",
 			"nickname_normalized": "",
 			"avatar_url":          "",
-			"phone_number":        "",
-			"phone_verified_at":   nil,
 			"weekly_hours":        0,
 			"slack_balance":       0,
 			"account_status":      models.AccountStatusDeleted,

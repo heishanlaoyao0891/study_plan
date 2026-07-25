@@ -60,8 +60,18 @@ func Auth() gin.HandlerFunc {
 	}
 }
 
-func RequirePhoneBound() gin.HandlerFunc {
+func RequireCompleteAccount() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		value, ok := c.Get(CtxUserKey)
+		user, valid := value.(models.User)
+		if !ok || !valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "user not found"})
+			return
+		}
+		if strings.TrimSpace(user.UsernameNormalized) == "" || strings.TrimSpace(user.NicknameNormalized) == "" || user.PasswordHash == nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "complete account setup required", "data": gin.H{"account_setup_required": true}})
+			return
+		}
 		c.Next()
 	}
 }

@@ -122,41 +122,37 @@ func TestRequireNicknameDoesNotExemptAdminRole(t *testing.T) {
 	}
 }
 
-func TestRequirePhoneBoundIsOptionalByDefault(t *testing.T) {
-	previous := config.App
-	t.Cleanup(func() { config.App = previous })
-	config.App = &config.Config{PhoneBindingRequired: false}
+func TestRequireCompleteAccountRejectsMissingUsername(t *testing.T) {
 	g := gin.New()
+	hash := "hash"
 	g.GET("/plans", func(c *gin.Context) {
 		c.Set(middleware.CtxRoleKey, models.RoleUser)
-		c.Set(middleware.CtxUserKey, models.User{})
-	}, middleware.RequirePhoneBound(), func(c *gin.Context) {
+		c.Set(middleware.CtxUserKey, models.User{NicknameNormalized: "user", PasswordHash: &hash})
+	}, middleware.RequireCompleteAccount(), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/plans", nil)
 	g.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected optional phone gate to allow request, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected incomplete account to be rejected, got %d", rec.Code)
 	}
 }
 
-func TestRequirePhoneBoundNeverGatesStudy(t *testing.T) {
-	previous := config.App
-	t.Cleanup(func() { config.App = previous })
-	config.App = &config.Config{PhoneBindingRequired: true}
+func TestRequireCompleteAccountAllowsCompleteUser(t *testing.T) {
+	hash := "hash"
 	g := gin.New()
 	g.GET("/plans", func(c *gin.Context) {
 		c.Set(middleware.CtxRoleKey, models.RoleUser)
-		c.Set(middleware.CtxUserKey, models.User{})
-	}, middleware.RequirePhoneBound(), func(c *gin.Context) {
+		c.Set(middleware.CtxUserKey, models.User{UsernameNormalized: "user", NicknameNormalized: "user", PasswordHash: &hash})
+	}, middleware.RequireCompleteAccount(), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/plans", nil)
 	g.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected retired phone gate to allow request, got %d", rec.Code)
+		t.Fatalf("expected complete account to pass, got %d", rec.Code)
 	}
 }
 

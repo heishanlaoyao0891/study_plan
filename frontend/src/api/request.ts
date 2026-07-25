@@ -4,10 +4,8 @@
 const API_BASE_KEY = 'api_base'
 const TOKEN_KEY = 'auth_token'
 
-// 默认本地开发地址：H5 端用 localhost，小程序需要改成你电脑的 LAN IP
-// 例如：http://192.168.1.100:8080
 export function getApiBase(): string {
-	return normalizeApiBase(uni.getStorageSync(API_BASE_KEY) || import.meta.env.VITE_API_BASE || 'http://localhost:8080')
+	return normalizeApiBase(uni.getStorageSync(API_BASE_KEY) || import.meta.env.VITE_API_BASE || '')
 }
 
 export function setApiBase(base: string) {

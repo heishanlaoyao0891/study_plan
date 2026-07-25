@@ -34,6 +34,7 @@ func Init() error {
 func AutoMigrate() error {
 	if err := DB.AutoMigrate(
 		&models.User{},
+		&models.RegistrationInvite{},
 		&models.Plan{},
 		&models.PlanMember{},
 		&models.PlanScheduleOverride{},
@@ -105,6 +106,15 @@ func AutoMigrate() error {
 		return err
 	}
 	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_target_id ON users (invite_target_id) WHERE invite_target_id <> ''").Error; err != nil {
+		return err
+	}
+	if err := DB.Migrator().DropIndex(&models.User{}, "idx_users_open_id"); err != nil && !strings.Contains(strings.ToLower(err.Error()), "no such index") {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_open_id_nonempty ON users (open_id) WHERE open_id IS NOT NULL AND open_id <> '' AND deleted_at IS NULL").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_normalized ON users (username_normalized) WHERE username_normalized IS NOT NULL AND username_normalized <> '' AND deleted_at IS NULL").Error; err != nil {
 		return err
 	}
 	if err := migrateLegacyCheckins(); err != nil {

@@ -45,19 +45,22 @@ func main() {
 	apiGroup := r.Group("/api")
 	// 认证
 	apiGroup.POST("/auth/login", handlers.Login)
+	apiGroup.POST("/auth/h5/register", handlers.H5Register)
+	apiGroup.POST("/auth/h5/login", handlers.H5Login)
+	apiGroup.POST("/auth/wechat/register", handlers.WeChatRegister)
+	apiGroup.POST("/auth/wechat/link", handlers.WeChatLink)
 	apiGroup.POST("/admin/auth/login", handlers.AdminLogin)
 
 	// 需要登录
 	auth := apiGroup.Group("", middleware.Auth())
 	{
 		auth.GET("/auth/me", handlers.CurrentUser)
-		auth.POST("/auth/phone", handlers.BindPhoneNumber)
 		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)
 		auth.PUT("/auth/nickname", handlers.UpdateNickname)
 	}
 
-	bound := apiGroup.Group("", middleware.Auth(), middleware.RequireNickname())
+	bound := apiGroup.Group("", middleware.Auth(), middleware.RequireCompleteAccount())
 	{
 		// 计划
 		bound.GET("/plans", handlers.ListPlans)
@@ -157,6 +160,9 @@ func main() {
 	admin := apiGroup.Group("/admin", middleware.Auth(), middleware.RequireAdmin())
 	{
 		admin.GET("/overview", handlers.AdminOverview)
+		admin.GET("/invitations", handlers.ListRegistrationInvites)
+		admin.POST("/invitations", handlers.CreateRegistrationInvites)
+		admin.DELETE("/invitations/:id", handlers.DisableRegistrationInvite)
 		admin.GET("/users", handlers.ListUsers)
 		admin.GET("/users/:id", handlers.GetAdminUserDetail)
 		admin.POST("/users/:id/ban", handlers.BanUser)

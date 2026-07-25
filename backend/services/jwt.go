@@ -13,6 +13,13 @@ type Claims struct {
 	UserID uint   `json:"user_id"`
 	OpenID string `json:"openid"`
 	Role   string `json:"role"`
+	Type   string `json:"type,omitempty"`
+	jwt.RegisteredClaims
+}
+
+type RegistrationClaims struct {
+	OpenID string `json:"openid"`
+	Type   string `json:"type"`
 	jwt.RegisteredClaims
 }
 
@@ -24,6 +31,7 @@ func SignToken(userID uint, openid, role string) (string, error) {
 		UserID: userID,
 		OpenID: openid,
 		Role:   role,
+		Type:   "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -47,8 +55,31 @@ func ParseToken(tokenStr string) (*Claims, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !tok.Valid {
+	if !tok.Valid || (claims.Type != "" && claims.Type != "access") {
 		return nil, errors.New("invalid token")
+	}
+	return claims, nil
+}
+
+func SignRegistrationToken(openid string) (string, error) {
+	now := time.Now()
+	claims := RegistrationClaims{
+		OpenID: openid, Type: "wechat_registration",
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)), IssuedAt: jwt.NewNumericDate(now), Issuer: "study_plan_registration"},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(config.App.JWTSecret))
+}
+
+func ParseRegistrationToken(tokenStr string) (*RegistrationClaims, error) {
+	claims := &RegistrationClaims{}
+	tok, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("invalid signing method")
+		}
+		return []byte(config.App.JWTSecret), nil
+	})
+	if err != nil || !tok.Valid || claims.Type != "wechat_registration" || claims.Issuer != "study_plan_registration" || claims.OpenID == "" {
+		return nil, errors.New("invalid or expired registration token")
 	}
 	return claims, nil
 }

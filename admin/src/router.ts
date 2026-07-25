@@ -8,6 +8,7 @@ import LoginView from './views/LoginView.vue'
 import OverviewView from './views/OverviewView.vue'
 import OpsContentView from './views/OpsContentView.vue'
 import FeedbackView from './views/FeedbackView.vue'
+import InvitationsView from './views/InvitationsView.vue'
 import SlackConfigView from './views/SlackConfigView.vue'
 import SubscriptionConfigView from './views/SubscriptionConfigView.vue'
 import SuspiciousRecordsView from './views/SuspiciousRecordsView.vue'
@@ -32,6 +33,7 @@ export const router = createRouter({
         { path: 'subscription-config', name: 'subscription-config', component: SubscriptionConfigView },
         { path: 'ops-content', name: 'ops-content', component: OpsContentView },
         { path: 'feedback', name: 'feedback', component: FeedbackView },
+        { path: 'invitations', name: 'invitations', component: InvitationsView },
         { path: 'audit-logs', name: 'audit-logs', component: AuditLogsView },
       ],
     },
