@@ -44,6 +44,12 @@ func Auth() gin.HandlerFunc {
 			})
 			return
 		}
+		if user.AccountStatus != models.AccountStatusActive || claims.SecurityVersion != user.SecurityVersion {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"code": 401, "message": "account inactive or token revoked",
+			})
+			return
+		}
 		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"code":         403,

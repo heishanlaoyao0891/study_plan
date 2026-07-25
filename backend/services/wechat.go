@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sync"
+	"time"
 
 	"study_plan_backend/config"
 )
@@ -37,6 +40,13 @@ type weChatSubscriptionSendReq struct {
 const weChatLoginURL = "https://api.weixin.qq.com/sns/jscode2session"
 const weChatAccessTokenURL = "https://api.weixin.qq.com/cgi-bin/token"
 
+var weChatHTTPClient = http.DefaultClient
+var tokenCache struct {
+	sync.Mutex
+	value     string
+	expiresAt time.Time
+}
+
 // Code2Session 用小程序 code 换取 openid
 // 仅当 WECHAT_LOGIN_MOCK=true 时走 mock 模式，生产环境必须调用微信 code2session。
 func Code2Session(code string) (*WeChatSession, error) {
@@ -56,7 +66,7 @@ func Code2Session(code string) (*WeChatSession, error) {
 	url := fmt.Sprintf("%s?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code",
 		weChatLoginURL, cfg.WeChatAppID, cfg.WeChatSecret, code)
 
-	resp, err := http.Get(url)
+	resp, err := weChatHTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("call wechat: %w", err)
 	}
@@ -77,28 +87,39 @@ func Code2Session(code string) (*WeChatSession, error) {
 }
 
 func getWeChatAccessToken() (string, error) {
+	tokenCache.Lock()
+	defer tokenCache.Unlock()
+	if tokenCache.value != "" && time.Now().Before(tokenCache.expiresAt) {
+		return tokenCache.value, nil
+	}
 	cfg := config.App
-	url := fmt.Sprintf("%s?grant_type=client_credential&appid=%s&secret=%s", weChatAccessTokenURL, cfg.WeChatAppID, cfg.WeChatSecret)
-	resp, err := http.Get(url)
+	endpoint := fmt.Sprintf("%s?grant_type=client_credential&appid=%s&secret=%s", weChatAccessTokenURL, url.QueryEscape(cfg.WeChatAppID), url.QueryEscape(cfg.WeChatSecret))
+	resp, err := weChatHTTPClient.Get(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("call wechat access token api: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read wechat access token body: %w", err)
 	}
 	var result weChatAccessTokenResp
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := json.Unmarshal(responseData, &result); err != nil {
 		return "", fmt.Errorf("parse wechat access token response: %w", err)
 	}
 	if result.ErrCode != 0 || result.AccessToken == "" {
 		return "", fmt.Errorf("wechat access token failed: errcode=%d errmsg=%s", result.ErrCode, result.ErrMsg)
 	}
+	expiresIn := result.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 7200
+	}
+	tokenCache.value = result.AccessToken
+	tokenCache.expiresAt = time.Now().Add(time.Duration(expiresIn)*time.Second - 5*time.Minute)
 	return result.AccessToken, nil
 }
 
-func SendSubscriptionMessage(openid, templateID, message string) error {
+func SendSubscriptionMessage(openid, templateID, page string, data map[string]any) error {
 	cfg := config.App
 	if cfg.WeChatLoginMock {
 		return nil
@@ -108,12 +129,10 @@ func SendSubscriptionMessage(openid, templateID, message string) error {
 		return err
 	}
 	payload := weChatSubscriptionSendReq{
-		ToUser:     openid,
-		TemplateID: templateID,
-		Page:       "/pages/checkin/checkin",
-		Data: map[string]any{
-			"thing1": map[string]string{"value": message},
-		},
+		ToUser:           openid,
+		TemplateID:       templateID,
+		Page:             page,
+		Data:             data,
 		MiniProgramState: "formal",
 	}
 	body, _ := json.Marshal(payload)
@@ -122,12 +141,12 @@ func SendSubscriptionMessage(openid, templateID, message string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := weChatHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -135,7 +154,7 @@ func SendSubscriptionMessage(openid, templateID, message string) error {
 		ErrCode int    `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := json.Unmarshal(responseData, &result); err != nil {
 		return err
 	}
 	if result.ErrCode != 0 {

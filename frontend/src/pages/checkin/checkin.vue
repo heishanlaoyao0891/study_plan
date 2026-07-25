@@ -70,8 +70,14 @@
 
     <view class="empty" v-if="!loading && checkins.length === 0">
       <view class="empty-title">今天还没有小任务</view>
-      <view class="empty-desc">先许下一个学习愿望，我来帮你把它拆成每天能完成的小步。</view>
-      <button class="primary-btn" @click="goPlans">去种下计划</button>
+      <template v-if="nextTask">
+        <view class="empty-desc">下一项安排在 {{ nextTask.task.date }}：{{ nextTask.task.title }}</view>
+        <button class="primary-btn" @click="openNextPlan">查看「{{ nextTask.plan.title }}」计划</button>
+      </template>
+      <template v-else>
+        <view class="empty-desc">当前没有未来待执行任务，可以创建计划安排下一步。</view>
+        <button class="primary-btn" @click="goPlans">去种下计划</button>
+      </template>
     </view>
 
     <view class="list" v-else>
@@ -140,7 +146,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { onHide, onShow } from '@dcloudio/uni-app'
-import { CheckinApi, MotivationApi, SlackApi, StudyTaskApi, type CheckinInfo, type DailyCheckin, type DailyTask, type Motivation, type TimerTask } from '@/api'
+import { CheckinApi, MotivationApi, SlackApi, StudyTaskApi, type CheckinInfo, type DailyCheckin, type DailyTask, type Motivation, type NextTaskInfo, type TimerTask } from '@/api'
 import { addLocalDays, localDateKey } from '@/utils/date'
 
 const todayStr = ref('')
@@ -153,6 +159,7 @@ const checkingIn = ref(false)
 const slackBalance = ref(0)
 const pendingTasks = ref<DailyTask[]>([])
 const motivation = ref<Motivation | null>(null)
+const nextTask = ref<NextTaskInfo | null>(null)
 const now = ref(Date.now())
 const snapshotAt = ref(Date.now())
 const expandedTasks = ref(new Set<number>())
@@ -173,19 +180,21 @@ const dailyCheckinLabel = computed(() => dailyCheckin.value?.completed ? '今日
 async function load() {
   loading.value = true
   try {
-    const [list, s, slack, message, pending, daily] = await Promise.all([
+    const [list, s, slack, message, pending, daily, next] = await Promise.all([
       CheckinApi.listByDate(todayStr.value),
       CheckinApi.consecutive().catch(() => null),
       SlackApi.balance().catch(() => null),
       MotivationApi.daily(todayStr.value).catch(() => null),
       StudyTaskApi.pendingDecision(todayStr.value).catch(() => []),
       CheckinApi.daily(todayStr.value).catch(() => null),
+      StudyTaskApi.next(todayStr.value).catch(() => null),
     ])
     checkins.value = list || []
     const runningIds = new Set((list || []).filter(item => item.task.active_session && item.task.timer_state === 'running').map(item => item.task_id))
     pendingTasks.value = pending.filter(task => !runningIds.has(task.id))
     dailyCheckin.value = daily
     motivation.value = message
+    nextTask.value = list?.length ? null : next
     snapshotAt.value = Date.now()
     expandedTasks.value = new Set(checkins.value.filter(item => item.task.timer_state === 'running').map(item => item.task_id))
     if (s) streak.value = s.consecutive_checkin_days ?? s.streak ?? 0
@@ -360,6 +369,7 @@ function scheduleConflictMessage(error: any) {
 function goPlans() {
   uni.switchTab({ url: '/pages/plans/plans' })
 }
+function openNextPlan() { if (nextTask.value) uni.navigateTo({ url: `/pages/plan-detail/plan-detail?id=${nextTask.value.plan.id}` }) }
 
 function openDetail(item: CheckinInfo) { uni.navigateTo({ url: `/pages/task/task?id=${item.task_id}` }) }
 function startTicker() {

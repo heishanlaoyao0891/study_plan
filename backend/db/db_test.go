@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"study_plan_backend/config"
 	"study_plan_backend/models"
 )
 
@@ -57,5 +58,33 @@ func TestResolveDuplicateOpenSessionsPreservesDurationForDecision(t *testing.T) 
 	DB.First(&task, task.ID)
 	if !task.NeedsDecision || task.StudySeconds <= 0 || task.StudyMinutes <= 0 {
 		t.Fatalf("closed session duration must be retained for decision: %+v", task)
+	}
+}
+
+func TestAutoMigrateGuardsOneActiveStudyGroupPerUser(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	first := models.StudyGroup{Name: "First", LeaderUserID: 1, Status: models.StudyGroupStatusActive}
+	second := models.StudyGroup{Name: "Second", LeaderUserID: 2, Status: models.StudyGroupStatusActive}
+	if err := DB.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+	active := models.StudyGroupMember{GroupID: first.ID, UserID: 1, Role: models.GroupMemberRoleLeader, Status: models.GroupMemberStatusActive, JoinedAt: time.Now()}
+	if err := DB.Create(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicate := models.StudyGroupMember{GroupID: second.ID, UserID: 1, Role: models.GroupMemberRoleMember, Status: models.GroupMemberStatusActive, JoinedAt: time.Now()}
+	if err := DB.Create(&duplicate).Error; err == nil {
+		t.Fatal("expected active membership unique index to reject a second active group")
+	}
+	duplicate.Status = models.GroupMemberStatusLeft
+	if err := DB.Create(&duplicate).Error; err != nil {
+		t.Fatalf("non-active history membership should remain valid: %v", err)
 	}
 }

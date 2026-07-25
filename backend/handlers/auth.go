@@ -104,11 +104,10 @@ func Login(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
 		return
 	} else {
-		// 老用户：检查封禁
+		// Existing accounts must be explicitly active before login.
 		if user.AccountStatus != models.AccountStatusActive {
-			db.DB.Model(&user).Updates(map[string]interface{}{"account_status": models.AccountStatusActive})
-			user.AccountStatus = models.AccountStatusActive
-			db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "restore", Detail: "reactivated on login"})
+			api.Fail(c, http.StatusForbidden, "account is inactive")
+			return
 		}
 		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
 			c.JSON(http.StatusForbidden, gin.H{
@@ -148,7 +147,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token, err := services.SignToken(user.ID, s.OpenID, user.Role)
+	token, err := services.SignToken(user.ID, s.OpenID, user.Role, user.SecurityVersion)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
@@ -191,7 +190,11 @@ func AdminLogin(c *gin.Context) {
 		return
 	}
 
-	token, err := services.SignToken(cred.User.ID, cred.User.OpenID, cred.User.Role)
+	if cred.User.AccountStatus != models.AccountStatusActive {
+		api.Fail(c, http.StatusForbidden, "account inactive")
+		return
+	}
+	token, err := services.SignToken(cred.User.ID, cred.User.OpenID, cred.User.Role, cred.User.SecurityVersion)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
@@ -306,7 +309,7 @@ func DeactivateAccount(c *gin.Context) {
 		return
 	}
 	if req.Retain {
-		if err := db.DB.Model(&user).Updates(map[string]interface{}{"account_status": models.AccountStatusInactive}).Error; err != nil {
+		if err := db.DB.Model(&user).Updates(map[string]interface{}{"account_status": models.AccountStatusInactive, "security_version": gorm.Expr("security_version + 1")}).Error; err != nil {
 			api.Fail(c, http.StatusInternalServerError, "deactivate failed: "+err.Error())
 			return
 		}
@@ -330,6 +333,7 @@ func DeactivateAccount(c *gin.Context) {
 			"weekly_hours":        0,
 			"slack_balance":       0,
 			"account_status":      models.AccountStatusDeleted,
+			"security_version":    gorm.Expr("security_version + 1"),
 		}).Error
 	}); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "delete account failed: "+err.Error())
@@ -341,6 +345,9 @@ func DeactivateAccount(c *gin.Context) {
 }
 
 func cleanupUserData(tx *gorm.DB, uid uint) error {
+	if err := tx.Where("user_id = ?", uid).Delete(&models.PasswordResetCode{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("user_id = ?", uid).Delete(&models.PostponeRecord{}).Error; err != nil {
 		return err
 	}

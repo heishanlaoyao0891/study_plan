@@ -17,6 +17,8 @@ export interface AdminUser {
   banned_until?: string
   banned_reason?: string
   slack_balance?: number
+  username?: string
+  account_status?: 'active' | 'inactive' | 'deleted'
   plan_count?: number
   checkin_count?: number
 }
@@ -68,10 +70,22 @@ export interface SubscriptionConfig {
   completion_template_id: string
   decision_template_id: string
   missed_checkin_template_id: string
+  group_nudge_template_id: string
   study_start_enabled: boolean
   completion_enabled: boolean
   decision_enabled: boolean
   missed_checkin_enabled: boolean
+  group_nudge_enabled: boolean
+  study_start_page: string
+  completion_page: string
+  decision_page: string
+  missed_checkin_page: string
+  group_nudge_page: string
+  study_start_field_mapping: string
+  completion_field_mapping: string
+  decision_field_mapping: string
+  missed_checkin_field_mapping: string
+  group_nudge_field_mapping: string
   recent_status?: Array<{ id: number; reminder_type: string; status: string; message?: string; created_at: string }>
 }
 
@@ -145,6 +159,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     ...options,
     headers,
   })
+  const body = (await res.json()) as ApiEnvelope<T>
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
       clearSession()
@@ -154,10 +169,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
       }
       throw new Error('登录已过期，请重新登录')
     }
-    throw new Error(`请求失败：HTTP ${res.status}`)
+    throw new Error(body.message || `请求失败：HTTP ${res.status}`)
   }
 
-  const body = (await res.json()) as ApiEnvelope<T>
   if (body.code !== 0) {
     throw new Error(body.message || '请求失败')
   }
@@ -194,6 +208,9 @@ export const AdminApi = {
   },
   unbanUser(id: number) {
     return request<AdminUser>(`/api/admin/users/${id}/unban`, { method: 'POST', body: JSON.stringify({}) })
+  },
+  createPasswordReset(id: number) {
+    return request<{ code: string; expires_at: string }>(`/api/admin/users/${id}/password-reset`, { method: 'POST', body: JSON.stringify({}) })
   },
   slackConfigs() {
     return request<SlackConfig[]>('/api/admin/slack-config')

@@ -2,9 +2,14 @@
   <view class="page">
     <view class="panel">
       <view class="title">提醒设置</view>
-      <view class="desc">微信订阅消息需要你主动授权，可随时取消。正式发布前需配置模板 ID。</view>
+      <!-- #ifdef MP-WEIXIN -->
+      <view class="desc">微信订阅消息需要逐项授权。微信每次授权通常只允许发送一次，后续可再次订阅。</view>
       <button class="primary" @click="subscribe">订阅提醒</button>
       <button class="ghost" @click="unsubscribe">取消订阅</button>
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
+      <view class="desc unsupported">H5 不支持微信订阅消息授权。请使用已绑定同一账号的微信小程序，在“提醒设置”中完成订阅。</view>
+      <!-- #endif -->
     </view>
 
     <view class="events">
@@ -39,8 +44,23 @@ async function load() {
 }
 
 async function subscribe() {
-  try { await NotificationApi.subscribe(); uni.showToast({ title: '已订阅', icon: 'success' }) }
-  catch (e: any) { uni.showToast({ title: e?.message || '失败', icon: 'none' }) }
+  // #ifdef MP-WEIXIN
+  try {
+    const metadata = await NotificationApi.templates()
+    const templateIds = metadata.templates.map((item) => item.template_id)
+    if (!templateIds.length) {
+      uni.showToast({ title: '暂无已启用的提醒模板', icon: 'none' })
+      return
+    }
+    const results = await new Promise<Record<string, string>>((resolve, reject) => {
+      uni.requestSubscribeMessage({ tmplIds: templateIds, success: (result) => resolve(result as unknown as Record<string, string>), fail: reject })
+    })
+    const saved = await NotificationApi.subscribe(results)
+    uni.showToast({ title: saved.accepted.length ? `已订阅 ${saved.accepted.length} 项` : '未接受任何提醒', icon: 'none' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '授权失败', icon: 'none' })
+  }
+  // #endif
 }
 async function unsubscribe() {
   try { await NotificationApi.unsubscribe(); uni.showToast({ title: '已取消', icon: 'success' }) }
@@ -50,9 +70,10 @@ async function unsubscribe() {
 function typeText(type: string) {
   const map: Record<string, string> = {
     study_start: '到点学习',
-    study_end: '完成提醒',
+    completion: '完成提醒',
     decision_2330: '23:30 决策',
     missed_checkin: '未打卡',
+    group_nudge: '小组督学',
   }
   return map[type] || type
 }
@@ -65,6 +86,7 @@ onShow(load)
 .panel { padding: 34rpx; border-radius: 18rpx; background: #fff; border: 1rpx solid #e9edf5; }
 .title { color: #111827; font-size: 34rpx; font-weight: 800; }
 .desc { margin: 14rpx 0 32rpx; color: #7b8498; font-size: 26rpx; line-height: 1.6; }
+.unsupported { padding: 24rpx; border-radius: 12rpx; background: #f3f6fb; color: #4b5568; }
 .primary, .ghost { height: 82rpx; line-height: 82rpx; border-radius: 12rpx; font-size: 28rpx; }
 .primary { background: #2264d1; color: #fff; }
 .ghost { margin-top: 18rpx; background: #f3f6fb; color: #384257; }

@@ -3,6 +3,7 @@ import { onLaunch } from "@dcloudio/uni-app";
 import { isLoggedIn } from "@/api/request";
 import { AuthApi, StudyTaskApi } from "@/api";
 import { unicodeLength } from "@/utils/text";
+import { routeForUser } from "@/utils/auth-routing";
 
 onLaunch(() => {
   // 已登录 → 停留在 tab 首页；未登录 → 跳转登录页
@@ -14,6 +15,11 @@ onLaunch(() => {
       if (!user.nickname || unicodeLength(user.nickname) < 2) {
         uni.reLaunch({ url: "/pages/nickname/nickname" });
         return;
+      }
+      const route = routeForUser(user)
+      if (route !== '/pages/checkin/checkin') {
+        uni.reLaunch({ url: route })
+        return
       }
       StudyTaskApi.compensateMidnight().catch(() => {});
     }).catch(() => {});

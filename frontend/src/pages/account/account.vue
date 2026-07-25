@@ -8,6 +8,14 @@
         <view><view class="nickname">{{ user.nickname }}</view><view class="status">账号状态：{{ user.account_status || 'active' }}</view></view>
       </view>
       <button class="secondary" @click="goNickname">修改昵称</button>
+      <button class="secondary" @click="logout">退出当前设备</button>
+    </view>
+
+    <view class="panel">
+      <view class="title">修改密码</view>
+      <input v-model="currentPassword" class="input" password maxlength="72" placeholder="当前密码" />
+      <input v-model="newPassword" class="input" password maxlength="72" placeholder="新密码（8-72 字节）" />
+      <button class="primary" :loading="changingPassword" @click="changePassword">更新密码</button>
     </view>
 
     <view class="panel">
@@ -23,9 +31,12 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { AuthApi, type User } from '@/api'
-import { clearToken } from '@/api/request'
+import { clearToken, setToken } from '@/api/request'
 
 const user = ref<User | null>(null)
+const currentPassword = ref('')
+const newPassword = ref('')
+const changingPassword = ref(false)
 
 async function load() {
   try { user.value = await AuthApi.me() }
@@ -33,6 +44,29 @@ async function load() {
 }
 
 function goNickname() { uni.navigateTo({ url: '/pages/nickname/nickname?mode=edit' }) }
+function logout() {
+  clearToken()
+  uni.reLaunch({ url: '/pages/login/login' })
+}
+
+async function changePassword() {
+  if (!currentPassword.value || !newPassword.value) {
+    uni.showToast({ title: '请填写当前密码和新密码', icon: 'none' })
+    return
+  }
+  changingPassword.value = true
+  try {
+    const result = await AuthApi.changePassword(currentPassword.value, newPassword.value)
+    setToken(result.token)
+    currentPassword.value = ''
+    newPassword.value = ''
+    uni.showToast({ title: '密码已更新', icon: 'success' })
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '修改失败', icon: 'none' })
+  } finally {
+    changingPassword.value = false
+  }
+}
 
 async function deactivate(retain: boolean) {
   const confirmed = await new Promise<boolean>(resolve => uni.showModal({
@@ -61,6 +95,7 @@ onShow(load)
 .nickname { color: #111827; font-size: 29rpx; font-weight: 800; }
 .status,.desc { margin-top: 7rpx; color: #7b8498; font-size: 23rpx; line-height: 1.6; }
 .secondary,.primary,.danger { margin-top: 18rpx; border-radius: 999rpx; }
+.input { box-sizing: border-box; width: 100%; height: 82rpx; margin-top: 14rpx; padding: 0 22rpx; border: 1rpx solid #eadde3; border-radius: 16rpx; }
 .secondary { background: #fff0f6; color: #ff6f91; }
 .primary { background: #111827; color: #fff; }
 .danger { background: #f7f4f4; color: #9a7379; }

@@ -57,10 +57,22 @@ type subscriptionConfigReq struct {
 	CompletionTemplateID    string `json:"completion_template_id"`
 	DecisionTemplateID      string `json:"decision_template_id"`
 	MissedCheckinTemplateID string `json:"missed_checkin_template_id"`
+	GroupNudgeTemplateID    string `json:"group_nudge_template_id"`
 	StudyStartEnabled       bool   `json:"study_start_enabled"`
 	CompletionEnabled       bool   `json:"completion_enabled"`
 	DecisionEnabled         bool   `json:"decision_enabled"`
 	MissedCheckinEnabled    bool   `json:"missed_checkin_enabled"`
+	GroupNudgeEnabled       bool   `json:"group_nudge_enabled"`
+	StudyStartPage          string `json:"study_start_page"`
+	CompletionPage          string `json:"completion_page"`
+	DecisionPage            string `json:"decision_page"`
+	MissedCheckinPage       string `json:"missed_checkin_page"`
+	GroupNudgePage          string `json:"group_nudge_page"`
+	StudyStartFieldMapping  string `json:"study_start_field_mapping"`
+	CompletionFieldMapping  string `json:"completion_field_mapping"`
+	DecisionFieldMapping    string `json:"decision_field_mapping"`
+	MissedCheckinMapping    string `json:"missed_checkin_field_mapping"`
+	GroupNudgeFieldMapping  string `json:"group_nudge_field_mapping"`
 }
 
 const farFutureYear = 2099
@@ -416,10 +428,28 @@ func UpdateSubscriptionMessageConfig(c *gin.Context) {
 	cfg.CompletionTemplateID = strings.TrimSpace(req.CompletionTemplateID)
 	cfg.DecisionTemplateID = strings.TrimSpace(req.DecisionTemplateID)
 	cfg.MissedCheckinTemplateID = strings.TrimSpace(req.MissedCheckinTemplateID)
+	cfg.GroupNudgeTemplateID = strings.TrimSpace(req.GroupNudgeTemplateID)
 	cfg.StudyStartEnabled = req.StudyStartEnabled
 	cfg.CompletionEnabled = req.CompletionEnabled
 	cfg.DecisionEnabled = req.DecisionEnabled
 	cfg.MissedCheckinEnabled = req.MissedCheckinEnabled
+	cfg.GroupNudgeEnabled = req.GroupNudgeEnabled
+	cfg.StudyStartPage = strings.TrimSpace(req.StudyStartPage)
+	cfg.CompletionPage = strings.TrimSpace(req.CompletionPage)
+	cfg.DecisionPage = strings.TrimSpace(req.DecisionPage)
+	cfg.MissedCheckinPage = strings.TrimSpace(req.MissedCheckinPage)
+	cfg.GroupNudgePage = strings.TrimSpace(req.GroupNudgePage)
+	cfg.StudyStartFieldMapping = strings.TrimSpace(req.StudyStartFieldMapping)
+	cfg.CompletionFieldMapping = strings.TrimSpace(req.CompletionFieldMapping)
+	cfg.DecisionFieldMapping = strings.TrimSpace(req.DecisionFieldMapping)
+	cfg.MissedCheckinMapping = strings.TrimSpace(req.MissedCheckinMapping)
+	cfg.GroupNudgeFieldMapping = strings.TrimSpace(req.GroupNudgeFieldMapping)
+	for _, reminderType := range reminderTypes {
+		if err := services.ValidateTemplate(services.TemplateFor(cfg, reminderType)); err != nil {
+			api.Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	cfg.UpdatedBy = &adminID
 	if err := db.DB.Save(&cfg).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "save subscription config failed: "+err.Error())
@@ -459,7 +489,7 @@ func firstSubscriptionConfig() (models.SubscriptionMessageConfig, error) {
 	var cfg models.SubscriptionMessageConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.SubscriptionMessageConfig{StudyStartEnabled: true, CompletionEnabled: true, DecisionEnabled: true, MissedCheckinEnabled: true}
+		cfg = models.SubscriptionMessageConfig{}
 		err = db.DB.Create(&cfg).Error
 	}
 	return cfg, err
@@ -482,15 +512,27 @@ func subscriptionConfigResp(cfg models.SubscriptionMessageConfig) gin.H {
 	var recent []models.NotificationDeliveryLog
 	db.DB.Order("id DESC").Limit(20).Find(&recent)
 	return gin.H{
-		"study_start_template_id":    cfg.StudyStartTemplateID,
-		"completion_template_id":     cfg.CompletionTemplateID,
-		"decision_template_id":       cfg.DecisionTemplateID,
-		"missed_checkin_template_id": cfg.MissedCheckinTemplateID,
-		"study_start_enabled":        cfg.StudyStartEnabled,
-		"completion_enabled":         cfg.CompletionEnabled,
-		"decision_enabled":           cfg.DecisionEnabled,
-		"missed_checkin_enabled":     cfg.MissedCheckinEnabled,
-		"recent_status":              recent,
+		"study_start_template_id":      cfg.StudyStartTemplateID,
+		"completion_template_id":       cfg.CompletionTemplateID,
+		"decision_template_id":         cfg.DecisionTemplateID,
+		"missed_checkin_template_id":   cfg.MissedCheckinTemplateID,
+		"group_nudge_template_id":      cfg.GroupNudgeTemplateID,
+		"study_start_enabled":          cfg.StudyStartEnabled,
+		"completion_enabled":           cfg.CompletionEnabled,
+		"decision_enabled":             cfg.DecisionEnabled,
+		"missed_checkin_enabled":       cfg.MissedCheckinEnabled,
+		"group_nudge_enabled":          cfg.GroupNudgeEnabled,
+		"study_start_page":             cfg.StudyStartPage,
+		"completion_page":              cfg.CompletionPage,
+		"decision_page":                cfg.DecisionPage,
+		"missed_checkin_page":          cfg.MissedCheckinPage,
+		"group_nudge_page":             cfg.GroupNudgePage,
+		"study_start_field_mapping":    cfg.StudyStartFieldMapping,
+		"completion_field_mapping":     cfg.CompletionFieldMapping,
+		"decision_field_mapping":       cfg.DecisionFieldMapping,
+		"missed_checkin_field_mapping": cfg.MissedCheckinMapping,
+		"group_nudge_field_mapping":    cfg.GroupNudgeFieldMapping,
+		"recent_status":                recent,
 	}
 }
 

@@ -35,6 +35,7 @@ func AutoMigrate() error {
 	if err := DB.AutoMigrate(
 		&models.User{},
 		&models.RegistrationInvite{},
+		&models.PasswordResetCode{},
 		&models.Plan{},
 		&models.PlanMember{},
 		&models.PlanScheduleOverride{},
@@ -96,7 +97,30 @@ func AutoMigrate() error {
 	}); err != nil {
 		return err
 	}
+	if err := DB.Exec(`CREATE TRIGGER IF NOT EXISTS trg_study_group_members_capacity_insert
+		BEFORE INSERT ON study_group_members
+		WHEN NEW.status = 'active' AND (SELECT COUNT(*) FROM study_group_members WHERE group_id = NEW.group_id AND status = 'active') >= 10
+		BEGIN SELECT RAISE(ABORT, 'study group is full'); END`).Error; err != nil {
+		return err
+	}
+	if err := DB.Exec(`CREATE TRIGGER IF NOT EXISTS trg_study_group_members_capacity_update
+		BEFORE UPDATE OF status, group_id ON study_group_members
+		WHEN NEW.status = 'active' AND OLD.status <> 'active' AND (SELECT COUNT(*) FROM study_group_members WHERE group_id = NEW.group_id AND status = 'active') >= 10
+		BEGIN SELECT RAISE(ABORT, 'study group is full'); END`).Error; err != nil {
+		return err
+	}
 	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins (user_id, date)").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_delivery_event_key ON notification_delivery_logs (event_key) WHERE event_key <> ''").Error; err != nil {
+		return err
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := resolveDuplicateActiveGroupMemberships(tx); err != nil {
+			return err
+		}
+		return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_study_group_members_active_user ON study_group_members (user_id) WHERE status = 'active'").Error
+	}); err != nil {
 		return err
 	}
 	if err := auditLegacyNicknames(); err != nil {
@@ -134,6 +158,34 @@ func AutoMigrate() error {
 		return err
 	}
 	return bootstrapAdminCredential()
+}
+
+func resolveDuplicateActiveGroupMemberships(tx *gorm.DB) error {
+	today := time.Now()
+	if location, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		today = today.In(location)
+	}
+	now := time.Now()
+	if err := tx.Exec("UPDATE study_groups SET status = 'ended', ended_at = ? WHERE status = 'active' AND end_date <> '' AND end_date < ?", now, today.Format("2006-01-02")).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE study_group_invitations
+		SET revoked_at = ?
+		WHERE revoked_at IS NULL AND group_id IN (SELECT id FROM study_groups WHERE status = 'ended')`, now).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE study_group_members
+		SET status = 'left', left_at = ?
+		WHERE status = 'active' AND group_id IN (
+			SELECT id FROM study_groups WHERE status = 'ended' OR (end_date <> '' AND end_date < ?)
+		)`, now, today.Format("2006-01-02")).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`UPDATE study_group_members
+		SET status = 'left', left_at = ?
+		WHERE status = 'active' AND id NOT IN (
+			SELECT MAX(id) FROM study_group_members WHERE status = 'active' GROUP BY user_id
+		)`, now).Error
 }
 
 func resolveDuplicateOpenSessions(tx *gorm.DB) error {
@@ -245,7 +297,7 @@ func ensureDefaultAdminConfigs() error {
 		return err
 	}
 	if count == 0 {
-		return DB.Create(&models.SubscriptionMessageConfig{StudyStartEnabled: true, CompletionEnabled: true, DecisionEnabled: true, MissedCheckinEnabled: true}).Error
+		return DB.Create(&models.SubscriptionMessageConfig{}).Error
 	}
 	return nil
 }

@@ -229,7 +229,7 @@ func hashPassword(password string) (string, error) {
 }
 
 func respondWithUserToken(c *gin.Context, user models.User) {
-	token, err := services.SignToken(user.ID, user.OpenID, user.Role)
+	token, err := services.SignToken(user.ID, user.OpenID, user.Role, user.SecurityVersion)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
@@ -243,8 +243,8 @@ func allowActiveUser(c *gin.Context, user *models.User) bool {
 		return false
 	}
 	if user.AccountStatus != models.AccountStatusActive {
-		db.DB.Model(user).Update("account_status", models.AccountStatusActive)
-		user.AccountStatus = models.AccountStatusActive
+		api.Fail(c, http.StatusForbidden, "account is inactive")
+		return false
 	}
 	return true
 }

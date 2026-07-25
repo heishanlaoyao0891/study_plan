@@ -13,6 +13,9 @@ export interface User {
   banned_until?: string
   banned_reason?: string
   account_status?: 'active' | 'inactive' | 'deleted'
+  onboarding_status: 'not_started' | 'completed' | 'skipped'
+  onboarding_version: number
+  onboarding_completed_at?: string
 }
 
 export interface LoginResp {
@@ -31,6 +34,11 @@ export interface RegistrationReq {
   username: string
   nickname: string
   password: string
+}
+
+export interface NotificationDeliveryResult {
+  status: 'sent' | 'failed' | 'processing' | `skipped_${string}`
+  message?: string
 }
 
 export type WechatLoginResp = LoginResp | RegistrationRequiredResp
@@ -203,6 +211,16 @@ export interface CreatePlanReq {
   study_weekdays?: number[]
   study_dates?: string[]
   schedule_overrides?: ScheduleOverride[]
+  task_drafts?: TaskDraft[]
+}
+
+export interface TaskDraft {
+  date: string
+  title: string
+  objective: string
+  description: string
+  planned_start: string
+  planned_end: string
 }
 
 export interface CheckinInfo {
@@ -221,6 +239,11 @@ export interface CheckinInfo {
   eligible: boolean
   remaining_tasks: number
   task: TimerTask
+}
+
+export interface NextTaskInfo {
+  task: DailyTask
+  plan: Plan
 }
 
 export interface DailyCheckin {
@@ -336,6 +359,15 @@ export const AuthApi = {
   deactivate(retain: boolean, note = '') {
     return api.post<User>('/api/auth/deactivate', { retain, note })
   },
+  updateOnboarding(status: 'completed' | 'skipped') {
+    return api.post<User>('/api/auth/onboarding', { status })
+  },
+  changePassword(current_password: string, new_password: string) {
+    return api.post<{ token: string; user: User }>('/api/auth/password/change', { current_password, new_password })
+  },
+  resetPassword(username: string, code: string, new_password: string) {
+    return api.post<{ reset: boolean }>('/api/auth/password/reset', { username, code, new_password }, { auth: false })
+  },
 }
 
 export const PlanApi = {
@@ -410,7 +442,7 @@ export const GroupApi = {
     return api.post<any>(`/api/groups/${id}/members/${userId}/remove`, {})
   },
   nudge(id: number, userId: number) {
-    return api.post<any>(`/api/groups/${id}/members/${userId}/nudge`, {})
+    return api.post<NotificationDeliveryResult>(`/api/groups/${id}/members/${userId}/nudge`, {})
   },
   join(code: string) {
     return api.post<any>('/api/groups/join', { code })
@@ -464,6 +496,9 @@ export const CheckinApi = {
 }
 
 export const StudyTaskApi = {
+  next(after?: string) {
+    return api.get<NextTaskInfo | null>(`/api/tasks/next${after ? `?after=${after}` : ''}`)
+  },
   get(id: number) {
     return api.get<TaskDetail>(`/api/tasks/${id}`)
   },
@@ -578,8 +613,11 @@ export const NotificationApi = {
   list() {
     return api.get<any[]>('/api/notifications/subscriptions')
   },
-  subscribe() {
-    return api.post<any>('/api/notifications/subscribe', {})
+  templates() {
+	return api.get<{ platform: string; templates: Array<{ reminder_type: string; template_id: string }> }>('/api/notifications/templates')
+  },
+  subscribe(results: Record<string, string>) {
+	return api.post<{ accepted: string[] }>('/api/notifications/subscribe', { results })
   },
   unsubscribe() {
     return api.delete<any>('/api/notifications/subscribe')

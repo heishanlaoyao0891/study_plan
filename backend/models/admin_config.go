@@ -36,10 +36,22 @@ type SubscriptionMessageConfig struct {
 	CompletionTemplateID    string    `gorm:"size:128" json:"completion_template_id"`
 	DecisionTemplateID      string    `gorm:"size:128" json:"decision_template_id"`
 	MissedCheckinTemplateID string    `gorm:"size:128" json:"missed_checkin_template_id"`
-	StudyStartEnabled       bool      `gorm:"default:true" json:"study_start_enabled"`
-	CompletionEnabled       bool      `gorm:"default:true" json:"completion_enabled"`
-	DecisionEnabled         bool      `gorm:"default:true" json:"decision_enabled"`
-	MissedCheckinEnabled    bool      `gorm:"default:true" json:"missed_checkin_enabled"`
+	GroupNudgeTemplateID    string    `gorm:"size:128" json:"group_nudge_template_id"`
+	StudyStartEnabled       bool      `json:"study_start_enabled"`
+	CompletionEnabled       bool      `json:"completion_enabled"`
+	DecisionEnabled         bool      `json:"decision_enabled"`
+	MissedCheckinEnabled    bool      `json:"missed_checkin_enabled"`
+	GroupNudgeEnabled       bool      `json:"group_nudge_enabled"`
+	StudyStartPage          string    `gorm:"size:256" json:"study_start_page"`
+	CompletionPage          string    `gorm:"size:256" json:"completion_page"`
+	DecisionPage            string    `gorm:"size:256" json:"decision_page"`
+	MissedCheckinPage       string    `gorm:"size:256" json:"missed_checkin_page"`
+	GroupNudgePage          string    `gorm:"size:256" json:"group_nudge_page"`
+	StudyStartFieldMapping  string    `gorm:"type:text" json:"study_start_field_mapping"`
+	CompletionFieldMapping  string    `gorm:"type:text" json:"completion_field_mapping"`
+	DecisionFieldMapping    string    `gorm:"type:text" json:"decision_field_mapping"`
+	MissedCheckinMapping    string    `gorm:"type:text" json:"missed_checkin_field_mapping"`
+	GroupNudgeFieldMapping  string    `gorm:"type:text" json:"group_nudge_field_mapping"`
 	UpdatedBy               *uint     `json:"updated_by,omitempty"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
@@ -49,11 +61,13 @@ func (SubscriptionMessageConfig) TableName() string { return "subscription_messa
 
 type NotificationDeliveryLog struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
+	EventKey     string    `gorm:"size:191;index" json:"event_key"`
 	UserID       uint      `gorm:"index" json:"user_id,omitempty"`
 	ReminderType string    `gorm:"size:32;index;not null" json:"reminder_type"`
 	Status       string    `gorm:"size:32;index;not null" json:"status"`
 	Message      string    `gorm:"size:512" json:"message,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (NotificationDeliveryLog) TableName() string { return "notification_delivery_logs" }
@@ -62,6 +76,7 @@ type NotificationSubscription struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"uniqueIndex:idx_user_reminder;not null" json:"user_id"`
 	ReminderType string    `gorm:"uniqueIndex:idx_user_reminder;size:32;not null" json:"reminder_type"`
+	TemplateID   string    `gorm:"size:128;not null" json:"template_id"`
 	Subscribed   bool      `gorm:"default:true" json:"subscribed"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

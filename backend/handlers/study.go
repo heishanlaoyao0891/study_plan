@@ -109,6 +109,31 @@ func ListPlanTasks(c *gin.Context) {
 	api.OK(c, views)
 }
 
+func NextPendingTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	after := c.DefaultQuery("after", shanghaiToday())
+	if _, err := time.Parse(dateLayout, after); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid after date, expect YYYY-MM-DD")
+		return
+	}
+	var task models.DailyTask
+	err := db.DB.Joins("JOIN plans ON plans.id = daily_tasks.plan_id").Where("daily_tasks.user_id = ? AND daily_tasks.date > ? AND daily_tasks.status <> ? AND plans.status = ?", uid, after, models.TaskStatusCompleted, models.PlanStatusActive).Order("daily_tasks.date ASC, daily_tasks.planned_start ASC, daily_tasks.sort_order ASC, daily_tasks.id ASC").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		api.OK(c, nil)
+		return
+	}
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query next task failed: "+err.Error())
+		return
+	}
+	var plan models.Plan
+	if err := db.DB.First(&plan, task.PlanID).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query next task plan failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"task": task, "plan": plan})
+}
+
 func CreatePlanTask(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	plan, err := mustGetOwnedPlan(c, uid)
@@ -382,6 +407,10 @@ func UpdateTask(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if task.Status == models.TaskStatusInProgress || task.Status == models.TaskStatusCompleted {
+		api.Fail(c, http.StatusConflict, "running or completed tasks cannot be edited")
+		return
+	}
 	var req updateTaskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -475,6 +504,10 @@ func DeleteTask(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	task, ok := getOwnedTask(c, uid)
 	if !ok {
+		return
+	}
+	if task.Status == models.TaskStatusInProgress || task.Status == models.TaskStatusCompleted {
+		api.Fail(c, http.StatusConflict, "running or completed tasks cannot be deleted")
 		return
 	}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {

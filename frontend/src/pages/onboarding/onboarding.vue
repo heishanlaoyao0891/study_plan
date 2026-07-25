@@ -27,24 +27,27 @@
       <button class="secondary" @click="goCheckin">去查看</button>
     </view>
 
-    <button class="ghost finish" @click="complete">完成引导</button>
+    <view class="actions finish"><button class="ghost" @click="skip">跳过引导</button><button class="primary" @click="complete">完成引导</button></view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { AuthApi } from '@/api'
 
 const reminderDismissed = ref(false)
-
-onLoad(() => { reminderDismissed.value = !!uni.getStorageSync('onboarding_reminder_dismissed') })
 
 function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 function goPlans() { uni.switchTab({ url: '/pages/plans/plans' }) }
 function goAI() { uni.navigateTo({ url: '/pages/ai/ai' }) }
 function goCheckin() { uni.switchTab({ url: '/pages/checkin/checkin' }) }
-function dismissReminder() { uni.setStorageSync('onboarding_reminder_dismissed', true); reminderDismissed.value = true }
-function complete() { uni.setStorageSync('onboarding_completed', true); uni.reLaunch({ url: '/pages/checkin/checkin' }) }
+function dismissReminder() { reminderDismissed.value = true }
+async function finish(status: 'completed' | 'skipped') {
+  await AuthApi.updateOnboarding(status)
+  uni.reLaunch({ url: '/pages/checkin/checkin' })
+}
+function complete() { finish('completed') }
+function skip() { finish('skipped') }
 </script>
 
 <style lang="scss">

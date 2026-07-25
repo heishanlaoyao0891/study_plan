@@ -193,6 +193,67 @@ func TestScheduleResolutionUsesDateThenWeekdayThenDefault(t *testing.T) {
 	}
 }
 
+func TestDefaultWeekdaysExcludeSaturday(t *testing.T) {
+	plan := models.Plan{UserID: 1, Title: "Read", StartDate: "2026-07-25", EndDate: "2026-07-27", StudyWeekdays: []int{1, 2, 3, 4, 5}}
+	tasks, err := draftTasksForPlan(plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].Date != "2026-07-27" {
+		t.Fatalf("default weekdays should generate only Monday, got %+v", tasks)
+	}
+}
+
+func TestExplicitTaskDraftsPreservePerDateValues(t *testing.T) {
+	req := createPlanReq{Title: "Read", StartDate: "2026-07-25", EndDate: "2026-07-27", StudyWeekdays: []int{6, 1}, PublicToGroup: true, TaskDrafts: []taskDraftReq{
+		{Date: "2026-07-25", Title: "Chapter 1", Objective: "finish chapter one exercises", Description: "notes", PlannedStart: "09:00", PlannedEnd: "10:00"},
+		{Date: "2026-07-27", Title: "Chapter 2", Objective: "finish chapter two exercises", PlannedStart: "19:30", PlannedEnd: "20:45"},
+	}}
+	tasks, err := explicitTasksForPlan(7, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 || tasks[0].Title != "Chapter 1" || tasks[1].PlannedStart != "19:30" || tasks[1].EstimatedMinutes != 75 || !tasks[0].PublicToGroup {
+		t.Fatalf("explicit task values were not preserved: %+v", tasks)
+	}
+	req.TaskDrafts[1].Date = "2026-07-26"
+	if _, err := explicitTasksForPlan(7, req); err == nil {
+		t.Fatal("unselected draft date must be rejected")
+	}
+}
+
+func TestTaskStructureCannotChangeAfterStudyStarts(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "locked-task-user", Nickname: "locked-task-user"}
+	if err := db.DB.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := models.Plan{UserID: user.ID, Title: "P"}
+	if err := db.DB.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index, status := range []string{models.TaskStatusInProgress, models.TaskStatusCompleted} {
+		task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: fmt.Sprintf("2026-07-%02d", 25+index), Title: status, Objective: "finish the assigned lesson", PlannedStart: "09:00", PlannedEnd: "10:00", Status: status}
+		if err := db.DB.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		update := performJSONRequestWithContext(UpdateTask, map[string]any{"title": "changed"}, func(c *gin.Context) {
+			c.Set(middleware.CtxUserIDKey, user.ID)
+			c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(task.ID), 10)}}
+		})
+		if recorderResponseCode(t, update) != http.StatusConflict {
+			t.Fatalf("%s task update was allowed: %s", status, update.Body.String())
+		}
+		remove := performJSONRequestWithContext(DeleteTask, nil, func(c *gin.Context) {
+			c.Set(middleware.CtxUserIDKey, user.ID)
+			c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(task.ID), 10)}}
+		})
+		if recorderResponseCode(t, remove) != http.StatusConflict {
+			t.Fatalf("%s task deletion was allowed: %s", status, remove.Body.String())
+		}
+	}
+}
+
 func TestValidationLimits(t *testing.T) {
 	if validateObjective("Read", "Read") == nil {
 		t.Fatal("objective repeating title must be rejected")
@@ -422,6 +483,7 @@ func TestPlanResponsesPreloadScheduleOverrides(t *testing.T) {
 	create := callJSONHandler(t, CreatePlan, user.ID, "/plans", "", gin.H{
 		"title": "Read", "objective": "finish chapter one", "start_date": "2026-07-20", "end_date": "2026-07-20",
 		"study_dates": []string{"2026-07-20"}, "schedule_overrides": []gin.H{{"date": "2026-07-20", "planned_start": "19:00", "planned_end": "20:00"}},
+		"task_drafts": []gin.H{{"date": "2026-07-20", "title": "Read", "objective": "finish chapter one", "planned_start": "19:00", "planned_end": "20:00"}},
 	})
 	var created struct {
 		Code int         `json:"code"`

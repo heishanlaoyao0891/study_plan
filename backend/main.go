@@ -31,6 +31,7 @@ func main() {
 		log.Fatalf("init db: %v", err)
 	}
 	services.StartArchiveSync()
+	services.StartNotificationScheduler(db.DB)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -49,6 +50,7 @@ func main() {
 	apiGroup.POST("/auth/h5/login", handlers.H5Login)
 	apiGroup.POST("/auth/wechat/register", handlers.WeChatRegister)
 	apiGroup.POST("/auth/wechat/link", handlers.WeChatLink)
+	apiGroup.POST("/auth/password/reset", handlers.RedeemPasswordReset)
 	apiGroup.POST("/admin/auth/login", handlers.AdminLogin)
 
 	// 需要登录
@@ -58,6 +60,8 @@ func main() {
 		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)
 		auth.PUT("/auth/nickname", handlers.UpdateNickname)
+		auth.POST("/auth/onboarding", handlers.UpdateOnboarding)
+		auth.POST("/auth/password/change", handlers.ChangePassword)
 	}
 
 	bound := apiGroup.Group("", middleware.Auth(), middleware.RequireCompleteAccount())
@@ -108,6 +112,7 @@ func main() {
 		bound.GET("/plans/:id/tasks", handlers.ListPlanTasks)
 		bound.POST("/plans/:id/tasks", handlers.CreatePlanTask)
 		bound.PUT("/plans/:id/tasks/reorder", handlers.ReorderPlanTasks)
+		bound.GET("/tasks/next", handlers.NextPendingTask)
 		bound.PUT("/tasks/:id/start", handlers.StartTask)
 		bound.PUT("/tasks/:id/stop", handlers.StopTask)
 		bound.PUT("/tasks/:id/pause", handlers.PauseTask)
@@ -142,6 +147,7 @@ func main() {
 
 		// 提醒占位
 		bound.GET("/notifications/subscriptions", handlers.NotificationSubscriptions)
+		bound.GET("/notifications/templates", handlers.NotificationTemplateMetadata)
 		bound.GET("/notifications/due", handlers.DueNotificationEvents)
 		bound.POST("/notifications/subscribe", handlers.SubscribeNotification)
 		bound.DELETE("/notifications/subscribe", handlers.UnsubscribeNotification)
@@ -167,6 +173,7 @@ func main() {
 		admin.GET("/users/:id", handlers.GetAdminUserDetail)
 		admin.POST("/users/:id/ban", handlers.BanUser)
 		admin.POST("/users/:id/unban", handlers.UnbanUser)
+		admin.POST("/users/:id/password-reset", handlers.CreatePasswordResetCode)
 		admin.GET("/slack-config", handlers.GetSlackConfigs)
 		admin.PUT("/slack-config", handlers.UpsertGlobalSlackConfig)
 		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)

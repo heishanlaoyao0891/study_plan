@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +18,23 @@ import (
 var reminderTypes = []string{"study_start", "completion", "decision_2330", "missed_checkin", "group_nudge"}
 
 type subscriptionReq struct {
-	ReminderTypes []string `json:"reminder_types"`
+	Results map[string]string `json:"results"`
+}
+
+func NotificationTemplateMetadata(c *gin.Context) {
+	cfg, err := firstSubscriptionConfig()
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query subscription config failed: "+err.Error())
+		return
+	}
+	templates := make([]gin.H, 0, len(reminderTypes))
+	for _, reminderType := range reminderTypes {
+		template := services.TemplateFor(cfg, reminderType)
+		if template.Enabled && services.ValidateTemplate(template) == nil {
+			templates = append(templates, gin.H{"reminder_type": reminderType, "template_id": template.TemplateID})
+		}
+	}
+	api.OK(c, gin.H{"platform": "mp-weixin", "templates": templates})
 }
 
 func NotificationSubscriptions(c *gin.Context) {
@@ -33,11 +48,56 @@ func NotificationSubscriptions(c *gin.Context) {
 }
 
 func SubscribeNotification(c *gin.Context) {
-	upsertNotificationSubscriptions(c, true)
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req subscriptionReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Results) == 0 {
+		api.Fail(c, http.StatusBadRequest, "per-template authorization results are required")
+		return
+	}
+	cfg, err := firstSubscriptionConfig()
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query subscription config failed: "+err.Error())
+		return
+	}
+	accepted := make([]string, 0)
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		for _, reminderType := range reminderTypes {
+			template := services.TemplateFor(cfg, reminderType)
+			result, submitted := req.Results[template.TemplateID]
+			if !submitted || template.TemplateID == "" {
+				continue
+			}
+			if result != "accept" {
+				if err := tx.Where("user_id = ? AND reminder_type = ?", uid, reminderType).Delete(&models.NotificationSubscription{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if !template.Enabled || services.ValidateTemplate(template) != nil {
+				continue
+			}
+			sub := models.NotificationSubscription{UserID: uid, ReminderType: reminderType, TemplateID: template.TemplateID, Subscribed: true}
+			if err := tx.Where("user_id = ? AND reminder_type = ?", uid, reminderType).Assign(models.NotificationSubscription{TemplateID: template.TemplateID, Subscribed: true}).FirstOrCreate(&sub).Error; err != nil {
+				return err
+			}
+			accepted = append(accepted, reminderType)
+		}
+		return nil
+	})
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "save subscription results failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"accepted": accepted})
 }
 
 func UnsubscribeNotification(c *gin.Context) {
-	upsertNotificationSubscriptions(c, false)
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	if err := db.DB.Where("user_id = ?", uid).Delete(&models.NotificationSubscription{}).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "remove subscriptions failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"subscribed": false})
 }
 
 func DueNotificationEvents(c *gin.Context) {
@@ -72,11 +132,7 @@ func DueNotificationEvents(c *gin.Context) {
 			events = append(events, notificationEvent{Type: "missed_checkin", Task: task, Message: "未打卡提醒"})
 		}
 	}
-	deliveries := []models.NotificationDeliveryLog{}
-	if strings.EqualFold(c.Query("send"), "true") {
-		deliveries = deliverNotificationEvents(uid, events)
-	}
-	api.OK(c, gin.H{"date": date, "events": events, "deliveries": deliveries})
+	api.OK(c, gin.H{"date": date, "events": events})
 }
 
 type notificationEvent struct {
@@ -85,96 +141,8 @@ type notificationEvent struct {
 	Message string           `json:"message"`
 }
 
-func upsertNotificationSubscriptions(c *gin.Context, subscribed bool) {
-	uid := c.GetUint(middleware.CtxUserIDKey)
-	var req subscriptionReq
-	_ = c.ShouldBindJSON(&req)
-	types := normalizeReminderTypes(req.ReminderTypes)
-	subs := make([]models.NotificationSubscription, 0, len(types))
-	for _, reminderType := range types {
-		var sub models.NotificationSubscription
-		err := db.DB.Where("user_id = ? AND reminder_type = ?", uid, reminderType).First(&sub).Error
-		if err != nil {
-			sub = models.NotificationSubscription{UserID: uid, ReminderType: reminderType}
-		}
-		sub.Subscribed = subscribed
-		if err := db.DB.Save(&sub).Error; err != nil {
-			api.Fail(c, http.StatusInternalServerError, "save subscription failed: "+err.Error())
-			return
-		}
-		subs = append(subs, sub)
-	}
-	api.OK(c, gin.H{"subscribed": subscribed, "subscriptions": subs})
-}
-
-func normalizeReminderTypes(types []string) []string {
-	allowed := map[string]bool{}
-	for _, item := range reminderTypes {
-		allowed[item] = true
-	}
-	result := make([]string, 0)
-	for _, item := range types {
-		if allowed[item] {
-			result = append(result, item)
-		}
-	}
-	if len(result) == 0 {
-		return reminderTypes
-	}
-	return result
-}
-
-func deliverNotificationEvents(userID uint, events []notificationEvent) []models.NotificationDeliveryLog {
-	var user models.User
-	if err := db.DB.First(&user, userID).Error; err != nil {
-		return nil
-	}
-	cfg, err := firstSubscriptionConfig()
-	if err != nil {
-		return nil
-	}
-	logs := make([]models.NotificationDeliveryLog, 0, len(events))
-	for _, event := range events {
-		status := "sent"
-		message := ""
-		templateID, enabled := notificationTemplate(cfg, event.Type)
-		if !enabled {
-			status = "skipped_disabled"
-			message = "reminder type disabled"
-		} else if templateID == "" {
-			status = "skipped_missing_template"
-			message = "template id is not configured"
-		} else if !userSubscribed(userID, event.Type) {
-			status = "skipped_missing_subscription"
-			message = "user has not subscribed to this template"
-		} else if err := services.SendSubscriptionMessage(user.OpenID, templateID, event.Message); err != nil {
-			status = "failed"
-			message = err.Error()
-		}
-		log := models.NotificationDeliveryLog{UserID: userID, ReminderType: event.Type, Status: status, Message: message}
-		db.DB.Create(&log)
-		logs = append(logs, log)
-	}
-	return logs
-}
-
 func userSubscribed(userID uint, reminderType string) bool {
 	var count int64
 	db.DB.Model(&models.NotificationSubscription{}).Where("user_id = ? AND reminder_type = ? AND subscribed = ?", userID, reminderType, true).Count(&count)
 	return count > 0
-}
-
-func notificationTemplate(cfg models.SubscriptionMessageConfig, reminderType string) (string, bool) {
-	switch reminderType {
-	case "study_start":
-		return cfg.StudyStartTemplateID, cfg.StudyStartEnabled
-	case "completion":
-		return cfg.CompletionTemplateID, cfg.CompletionEnabled
-	case "decision_2330":
-		return cfg.DecisionTemplateID, cfg.DecisionEnabled
-	case "missed_checkin":
-		return cfg.MissedCheckinTemplateID, cfg.MissedCheckinEnabled
-	default:
-		return "", false
-	}
 }

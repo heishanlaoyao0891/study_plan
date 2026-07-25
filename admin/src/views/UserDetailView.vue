@@ -23,6 +23,17 @@
       </article>
 
       <article class="panel">
+        <h3>密码重置</h3>
+        <p>生成一次性重置码，有效期 30 分钟。页面离开后不再显示明文。</p>
+        <button class="primary small-button" type="button" @click="generateResetCode">生成重置码</button>
+        <div v-if="resetCode" class="reset-code">
+          <code>{{ resetCode }}</code>
+          <button class="ghost small-button" type="button" @click="copyResetCode">复制</button>
+          <p>到期时间：{{ resetExpiresAt }}</p>
+        </div>
+      </article>
+
+      <article class="panel">
         <h3>封禁控制</h3>
         <label class="field"><span>封禁时长（小时，0 表示永久）</span><input v-model.number="durationHours" type="number" min="0" /></label>
         <label class="field"><span>原因</span><input v-model.trim="reason" /></label>
@@ -47,6 +58,8 @@ const detail = ref<UserDetailResp | null>(null)
 const durationHours = ref(24)
 const reason = ref('')
 const error = ref('')
+const resetCode = ref('')
+const resetExpiresAt = ref('')
 
 async function load() {
   error.value = ''
@@ -69,6 +82,21 @@ async function ban() {
 async function unban() {
   await AdminApi.unbanUser(userId.value)
   await load()
+}
+
+async function generateResetCode() {
+  error.value = ''
+  try {
+    const result = await AdminApi.createPasswordReset(userId.value)
+    resetCode.value = result.code
+    resetExpiresAt.value = new Date(result.expires_at).toLocaleString()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '生成重置码失败'
+  }
+}
+
+async function copyResetCode() {
+  await navigator.clipboard.writeText(resetCode.value)
 }
 
 onMounted(load)

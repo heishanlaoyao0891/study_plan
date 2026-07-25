@@ -52,6 +52,7 @@ func TestValidatePlanDraftUsesRealTasksAndNamesBothPlans(t *testing.T) {
 
 	valid := callJSONHandler(t, ValidatePlanDraft, user.ID, "/plans/validate-schedule", "", gin.H{
 		"title": "数学复习", "start_date": "2026-08-03", "end_date": "2026-08-03", "study_dates": []string{"2026-08-03"}, "default_planned_start": "10:30", "default_planned_end": "11:30",
+		"task_drafts": []gin.H{{"date": "2026-08-03", "title": "数学复习", "objective": "完成数学章节复习", "planned_start": "10:30", "planned_end": "11:30"}},
 	})
 	if code := responseCode(t, valid); code != 0 {
 		t.Fatalf("non-overlapping plan must validate: %s", valid)
@@ -59,6 +60,7 @@ func TestValidatePlanDraftUsesRealTasksAndNamesBothPlans(t *testing.T) {
 
 	conflicting := callJSONHandler(t, ValidatePlanDraft, user.ID, "/plans/validate-schedule", "", gin.H{
 		"title": "数学复习", "start_date": "2026-08-03", "end_date": "2026-08-03", "study_dates": []string{"2026-08-03"}, "default_planned_start": "09:00", "default_planned_end": "10:00",
+		"task_drafts": []gin.H{{"date": "2026-08-03", "title": "数学复习", "objective": "完成数学章节复习", "planned_start": "09:00", "planned_end": "10:00"}},
 	})
 	var response struct {
 		Code int `json:"code"`

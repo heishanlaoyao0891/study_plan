@@ -10,10 +10,11 @@ import (
 )
 
 type Claims struct {
-	UserID uint   `json:"user_id"`
-	OpenID string `json:"openid"`
-	Role   string `json:"role"`
-	Type   string `json:"type,omitempty"`
+	UserID          uint   `json:"user_id"`
+	OpenID          string `json:"openid"`
+	Role            string `json:"role"`
+	SecurityVersion int    `json:"security_version"`
+	Type            string `json:"type,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -24,14 +25,15 @@ type RegistrationClaims struct {
 }
 
 // SignToken 为用户签发 JWT
-func SignToken(userID uint, openid, role string) (string, error) {
+func SignToken(userID uint, openid, role string, securityVersion int) (string, error) {
 	cfg := config.App
 	expiresAt := time.Now().Add(time.Duration(cfg.JWTExpireHours) * time.Hour)
 	claims := Claims{
-		UserID: userID,
-		OpenID: openid,
-		Role:   role,
-		Type:   "access",
+		UserID:          userID,
+		OpenID:          openid,
+		Role:            role,
+		SecurityVersion: securityVersion,
+		Type:            "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

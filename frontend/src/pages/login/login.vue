@@ -27,6 +27,7 @@
         <view class="tabs">
           <view class="tab" :class="{ active: h5Mode === 'login' }" @click="switchH5Mode('login')">登录</view>
           <view class="tab" :class="{ active: h5Mode === 'register' }" @click="switchH5Mode('register')">注册</view>
+          <view class="tab" :class="{ active: h5Mode === 'reset' }" @click="switchH5Mode('reset')">重置密码</view>
         </view>
 
         <view class="form">
@@ -38,13 +39,17 @@
             <text class="field-label">邀请码</text>
             <input v-model="h5Form.invite_code" class="field-input" maxlength="64" placeholder="请输入管理员提供的邀请码" @input="clearError" />
           </view>
+          <view v-if="h5Mode === 'reset'" class="field">
+            <text class="field-label">管理员重置码</text>
+            <input v-model="resetCode" class="field-input" maxlength="64" placeholder="输入 30 分钟内有效的重置码" @input="clearError" />
+          </view>
           <view v-if="h5Mode === 'register'" class="field">
             <text class="field-label">昵称</text>
             <input v-model="h5Form.nickname" class="field-input" maxlength="20" placeholder="2-20 个字符" @input="clearError" />
           </view>
           <view class="field">
             <text class="field-label">密码</text>
-            <input v-model="h5Form.password" class="field-input" password maxlength="64" :placeholder="h5Mode === 'login' ? '请输入密码' : '至少 8 位字符'" @input="clearError" />
+            <input v-model="h5Form.password" class="field-input" password maxlength="72" :placeholder="h5Mode === 'login' ? '请输入密码' : '至少 8 位字符'" @input="clearError" />
           </view>
           <view v-if="errMsg" class="error">{{ errMsg }}</view>
           <button class="primary-btn" :loading="submitting" :disabled="submitting" @click="submitH5">{{ h5SubmitText }}</button>
@@ -85,7 +90,7 @@
           </view>
           <view class="field">
             <text class="field-label">密码</text>
-            <input v-model="wechatForm.password" class="field-input" password maxlength="64" placeholder="至少 8 位字符" @input="clearError" />
+            <input v-model="wechatForm.password" class="field-input" password maxlength="72" placeholder="至少 8 位字符" @input="clearError" />
           </view>
           <view v-if="errMsg" class="error">{{ errMsg }}</view>
           <button class="primary-btn" :loading="submitting" :disabled="submitting" @click="submitWechatAccount">{{ wechatMode === 'register' ? '注册并开始学习' : '绑定并开始学习' }}</button>
@@ -120,8 +125,9 @@ import { computed, reactive, ref } from 'vue'
 import { AuthApi, type LoginResp, type RegistrationReq, type WechatLoginResp } from '@/api'
 import { getApiBase, setApiBase, setToken } from '@/api/request'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
+import { routeForUser } from '@/utils/auth-routing'
 
-type H5Mode = 'login' | 'register'
+type H5Mode = 'login' | 'register' | 'reset'
 
 const errMsg = ref('')
 const submitting = ref(false)
@@ -130,15 +136,16 @@ const isDev = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 const apiBase = ref(getApiBase())
 const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
 const h5Mode = ref<H5Mode>('login')
+const resetCode = ref('')
 const h5Form = reactive<RegistrationReq>({ invite_code: '', username: '', nickname: '', password: '' })
 const wechatStep = ref<'login' | 'register'>('login')
 const registrationToken = ref('')
 const wechatMode = ref<'register' | 'link'>('register')
 const wechatForm = reactive<RegistrationReq>({ invite_code: '', username: '', nickname: '', password: '' })
 
-const h5Title = computed(() => ({ login: '欢迎回来', register: '种下第一颗种子' })[h5Mode.value])
-const h5Copy = computed(() => ({ login: '用用户名和密码继续今天的学习', register: '凭邀请码创建你的专属学习花园' })[h5Mode.value])
-const h5SubmitText = computed(() => ({ login: '进入学习花园', register: '注册并开始学习' })[h5Mode.value])
+const h5Title = computed(() => ({ login: '欢迎回来', register: '种下第一颗种子', reset: '重置密码' })[h5Mode.value])
+const h5Copy = computed(() => ({ login: '用用户名和密码继续今天的学习', register: '凭邀请码创建你的专属学习花园', reset: '使用管理员提供的一次性重置码' })[h5Mode.value])
+const h5SubmitText = computed(() => ({ login: '进入学习花园', register: '注册并开始学习', reset: '确认重置密码' })[h5Mode.value])
 
 function clearError() {
   errMsg.value = ''
@@ -173,7 +180,12 @@ async function submitH5() {
   }
   submitting.value = true
   try {
-    if (h5Mode.value === 'login') {
+    if (h5Mode.value === 'reset') {
+      if (!resetCode.value.trim()) throw new Error('请输入重置码')
+      await AuthApi.resetPassword(h5Form.username.trim(), resetCode.value.trim(), h5Form.password)
+      uni.showToast({ title: '密码已重置', icon: 'success' })
+      switchH5Mode('login')
+    } else if (h5Mode.value === 'login') {
       afterLogin(await AuthApi.h5Login(h5Form.username.trim(), h5Form.password))
     } else {
       afterLogin(await AuthApi.h5Register({
@@ -281,8 +293,7 @@ function cancelWechatRegistration() {
 function afterLogin(resp: LoginResp) {
   setToken(resp.token)
   uni.showToast({ title: '登录成功', icon: 'success' })
-  const onboardingDone = !!uni.getStorageSync('onboarding_completed')
-  const url = resp.nickname_required ? '/pages/nickname/nickname' : (onboardingDone ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding')
+  const url = routeForUser(resp.user, resp.nickname_required)
   setTimeout(() => uni.reLaunch({ url }), 300)
 }
 

@@ -20,6 +20,7 @@ import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { AuthApi } from '@/api'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
+import { routeForUser } from '@/utils/auth-routing'
 
 const nickname = ref('')
 const saving = ref(false)
@@ -41,10 +42,9 @@ async function save() {
   }
   saving.value = true
   try {
-    await AuthApi.setNickname(value)
-    uni.setStorageSync('nickname_completed', true)
+    const user = await AuthApi.setNickname(value)
     if (editMode.value) uni.navigateBack()
-    else uni.reLaunch({ url: uni.getStorageSync('onboarding_completed') ? '/pages/checkin/checkin' : '/pages/onboarding/onboarding' })
+    else uni.reLaunch({ url: routeForUser(user) })
   } catch (e: any) {
     error.value = e?.code === 409 ? '这个昵称已被使用，请换一个试试' : (e?.message || '昵称保存失败')
   } finally {

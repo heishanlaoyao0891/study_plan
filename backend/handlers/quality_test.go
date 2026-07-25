@@ -187,6 +187,7 @@ func TestAutoMigrateCreatesCriticalTablesAndIndexes(t *testing.T) {
 		&models.StudyGroup{},
 		&models.OpsContent{},
 		&models.AccountEvent{},
+		&models.PasswordResetCode{},
 	} {
 		if !db.DB.Migrator().HasTable(model) {
 			t.Fatalf("expected table for %T", model)
