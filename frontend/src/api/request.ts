@@ -3,12 +3,19 @@
 
 const API_BASE_KEY = 'api_base'
 const TOKEN_KEY = 'auth_token'
+const configuredApiBase = normalizeApiBase(import.meta.env.VITE_API_BASE || '')
+const allowApiOverride = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 
 export function getApiBase(): string {
-	return normalizeApiBase(uni.getStorageSync(API_BASE_KEY) || import.meta.env.VITE_API_BASE || '')
+  if (!allowApiOverride) {
+    if (uni.getStorageSync(API_BASE_KEY)) uni.removeStorageSync(API_BASE_KEY)
+    return configuredApiBase
+  }
+  return normalizeApiBase(uni.getStorageSync(API_BASE_KEY) || configuredApiBase)
 }
 
 export function setApiBase(base: string) {
+  if (!allowApiOverride) return
   uni.setStorageSync(API_BASE_KEY, normalizeApiBase(base))
 }
 
