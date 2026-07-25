@@ -76,6 +76,21 @@ func TestOpenAICompatibleProviderTestValidatesStructuredPlan(t *testing.T) {
 	}
 }
 
+func TestSiliconFlowRequestsExplicitPlanJSON(t *testing.T) {
+	request := buildCompletionRequest(models.AIConfig{Provider: AIProviderSiliconFlow, ModelName: SiliconFlowRecommendedModel}, "Create a plan", 768)
+	responseFormat, _ := request["response_format"].(map[string]string)
+	if responseFormat["type"] != "json_object" {
+		t.Fatalf("SiliconFlow request did not require JSON output: %+v", responseFormat)
+	}
+	if thinking, ok := request["enable_thinking"].(bool); !ok || thinking {
+		t.Fatalf("structured planning must disable thinking output: %+v", request["enable_thinking"])
+	}
+	messages, _ := request["messages"].([]map[string]string)
+	if len(messages) < 2 || !strings.Contains(messages[0]["content"], `"tasks":[`) {
+		t.Fatalf("prompt did not provide an exact tasks-array contract: %+v", messages)
+	}
+}
+
 func TestProviderTestRejectsUnstructuredCompletion(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"message": map[string]string{"content": "pong"}}}})

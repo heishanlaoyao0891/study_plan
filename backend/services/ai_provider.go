@@ -105,7 +105,7 @@ type OpenAICompatibleProvider struct {
 }
 
 func (p *OpenAICompatibleProvider) Test() error {
-	prompt := "You are a study planning agent. Return only JSON with title, summary, estimated_total_hours, rationale, and exactly one task. The task must contain date 2026-01-02, planned_start 20:00, planned_end 21:00, title, objective distinct from title, description, estimated_minutes 60, and difficulty."
+	prompt := "Create exactly one connection-test task dated 2026-01-02 from 20:00 to 21:00."
 	raw, err := p.Generate(prompt, 768)
 	if err != nil {
 		return err
@@ -127,12 +127,7 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 	if err := ValidateAIConfig(p.Config, false); err != nil {
 		return "", err
 	}
-	reqBody := map[string]any{
-		"model":       p.Config.ModelName,
-		"messages":    []map[string]string{{"role": "user", "content": prompt}},
-		"temperature": 0,
-		"max_tokens":  maxInt(maxTokens, 64),
-	}
+	reqBody := buildCompletionRequest(p.Config, prompt, maxTokens)
 	body, _ := json.Marshal(reqBody)
 	client, err := restrictedProviderClient(p.Config.BaseURL, time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30))*time.Second)
 	if err != nil {
@@ -193,6 +188,22 @@ func (p *OpenAICompatibleProvider) Generate(prompt string, maxTokens int) (strin
 		lastErr = fmt.Errorf("provider request failed")
 	}
 	return "", lastErr
+}
+
+func buildCompletionRequest(cfg models.AIConfig, prompt string, maxTokens int) map[string]any {
+	contract := `Return exactly one JSON object with this shape and these exact key names. Do not rename tasks to task, steps, schedule, or daily_tasks. Do not wrap the JSON in Markdown:
+{"title":"string","summary":"string","estimated_total_hours":1,"rationale":"string","tasks":[{"date":"YYYY-MM-DD","planned_start":"HH:mm","planned_end":"HH:mm","title":"string","objective":"specific action different from title","description":"string","estimated_minutes":60,"difficulty":"easy"}]}`
+	request := map[string]any{
+		"model":       cfg.ModelName,
+		"messages":    []map[string]string{{"role": "system", "content": contract}, {"role": "user", "content": prompt}},
+		"temperature": 0,
+		"max_tokens":  maxInt(maxTokens, 64),
+	}
+	if NormalizeAIProvider(cfg.Provider) == AIProviderSiliconFlow {
+		request["response_format"] = map[string]string{"type": "json_object"}
+		request["enable_thinking"] = false
+	}
+	return request
 }
 
 func decodeCompletionContent(raw json.RawMessage) (string, error) {
