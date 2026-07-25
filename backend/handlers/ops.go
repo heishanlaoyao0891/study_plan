@@ -14,11 +14,13 @@ import (
 )
 
 var defaultOpsContent = map[string]models.OpsContent{
-	"privacy":      {Kind: "privacy", Title: "隐私政策", Body: "我们仅为登录、计划、打卡、提醒和统计功能处理必要数据。手机号用于账号识别和安全校验。AI 计划仅提供可编辑建议。"},
+	"privacy":      {Kind: "privacy", Title: "隐私政策", Body: "我们仅为账号登录、计划、打卡、提醒、统计和小组协作处理必要数据。用户名用于账号识别，微信登录标识用于关联小程序账号；学习记录用于提供计划、统计和协作功能。AI 计划仅提供可编辑建议。"},
 	"agreement":    {Kind: "agreement", Title: "用户协议", Body: "请合理安排学习和休息。本服务不承诺任何考试、成绩或技能结果。躺平时间为应用内休息记录额度，不具有现金或交易价值。"},
 	"announcement": {Kind: "announcement", Title: "公告", Body: "暂无公告。"},
 	"version":      {Kind: "version", Title: "版本说明", Body: "当前版本提供计划、任务、打卡、提醒、小组和恢复安排功能。"},
 }
+
+const legacyPhonePrivacyBody = "我们仅为登录、计划、打卡、提醒和统计功能处理必要数据。手机号用于账号识别和安全校验。AI 计划仅提供可编辑建议。"
 
 type feedbackReq struct {
 	Category string `json:"category"`
@@ -118,6 +120,10 @@ func firstOpsContent(kind string) (models.OpsContent, error) {
 	var content models.OpsContent
 	err := db.DB.Where("kind = ?", kind).First(&content).Error
 	if err == nil {
+		if kind == "privacy" && content.Body == legacyPhonePrivacyBody {
+			content.Body = defaultOpsContent[kind].Body
+			err = db.DB.Model(&content).Update("body", content.Body).Error
+		}
 		return content, nil
 	}
 	if err != gorm.ErrRecordNotFound {
