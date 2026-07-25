@@ -90,7 +90,7 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { PlanApi, RecoveryApi, UserApi, type CreatePlanReq, type Plan, type PlanActionId, type PlanActionLayout, type UserSearchResult } from '@/api'
 import { addLocalDays, localDateKey } from '@/utils/date'
-import { formatScheduleConflicts, validateScheduleUnion } from '@/utils/schedule'
+import { formatScheduleConflicts } from '@/utils/schedule'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
 
 const DEFAULT_LAYOUT: PlanActionLayout = { direct: ['toggle_status', 'edit'], overflow: ['postpone', 'invite', 'delete'] }
@@ -139,16 +139,10 @@ async function save() {
   if (!form.title.trim() || (!editing.value && !form.objective?.trim())) return void (formError.value = '请填写计划名称和具体任务目标')
   if (!form.study_weekdays?.length || !form.start_date || !form.end_date || form.start_date > form.end_date) return void (formError.value = '请选择有效日期范围和至少一个学习日')
   if ((form.default_planned_start || '') >= (form.default_planned_end || '')) return void (formError.value = '结束时间须晚于开始时间')
-  const candidate = plans.value.filter(plan => !editing.value || plan.id !== editing.value.id).flatMap(plan => planIntervals(plan)).concat(formIntervals())
-  const conflicts = validateScheduleUnion(candidate)
-  if (conflicts.length) return void (formError.value = formatScheduleConflicts(conflicts))
-  try { editing.value ? await PlanApi.update(editing.value.id, { ...form }) : await PlanApi.create({ ...form }); showForm.value = false; await load(); uni.showToast({ title: '已保存', icon: 'success' }) }
+  try { if (!editing.value) await PlanApi.validateSchedule({ ...form }); editing.value ? await PlanApi.update(editing.value.id, { ...form }) : await PlanApi.create({ ...form }); showForm.value = false; await load(); uni.showToast({ title: '已保存', icon: 'success' }) }
   catch (error: any) { formError.value = scheduleError(error) || error?.message || '保存失败' }
 }
-function formIntervals() { return enumerateDates(form.start_date!, form.end_date!, form.study_weekdays || []).map(date => ({ id: `form-${date}`, title: form.title, date, start: form.default_planned_start!, end: form.default_planned_end! })) }
-function planIntervals(plan: Plan) { if (!plan.start_date || !plan.end_date) return []; return enumerateDates(plan.start_date, plan.end_date, plan.study_weekdays || []).map(date => ({ id: `${plan.id}-${date}`, title: plan.title, date, start: plan.default_planned_start, end: plan.default_planned_end })) }
-function enumerateDates(start: string, end: string, selected: number[]) { const dates: string[] = []; const cursor = new Date(`${start}T12:00:00`), last = new Date(`${end}T12:00:00`); while (cursor <= last) { const weekday = cursor.getDay() || 7; if (selected.includes(weekday)) dates.push(localDateKey(cursor)); cursor.setDate(cursor.getDate() + 1) } return dates }
-function scheduleError(error: any) { const rows = error?.raw?.invalid_tasks; return Array.isArray(rows) ? rows.map((row: any) => `${row.title} 重叠覆盖 ${row.covered_minutes} 分钟`).join('\n') : '' }
+function scheduleError(error: any) { const rows = error?.raw?.invalid_tasks; return Array.isArray(rows) ? formatScheduleConflicts(rows.map((row: any) => ({ ...row, id: row.task_id, conflicting_tasks: row.conflicting_tasks || [] }))) : '' }
 function runAction(action: PlanActionId, plan: Plan) { if (action === 'toggle_status') togglePause(plan); if (action === 'edit') openEdit(plan); if (action === 'postpone') openDelay(plan); if (action === 'invite') openInvite(plan); if (action === 'delete') removePlan(plan) }
 function openMore(plan: Plan) { const actions = overflowActions.value; uni.showActionSheet({ itemList: [...actions.map(action => actionName(action)), '编辑操作'], success: result => result.tapIndex === actions.length ? openLayout() : runAction(actions[result.tapIndex], plan) }) }
 async function togglePause(plan: Plan) { try { Object.assign(plan, plan.status === 'paused' ? await PlanApi.resume(plan.id) : await PlanApi.pause(plan.id)) } catch (error: any) { uni.showToast({ title: error?.message || '操作失败', icon: 'none' }) } }

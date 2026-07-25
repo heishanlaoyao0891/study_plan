@@ -61,6 +61,7 @@ func main() {
 	{
 		// 计划
 		bound.GET("/plans", handlers.ListPlans)
+		bound.POST("/plans/validate-schedule", handlers.ValidatePlanDraft)
 		bound.POST("/plans", handlers.CreatePlan)
 		bound.GET("/plans/:id", handlers.GetPlan)
 		bound.PUT("/plans/:id", handlers.UpdatePlan)

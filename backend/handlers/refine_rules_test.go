@@ -41,6 +41,50 @@ func TestCoveredMinutesUsesUnionAndRejectsAtSixty(t *testing.T) {
 	}
 }
 
+func TestValidatePlanDraftUsesRealTasksAndNamesBothPlans(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "schedule-preview", Nickname: "Schedule User", NicknameNormalized: "schedule user"}
+	db.DB.Create(&user)
+	existingPlan := models.Plan{UserID: user.ID, Title: "英语阅读", Status: models.PlanStatusActive}
+	db.DB.Create(&existingPlan)
+	existingTask := models.DailyTask{UserID: user.ID, PlanID: existingPlan.ID, Date: "2026-08-03", Title: "阅读文章", Objective: "完成一篇文章", PlannedStart: "09:00", PlannedEnd: "10:00", Status: models.TaskStatusPending}
+	db.DB.Create(&existingTask)
+
+	valid := callJSONHandler(t, ValidatePlanDraft, user.ID, "/plans/validate-schedule", "", gin.H{
+		"title": "数学复习", "start_date": "2026-08-03", "end_date": "2026-08-03", "study_dates": []string{"2026-08-03"}, "default_planned_start": "10:30", "default_planned_end": "11:30",
+	})
+	if code := responseCode(t, valid); code != 0 {
+		t.Fatalf("non-overlapping plan must validate: %s", valid)
+	}
+
+	conflicting := callJSONHandler(t, ValidatePlanDraft, user.ID, "/plans/validate-schedule", "", gin.H{
+		"title": "数学复习", "start_date": "2026-08-03", "end_date": "2026-08-03", "study_dates": []string{"2026-08-03"}, "default_planned_start": "09:00", "default_planned_end": "10:00",
+	})
+	var response struct {
+		Code int `json:"code"`
+		Data struct {
+			InvalidTasks []invalidScheduleTask `json:"invalid_tasks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(conflicting, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusConflict || len(response.Data.InvalidTasks) != 2 {
+		t.Fatalf("expected two named conflicting plans: %s", conflicting)
+	}
+	titles := map[string]bool{}
+	peerTitles := map[string]bool{}
+	for _, row := range response.Data.InvalidTasks {
+		titles[row.PlanTitle] = true
+		for _, peer := range row.ConflictingTasks {
+			peerTitles[peer.PlanTitle] = true
+		}
+	}
+	if !titles["英语阅读"] || !titles["数学复习"] || !peerTitles["英语阅读"] || !peerTitles["数学复习"] {
+		t.Fatalf("conflict must identify both plans: %s", conflicting)
+	}
+}
+
 func TestStartTaskConflictsWithAnotherActiveTask(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "active-user", Nickname: "Active User", NicknameNormalized: "active user"}

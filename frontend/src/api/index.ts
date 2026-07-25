@@ -322,6 +322,9 @@ export const PlanApi = {
   create(data: CreatePlanReq) {
     return api.post<Plan>('/api/plans', data)
   },
+  validateSchedule(data: CreatePlanReq) {
+    return api.post<{ valid: boolean }>('/api/plans/validate-schedule', data)
+  },
   update(id: number, data: Partial<Plan>) {
     return api.put<Plan>(`/api/plans/${id}`, data)
   },

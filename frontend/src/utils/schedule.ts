@@ -14,9 +14,11 @@ export interface CoveredInterval {
 export interface ScheduleConflict {
   id: string | number
   title: string
+  plan_title?: string
   date: string
   covered_minutes: number
   covered_intervals: CoveredInterval[]
+  conflicting_tasks: Array<{ task_id?: number; plan_id?: number; plan_title?: string; title: string; start: string; end: string }>
 }
 
 function toMinutes(value: string): number | null {
@@ -38,11 +40,15 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
   for (const current of valid) {
     if (current.start === null || current.end === null || current.end <= current.start) continue
     const intersections: Array<[number, number]> = []
+    const conflictingTasks: ScheduleConflict['conflicting_tasks'] = []
     for (const other of valid) {
       if (other === current || other.interval.date !== current.interval.date || other.start === null || other.end === null || other.end <= other.start) continue
       const start = Math.max(current.start, other.start)
       const end = Math.min(current.end, other.end)
-      if (end > start) intersections.push([start, end])
+      if (end > start) {
+        intersections.push([start, end])
+        conflictingTasks.push({ title: other.interval.title, start: toTime(start), end: toTime(end) })
+      }
     }
     intersections.sort((a, b) => a[0] - b[0])
     const merged: Array<[number, number]> = []
@@ -59,6 +65,7 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
         date: current.interval.date,
         covered_minutes: coveredMinutes,
         covered_intervals: merged.map(range => ({ start: toTime(range[0]), end: toTime(range[1]) })),
+        conflicting_tasks: conflictingTasks,
       })
     }
   }
@@ -66,5 +73,9 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
 }
 
 export function formatScheduleConflicts(conflicts: ScheduleConflict[]): string {
-  return conflicts.map(item => `${item.date}「${item.title}」重叠覆盖 ${item.covered_minutes} 分钟（${item.covered_intervals.map(range => `${range.start}-${range.end}`).join('、')}）`).join('\n')
+  return conflicts.map(item => {
+    const currentTitle = item.plan_title || item.title
+    const peers = (item.conflicting_tasks || []).map(peer => `计划「${peer.plan_title || peer.title}」(${peer.start}-${peer.end})`).join('、')
+    return `${item.date} 计划「${currentTitle}」与 ${peers || '其他计划'} 重叠；「${currentTitle}」累计被覆盖 ${item.covered_minutes} 分钟（${item.covered_intervals.map(range => `${range.start}-${range.end}`).join('、')}）`
+  }).join('\n')
 }

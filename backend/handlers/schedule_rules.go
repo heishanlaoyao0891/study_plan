@@ -18,11 +18,23 @@ type coveredInterval struct {
 }
 
 type invalidScheduleTask struct {
-	TaskID           uint              `json:"task_id"`
-	Title            string            `json:"title"`
-	Date             string            `json:"date"`
-	CoveredMinutes   int               `json:"covered_minutes"`
-	CoveredIntervals []coveredInterval `json:"covered_intervals"`
+	TaskID           uint                   `json:"task_id"`
+	PlanID           uint                   `json:"plan_id"`
+	PlanTitle        string                 `json:"plan_title"`
+	Title            string                 `json:"title"`
+	Date             string                 `json:"date"`
+	CoveredMinutes   int                    `json:"covered_minutes"`
+	CoveredIntervals []coveredInterval      `json:"covered_intervals"`
+	ConflictingTasks []scheduleConflictTask `json:"conflicting_tasks"`
+}
+
+type scheduleConflictTask struct {
+	TaskID    uint   `json:"task_id"`
+	PlanID    uint   `json:"plan_id"`
+	PlanTitle string `json:"plan_title"`
+	Title     string `json:"title"`
+	Start     string `json:"start"`
+	End       string `json:"end"`
 }
 
 type scheduleConflictError struct {
@@ -41,6 +53,10 @@ func (e *scheduleConflictError) Metadata() map[string]interface{} {
 type minuteInterval struct{ start, end int }
 
 func validateScheduleTasks(tasks []models.DailyTask) error {
+	return validateScheduleTasksWithPlanTitles(tasks, nil)
+}
+
+func validateScheduleTasksWithPlanTitles(tasks []models.DailyTask, planTitles map[uint]string) error {
 	byDate := map[string][]models.DailyTask{}
 	for _, task := range tasks {
 		if plannedRangeMinutes(task.PlannedStart, task.PlannedEnd) > 0 {
@@ -53,6 +69,7 @@ func validateScheduleTasks(tasks []models.DailyTask) error {
 			taskStart, _ := minuteOfDay(task.PlannedStart)
 			taskEnd, _ := minuteOfDay(task.PlannedEnd)
 			covered := make([]minuteInterval, 0)
+			conflicting := make([]scheduleConflictTask, 0)
 			for otherIndex, other := range rows {
 				if index == otherIndex {
 					continue
@@ -62,6 +79,7 @@ func validateScheduleTasks(tasks []models.DailyTask) error {
 				start, end := maxIntValue(taskStart, otherStart), minIntValue(taskEnd, otherEnd)
 				if end > start {
 					covered = append(covered, minuteInterval{start: start, end: end})
+					conflicting = append(conflicting, scheduleConflictTask{TaskID: other.ID, PlanID: other.PlanID, PlanTitle: schedulePlanTitle(other, planTitles), Title: other.Title, Start: formatMinute(start), End: formatMinute(end)})
 				}
 			}
 			merged := mergeMinuteIntervals(covered)
@@ -72,7 +90,7 @@ func validateScheduleTasks(tasks []models.DailyTask) error {
 				intervals = append(intervals, coveredInterval{Start: formatMinute(interval.start), End: formatMinute(interval.end)})
 			}
 			if minutes >= maxCoveredMinutesExclusive {
-				invalid = append(invalid, invalidScheduleTask{TaskID: task.ID, Title: task.Title, Date: date, CoveredMinutes: minutes, CoveredIntervals: intervals})
+				invalid = append(invalid, invalidScheduleTask{TaskID: task.ID, PlanID: task.PlanID, PlanTitle: schedulePlanTitle(task, planTitles), Title: task.Title, Date: date, CoveredMinutes: minutes, CoveredIntervals: intervals, ConflictingTasks: conflicting})
 			}
 		}
 	}
@@ -86,6 +104,13 @@ func validateScheduleTasks(tasks []models.DailyTask) error {
 		return &scheduleConflictError{InvalidTasks: invalid}
 	}
 	return nil
+}
+
+func schedulePlanTitle(task models.DailyTask, planTitles map[uint]string) string {
+	if title := planTitles[task.PlanID]; title != "" {
+		return title
+	}
+	return task.Title
 }
 
 func validateScheduleMutation(tx *gorm.DB, uid uint, proposed []models.DailyTask) error {
@@ -115,7 +140,26 @@ func validateScheduleMutation(tx *gorm.DB, uid uint, proposed []models.DailyTask
 		}
 	}
 	result = append(result, proposed...)
-	return validateScheduleTasks(result)
+	planTitles := map[uint]string{}
+	planIDs := make([]uint, 0)
+	seenPlanIDs := map[uint]bool{}
+	for _, task := range result {
+		if task.PlanID == 0 || seenPlanIDs[task.PlanID] {
+			continue
+		}
+		seenPlanIDs[task.PlanID] = true
+		planIDs = append(planIDs, task.PlanID)
+	}
+	if len(planIDs) > 0 {
+		var plans []models.Plan
+		if err := tx.Select("id", "title").Where("id IN ?", planIDs).Find(&plans).Error; err != nil {
+			return err
+		}
+		for _, plan := range plans {
+			planTitles[plan.ID] = plan.Title
+		}
+	}
+	return validateScheduleTasksWithPlanTitles(result, planTitles)
 }
 
 func minuteOfDay(value string) (int, error) {

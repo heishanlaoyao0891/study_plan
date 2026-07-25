@@ -159,14 +159,6 @@ func CreatePlan(c *gin.Context) {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.StartDate != "" && req.EndDate != "" {
-		if slotWarnings, slotErr := checkTaskSlotConflicts(uid, req.StartDate, req.EndDate, defaultString(req.DefaultPlannedStart, defaultPlannedStart()), defaultString(req.DefaultPlannedEnd, defaultPlannedEnd())); slotErr == nil && len(slotWarnings) > 0 {
-			warnings = append(warnings, slotWarnings...)
-		} else if slotErr != nil {
-			api.Fail(c, http.StatusBadRequest, slotErr.Error())
-			return
-		}
-	}
 	if err := validatePlanSchedule(req.DefaultPlannedStart, req.DefaultPlannedEnd, req.StudyWeekdays, req.StudyDates, req.ScheduleOverrides); err != nil {
 		api.Fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -216,6 +208,64 @@ func CreatePlan(c *gin.Context) {
 		return
 	}
 	api.Warn(c, plan, warnings)
+}
+
+func ValidatePlanDraft(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var req createPlanReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if err := validatePlanSchedule(req.DefaultPlannedStart, req.DefaultPlannedEnd, req.StudyWeekdays, req.StudyDates, req.ScheduleOverrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validatePlanDates(req.StartDate, req.EndDate, req.StudyDates, req.ScheduleOverrides); err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	plan := models.Plan{UserID: uid, Title: strings.TrimSpace(req.Title), StartDate: req.StartDate, EndDate: req.EndDate, DefaultPlannedStart: defaultString(req.DefaultPlannedStart, defaultPlannedStart()), DefaultPlannedEnd: defaultString(req.DefaultPlannedEnd, defaultPlannedEnd()), StudyWeekdays: req.StudyWeekdays, StudyDates: req.StudyDates}
+	overrides := make([]models.PlanScheduleOverride, 0, len(req.ScheduleOverrides))
+	for _, row := range req.ScheduleOverrides {
+		overrides = append(overrides, models.PlanScheduleOverride{Weekday: row.Weekday, Date: row.Date, PlannedStart: row.PlannedStart, PlannedEnd: row.PlannedEnd})
+	}
+	tasks, err := draftTasksForPlan(plan, overrides)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateScheduleMutation(db.DB, uid, tasks); err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	api.OK(c, gin.H{"valid": true})
+}
+
+func draftTasksForPlan(plan models.Plan, overrides []models.PlanScheduleOverride) ([]models.DailyTask, error) {
+	if plan.StartDate == "" || plan.EndDate == "" {
+		return nil, nil
+	}
+	start, err := time.Parse(dateLayout, plan.StartDate)
+	if err != nil {
+		return nil, errors.New("invalid start_date, expect YYYY-MM-DD")
+	}
+	end, err := time.Parse(dateLayout, plan.EndDate)
+	if err != nil || end.Before(start) {
+		return nil, errors.New("invalid end_date")
+	}
+	tasks := make([]models.DailyTask, 0)
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		if !planStudiesOn(plan, day) {
+			continue
+		}
+		plannedStart, plannedEnd := resolvePlanSchedule(plan, overrides, day)
+		tasks = append(tasks, models.DailyTask{UserID: plan.UserID, PlanID: plan.ID, Date: day.Format(dateLayout), Title: plan.Title, PlannedStart: plannedStart, PlannedEnd: plannedEnd})
+	}
+	return tasks, nil
 }
 
 // UpdatePlan 编辑计划
