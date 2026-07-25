@@ -148,8 +148,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
       clearSession()
-      if (window.location.pathname !== '/login') {
-        window.location.replace(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+      const loginPath = `${import.meta.env.BASE_URL}login`
+      if (window.location.pathname !== loginPath) {
+        window.location.replace(`${loginPath}?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
       }
       throw new Error('登录已过期，请重新登录')
     }

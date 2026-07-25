@@ -16,7 +16,7 @@ import UserDetailView from './views/UserDetailView.vue'
 import UsersView from './views/UsersView.vue'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: LoginView },
     {
