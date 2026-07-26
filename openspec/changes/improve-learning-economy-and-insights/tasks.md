@@ -40,3 +40,10 @@
 - [x] Run frontend and admin type-checks.
 - [x] Run H5, WeChat, and admin builds.
 - [x] Run strict OpenSpec validation and diff checks.
+
+## 7. Runtime Hardening
+
+- [x] Stabilize the admin overview chart JSON contract and reject incompatible dashboard responses safely.
+- [x] Normalize nullable group list responses before rendering and keep empty history as an array.
+- [x] Add a visible account and data entry for logout, deactivation, and deletion on H5 and mini-program.
+- [x] Re-run backend tests and all frontend builds.

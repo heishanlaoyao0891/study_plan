@@ -167,9 +167,9 @@ func AdminOverview(c *gin.Context) {
 		planStatuses[plan.Status]++
 	}
 	type learningRow struct {
-		Date         string
-		StudyMinutes int
-		CheckinUsers int
+		Date         string `json:"date"`
+		StudyMinutes int    `json:"study_minutes"`
+		CheckinUsers int    `json:"checkin_users"`
 	}
 	learning := make([]learningRow, 0, 30)
 	studyByDate := map[string]int{}

@@ -1,6 +1,6 @@
 <template>
   <main class="workspace">
-    <section class="page-head"><div><p class="eyebrow">近 30 天运营</p><h2>总览仪表盘</h2><p>{{ data?.range.start }} 至 {{ data?.range.end }}，用户分层以最近登录时间计算。</p></div><button class="ghost small-button" :disabled="loading" @click="load">刷新</button></section>
+    <section class="page-head"><div><p class="eyebrow">近 30 天运营</p><h2>总览仪表盘</h2><p v-if="data">{{ data.range.start }} 至 {{ data.range.end }}，用户分层以最近登录时间计算。</p></div><button class="ghost small-button" :disabled="loading" @click="load">刷新</button></section>
     <p v-if="error" class="error">{{ error }}</p>
     <div class="metric-grid" v-if="data">
       <article class="metric-card"><span>用户账号</span><strong>{{ data.summary.user_accounts }}</strong><small>不含管理员</small></article>
@@ -30,9 +30,10 @@ const planTotal = computed(() => data.value?.charts.plan_statuses.reduce((total,
 function ratio(value:number,total:number){return total?Math.round(value*100/total):0}
 function sum(rows:DashboardDay[],key:'count'){return rows.reduce((total,row)=>total+(row[key]||0),0)}
 function height(value:number,max:number){return value?Math.max(5,Math.round(value/max*100)):1}
-function axis(index:number,date:string){return index===0||index===29||index%7===0?date.slice(5):''}
+function axis(index:number,date?:string){return date&&(index===0||index===29||index%7===0)?date.slice(5):''}
 function donutStyle(rows:DashboardSlice[]){const total=Math.max(1,rows.reduce((sum,row)=>sum+row.count,0));let cursor=0;const stops:string[]=[];rows.forEach((row,index)=>{const next=cursor+row.count/total*100;stops.push(`${colors[index]} ${cursor}% ${next}%`);cursor=next});return {background:`conic-gradient(${stops.join(',')})`}}
-async function load(){loading.value=true;error.value='';try{data.value=await AdminApi.overview()}catch(err){error.value=err instanceof Error?err.message:'总览加载失败'}finally{loading.value=false}}
+function validOverview(value:unknown):value is OverviewMetrics{const row=value as OverviewMetrics;return !!row?.range&&!!row?.summary&&!!row?.charts&&Array.isArray(row.charts.segments)&&Array.isArray(row.charts.registrations)&&Array.isArray(row.charts.learning_activity)&&Array.isArray(row.charts.plan_statuses)}
+async function load(){loading.value=true;error.value='';try{const result=await AdminApi.overview();if(!validOverview(result))throw new Error('总览接口版本不匹配，请先更新后端服务');data.value=result}catch(err){data.value=null;error.value=err instanceof Error?err.message:'总览加载失败'}finally{loading.value=false}}
 onMounted(load)
 </script>
 

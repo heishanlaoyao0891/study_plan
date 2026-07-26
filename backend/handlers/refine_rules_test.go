@@ -116,6 +116,40 @@ func TestAdminUserSegmentUsesStatusBanAndLoginRecency(t *testing.T) {
 	}
 }
 
+func TestAdminOverviewUsesStableSnakeCaseChartContract(t *testing.T) {
+	setupTestDB(t)
+	router := gin.New()
+	router.GET("/admin/overview", AdminOverview)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/overview", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("overview status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			Charts struct {
+				Learning []map[string]interface{} `json:"learning_activity"`
+			} `json:"charts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != 0 || len(envelope.Data.Charts.Learning) != 30 {
+		t.Fatalf("unexpected overview response: %s", recorder.Body.String())
+	}
+	first := envelope.Data.Charts.Learning[0]
+	for _, key := range []string{"date", "study_minutes", "checkin_users"} {
+		if _, ok := first[key]; !ok {
+			t.Fatalf("learning activity omitted %q: %v", key, first)
+		}
+	}
+	if _, leaked := first["Date"]; leaked {
+		t.Fatalf("learning activity leaked Go field names: %v", first)
+	}
+}
+
 func TestValidatePlanDraftUsesRealTasksAndNamesBothPlans(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "schedule-preview", Nickname: "Schedule User", NicknameNormalized: "schedule user"}

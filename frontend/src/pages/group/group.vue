@@ -99,13 +99,13 @@ async function load() {
 		member.value = current.member || null
 		members.value = []
 		leaderboard.value = []
-		const requests = group.value
+		const requests: Promise<unknown>[] = group.value
 			? [GroupApi.members(), GroupApi.leaderboard('weekly'), GroupApi.history()]
 			: [Promise.resolve([]), Promise.resolve({ rows: [] }), GroupApi.history()]
-		const [memberResult, rankResult, historyResult] = await Promise.allSettled(requests)
-		if (memberResult.status === 'fulfilled') members.value = memberResult.value as GroupMemberView[]
-		if (rankResult.status === 'fulfilled') leaderboard.value = ((rankResult.value as any).rows || []) as GroupMemberView[]
-		if (historyResult.status === 'fulfilled') history.value = historyResult.value as StudyGroup[]
+		const [memberResult, rankResult, historyResult] = await Promise.all(requests.map(settle))
+		if (memberResult.status === 'fulfilled') members.value = Array.isArray(memberResult.value) ? memberResult.value as GroupMemberView[] : []
+		if (rankResult.status === 'fulfilled') leaderboard.value = Array.isArray((rankResult.value as any)?.rows) ? (rankResult.value as any).rows : []
+		history.value = historyResult.status === 'fulfilled' && Array.isArray(historyResult.value) ? historyResult.value as StudyGroup[] : []
 		const failures = [memberResult, rankResult, historyResult].filter(result => result.status === 'rejected').length
 		if (failures) showFeedback(`${failures} 个小组区域加载失败，可稍后重试`, 'error')
 	} catch (error: any) {
@@ -113,6 +113,10 @@ async function load() {
 		member.value = null
 		showFeedback(error?.message || '小组信息加载失败', 'error')
 	} finally { loading.value = false }
+}
+
+function settle<T>(request: Promise<T>): Promise<{ status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown }> {
+	return request.then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }))
 }
 
 async function createGroup() {
@@ -164,7 +168,7 @@ async function revokeInvite() {
 async function loadLeaderboard(scope: 'weekly' | 'all') {
 	try {
 		const res = await GroupApi.leaderboard(scope)
-		leaderboard.value = res.rows || []
+		leaderboard.value = Array.isArray(res?.rows) ? res.rows : []
 	} catch (error: any) {
 		showFeedback(error?.message || '排行榜加载失败', 'error')
 	}

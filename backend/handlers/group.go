@@ -127,7 +127,7 @@ func GroupHistory(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "expire groups failed: "+err.Error())
 		return
 	}
-	var groups []models.StudyGroup
+	groups := make([]models.StudyGroup, 0)
 	if err := db.DB.Table("study_groups").Joins("JOIN study_group_members ON study_group_members.group_id = study_groups.id").Where("study_group_members.user_id = ? AND study_groups.status = ?", uid, models.StudyGroupStatusEnded).Order("study_groups.ended_at DESC, study_groups.id DESC").Scan(&groups).Error; err != nil {
 		api.Fail(c, http.StatusInternalServerError, "query group history failed: "+err.Error())
 		return
