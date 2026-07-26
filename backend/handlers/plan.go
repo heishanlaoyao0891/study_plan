@@ -15,6 +15,7 @@ import (
 	"study_plan_backend/db"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
+	"study_plan_backend/services"
 )
 
 const (
@@ -209,6 +210,7 @@ func CreatePlan(c *gin.Context) {
 		DefaultPlannedEnd:   defaultString(req.DefaultPlannedEnd, defaultPlannedEnd()),
 		StudyWeekdays:       req.StudyWeekdays,
 		StudyDates:          req.StudyDates,
+		GenerationSource:    "manual",
 	}
 	if err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan).Error; err != nil {
@@ -783,19 +785,11 @@ func checkOverloadWithDB(tx *gorm.DB, uid uint, newHours int, confirmed bool) ([
 		return nil, err
 	}
 
-	var warnings []string
-	// 1) 活跃计划数量
-	if len(activePlans) >= maxActivePlans {
-		warnings = append(warnings, "已有 "+itoa(len(activePlans))+" 个活跃计划，不建议同时进行过多学习计划")
-	}
-	// 2) 每周总学时
-	total := newHours
+	existingHours := 0
 	for _, p := range activePlans {
-		total += p.WeeklyTargetHours
+		existingHours += p.WeeklyTargetHours
 	}
-	if total > maxWeeklyHoursTotal {
-		warnings = append(warnings, "所有计划每周总学时已达 "+itoa(total)+" 小时，压力可能过大")
-	}
+	warnings := services.PlanningLoadWarnings(len(activePlans), existingHours, newHours, maxActivePlans, maxWeeklyHoursTotal)
 
 	if len(warnings) > 0 && !confirmed {
 		return warnings, errors.New("overload detected, confirm_overload required")

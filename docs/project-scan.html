@@ -1,0 +1,271 @@
+<!doctype html>
+<!-- Living project scan report. Keep this file updated incrementally as the repository changes. -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="project-scan-last-updated" content="2026-07-26" />
+  <title>studyPlan 持续项目扫描报告</title>
+  <style>
+    :root { --bg:#0b1020; --panel:#121a2f; --panel2:#18233d; --text:#e8edf8; --muted:#9eabc3; --line:#2a3858; --blue:#73a7ff; --green:#61d7a3; --yellow:#ffd166; --red:#ff7a90; --violet:#b89cff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(145deg,#08101d,#101832 55%,#17142c); color:var(--text); font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    main { max-width:1280px; margin:auto; padding:34px 24px 72px; }
+    h1 { margin:0 0 6px; font-size:32px; letter-spacing:-.5px; }
+    h2 { margin:36px 0 14px; font-size:22px; }
+    h3 { margin:0 0 8px; font-size:17px; }
+    p { margin:7px 0; }
+    code { color:#c8d8ff; background:#0c1428; border:1px solid #243352; border-radius:5px; padding:1px 5px; }
+    .sub { color:var(--muted); font-size:15px; }
+    .grid { display:grid; gap:14px; }
+    .metrics { grid-template-columns:repeat(6,minmax(0,1fr)); margin-top:24px; }
+    .metric,.card { background:rgba(18,26,47,.92); border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 32px rgba(0,0,0,.18); }
+    .metric { padding:16px; }
+    .metric b { display:block; font-size:25px; color:white; }
+    .metric span { color:var(--muted); }
+    .card { padding:18px 20px; }
+    .two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .ok { color:var(--green); } .warn { color:var(--yellow); } .bad { color:var(--red); } .info { color:var(--blue); }
+    .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; margin:2px 4px 2px 0; color:#c8d5ee; background:#101a31; font-size:12px; }
+    .pill.good { border-color:#27674e; color:#85e5ba; } .pill.mid { border-color:#7c6222; color:#ffe092; } .pill.high { border-color:#814052; color:#ff9aab; }
+    table { width:100%; border-collapse:collapse; background:rgba(18,26,47,.82); border:1px solid var(--line); }
+    th,td { padding:10px 11px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    th { color:#bfcbe0; background:#17213a; position:sticky; top:0; }
+    tr:last-child td { border-bottom:0; }
+    .bar { width:120px; height:8px; border-radius:99px; background:#25324d; overflow:hidden; margin-top:5px; }
+    .bar i { display:block; height:100%; background:linear-gradient(90deg,#55d8a3,#77a9ff); }
+    ul { margin:8px 0 0; padding-left:20px; }
+    li { margin:4px 0; }
+    .flow { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+    .node { padding:9px 12px; border-radius:10px; background:#101a31; border:1px solid #35476d; }
+    .arrow { color:#7183a8; font-size:20px; }
+    .candidate { border-left:4px solid var(--violet); }
+    .candidate.strong { border-left-color:var(--red); }
+    .candidate.med { border-left-color:var(--yellow); }
+    .diagram { display:grid; grid-template-columns:1fr 60px 1fr; gap:10px; align-items:center; margin-top:12px; }
+    .diagram .side { min-height:145px; background:#0d1529; border:1px dashed #3b4a6d; border-radius:11px; padding:12px; }
+    .diagram .to { text-align:center; font-size:25px; color:var(--blue); }
+    .small { font-size:12px; color:var(--muted); }
+    .note { padding:11px 13px; border-radius:9px; background:#111c34; border:1px solid #334362; }
+    .footer { color:var(--muted); margin-top:36px; border-top:1px solid var(--line); padding-top:16px; }
+    @media (max-width:900px) { .metrics,.three,.two { grid-template-columns:1fr 1fr; } .diagram { grid-template-columns:1fr; } .diagram .to { transform:rotate(90deg); } }
+    @media (max-width:600px) { main { padding:22px 12px 52px; } .metrics,.three,.two { grid-template-columns:1fr; } table { font-size:12px; } th,td { padding:8px 6px; } }
+  </style>
+</head>
+<body><main>
+  <h1>studyPlan 持续项目扫描报告</h1>
+  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-26</div>
+
+  <section class="grid metrics">
+    <div class="metric"><b>354</b><span>当前项目文件（跟踪 + 新增）</span></div>
+    <div class="metric"><b>22</b><span>OpenSpec changes</span></div>
+    <div class="metric"><b>10 / 12</b><span>未归档 / 已归档</span></div>
+    <div class="metric"><b>317 / 343</b><span>未归档任务已完成</span></div>
+    <div class="metric"><b>159</b><span>Go 测试函数</span></div>
+    <div class="metric"><b>13</b><span>主规格能力模块</span></div>
+  </section>
+
+  <h2>报告维护约定</h2>
+  <section class="card">
+    <p>这是仓库的持续维护索引，不是一次性扫描快照。后续 session 应先读取本报告，再针对本次变更涉及的文件和 capability 做增量核对。</p>
+    <ul>
+      <li>创建、更新、实施、同步或归档任何 OpenSpec change 后，更新 active/archive 数量、任务完成度、delta capability、Requirement 重叠和依赖顺序。</li>
+      <li>代码、测试、构建或部署状态发生变化后，更新系统轮廓、验证结果、风险点和架构深化候选。</li>
+      <li>更新本页顶部的最后更新日期，并在报告中反映已解决、新增或失效的结论。</li>
+      <li>除非仓库发生无法通过增量核对覆盖的大规模变化，或用户明确要求，否则不重新执行全量扫描。</li>
+    </ul>
+  </section>
+
+  <h3 style="margin-top:18px">增量更新记录</h3>
+  <table>
+    <thead><tr><th>日期</th><th>范围</th><th>更新摘要</th><th>验证</th></tr></thead>
+    <tbody>
+      <tr><td>2026-07-26</td><td>完成 constrained planning Agent</td><td>按功能完整度收敛 change 至 64 项并全部完成：抽取共享排程/负荷规则，支持同日多短任务；Provider 按安全 origin/credential 复用连接并保留 dial-time DNS rebinding 防护；记录延迟、Token、状态和失败指标；新增 Preview 服务端 add/remove/split/reorder 派生版本；用户端补齐开始日期、跳过日期和结构调整控件；管理端展示队列、成功/回退率、p50/p95、Token 与失败原因。</td><td><code>go test ./...</code>、<code>go vet ./...</code>、前端 type-check、H5、微信小程序、管理端 build、OpenSpec strict validate 和 diff check 全部通过。change 64/64，可提交推送。</td></tr>
+      <tr><td>2026-07-26</td><td>实施 constrained planning Agent（第一阶段）</td><td>新增持久化 Planning Job 与不可变 preview version、活动请求去重、用户隔离状态/取消接口、claim/lease/restart recovery/expiry；交互请求立即返回本地基线，后台默认 60 秒生成紧凑 AI 蓝图，后端拆分超大任务、排程校验并原子发布 <code>ai_decomposed</code> version 2；provenance 与提交绑定 preview ID/version/fingerprint/expiry；用户端增加轮询、进度、未编辑自动切换和已编辑版本审阅；管理端暴露 1–5 秒交互目标和 15–120 秒后台预算。</td><td>OpenSpec strict validate、<code>go test ./...</code>、<code>go vet ./...</code>、前端/管理端 type-check、H5、微信小程序和管理端 build 全部通过。change 当前 51/68，17 项待实施。</td></tr>
+      <tr><td>2026-07-26</td><td>重构 constrained planning change</td><td>将同步 8 秒语义润色方案改为异步 AI 任务拆解：立即返回本地基线，后台默认 60 秒生成可变任务蓝图，后端负责排程与版本控制。更新 proposal、design、3 份 specs 和 tasks。</td><td>文档一致性与 diff 检查通过；OpenSpec CLI 未安装，strict validate 待执行。该 change 当前 23/68，45 项待实施。</td></tr>
+      <tr><td>2026-07-26</td><td>AI 计划超时诊断</td><td>确认管理台配置的 provider timeout 会被生成接口固定的 8 秒 enrichment budget 截断；30 秒配置在诊断测试中于 8.003 秒被取消。未修改业务代码。</td><td>临时阻塞 provider 复现后已删除诊断测试；现有 fallback/cancellation 测试通过。</td></tr>
+      <tr><td>2026-07-26</td><td>同步远端 508495d–1dfff5c</td><td>恢复管理台与学习组导航；新增跨平台 uCharts/ECharts 图表；稳定管理台图表 JSON；<code>improve-learning-economy-and-insights</code> 从 23 项扩展为 32 项且全部完成。</td><td>Go test、vet、coverage 通过；handlers coverage 38.1%。前端构建未在本 session 重跑。</td></tr>
+      <tr><td>2026-07-26</td><td>初始全量扫描</td><td>建立持续报告；记录 10 个 active、12 个 archived change，架构热点、Requirement 重叠和交付风险。</td><td>Go test、vet、coverage；OpenSpec CLI 与前端构建未执行。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>结论摘要</h2>
+  <section class="grid two">
+    <div class="card">
+      <h3 class="ok">健康信号</h3>
+      <ul>
+        <li>后端 <code>go test ./...</code>、<code>go vet ./...</code>、OpenSpec strict validate、前端/管理端 type-check 与三类生产构建全部通过。</li>
+        <li>12 个已归档 change 共 334 项任务，全部勾选完成；归档 delta 中的 Requirement 名称都能在当前主规格找到。</li>
+        <li>生产配置对 JWT、WeChat、AI 密钥加密 secret 有启动校验；密码使用 bcrypt；关键并发规则有数据库唯一索引。</li>
+        <li>代码已经覆盖 H5/微信统一账号、封禁体验、AI 计划、反馈、通知、学习组、计时与打卡等较完整产品面。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="bad">主要风险</h3>
+      <ul>
+        <li><b>change 堆叠冲突：</b>10 个 Requirement 名称被多个未归档 change 同时修改，AI 主 Requirement 同时被 4 个 change 修改。</li>
+        <li><b>归档滞后：</b>4 个 change 已 100% 完成仍留在 active；这会让后续 delta 的基线和归档顺序变得含糊。</li>
+        <li><b>检查清单漂移：</b>部分 tasks 仍未勾选，但对应测试已经存在，例如 interval-union 测试。</li>
+        <li><b>前端验证缺口：</b>UniApp 与管理端没有自动化测试文件；关键 check-in 页面 541 行，API 聚合文件 719 行、60 个导出。</li>
+        <li><b>验证入口失效：</b><code>scripts/verify.ps1</code> 默认验证已归档的旧 change 名，且当前环境没有 OpenSpec CLI。</li>
+        <li><b>AI Agent 后续演进：</b>当前功能 change 已完成；更广泛的 provider 重试策略重构和非关键故障注入矩阵已明确移出本 change，可在独立质量 change 中处理。</li>
+      </ul>
+    </div>
+  </section>
+
+  <h3 style="margin-top:18px">已确认难点：AI 生成学习计划总是超时</h3>
+  <section class="card">
+    <p><b>直接原因：</b><code>backend/handlers/ai.go</code> 为一次请求设置 12 秒总预算，但外部模型 enrichment 使用固定 8 秒子 deadline。<code>backend/services/ai_provider.go</code> 会采用 context 中更短的 deadline，因此管理台的 <code>request_timeout_seconds</code> 对生成接口无法放宽到 8 秒以上。</p>
+    <p><b>复现：</b>模拟 provider 配置为 30 秒并一直等待 context，生成接口在 8.003 秒取消请求并返回本地 fallback。</p>
+    <p><b>放大因素：</b>请求要求返回完整计划 JSON、最多包含 30 天任务且输出上限 1024 tokens；每次调用新建 HTTP transport，并在配置校验、client 构造和 dial 阶段重复 DNS/public-IP 检查，都会占用同一个 8 秒预算。</p>
+    <p><b>已排除：</b>前端没有设置更短的 request timeout，Nginx 也没有配置小于 8 秒的 proxy timeout；主要超时发生在后端主动取消 provider context。</p>
+    <p><b>已实施的解决方案：</b><code>build-constrained-planning-agent</code> 已接入持久化异步 Planning Job。用户先收到本地基线，AI 在默认 60 秒独立后台 deadline 内生成阶段和可变任务蓝图，后端再拆分、排程、校验并发布独立 version 2。用户端会轮询状态；未编辑时自动显示 AI 版本，已编辑时保留本地内容并提供显式审阅。原同步 enrichment helper 暂时保留用于兼容/后续清理，但生成主路径不再调用它。</p>
+  </section>
+
+  <h2>系统轮廓</h2>
+  <div class="flow">
+    <span class="node">UniApp / Vue 3<br><small>H5 + 微信小程序 · 18 pages</small></span><span class="arrow">→</span>
+    <span class="node">Gin API<br><small>119 routes · 116 handlers</small></span><span class="arrow">→</span>
+    <span class="node">GORM / SQLite<br><small>30 model structs</small></span><span class="arrow">→</span>
+    <span class="node">可选适配器<br><small>SiliconFlow · WeChat · MySQL archive · MinIO</small></span>
+  </div>
+  <section class="grid three">
+    <div class="card"><h3>前端</h3><p>Vue 3 + UniApp + TypeScript，覆盖 H5 与多小程序构建。核心热点是 <code>checkin.vue</code>、<code>login.vue</code> 和统一 <code>api/index.ts</code>。</p></div>
+    <div class="card"><h3>后端</h3><p>Go + Gin + GORM。业务实现主要集中在 handlers；<code>plan.go</code> 1066 行、<code>study.go</code> 1000 行、<code>group.go</code> 824 行。</p></div>
+    <div class="card"><h3>部署</h3><p>Docker Compose：backend、frontend、admin、MinIO。SQLite 为主存储，可选 MySQL 归档同步。</p></div>
+  </section>
+
+  <h2>未归档 changes（10）</h2>
+  <table>
+    <thead><tr><th>Change</th><th>完成度</th><th>Delta</th><th>判断</th></tr></thead>
+    <tbody>
+      <tr><td>add-friendly-ban-state-experience</td><td>29/29<div class="bar"><i style="width:100%"></i></div></td><td>4 capabilities / 7 requirements</td><td><span class="pill good">完成</span> 需先厘清与统一认证 change 的归档顺序。</td></tr>
+      <tr><td>add-unified-h5-and-wechat-account-auth</td><td>17/18<div class="bar"><i style="width:94%"></i></div></td><td>2 / 5</td><td><span class="pill mid">外部验收</span> 缺生产邀请码与 H5/小程序联验。</td></tr>
+      <tr><td>build-constrained-planning-agent</td><td>64/64<div class="bar"><i style="width:100%"></i></div></td><td>3 / 17</td><td><span class="pill good">完成</span> 异步 Job、AI 蓝图、同日多任务、安全连接复用、不可变/派生版本、用户端轮询编辑和管理指标均已完成，可进入提交与归档流程。</td></tr>
+      <tr><td>complete-user-feedback-workflow</td><td>16/18<div class="bar"><i style="width:89%"></i></div></td><td>1 / 3</td><td><span class="pill mid">缺前端验证</span> 后端已有完整测试，用户端与管理端检查未完成。</td></tr>
+      <tr><td>complete-user-plan-group-notification-workflows</td><td>22/23<div class="bar"><i style="width:96%"></i></div></td><td>5 / 12</td><td><span class="pill mid">外部阻塞</span> 等待真实已审批微信模板验证。</td></tr>
+      <tr><td>improve-daily-checkin-and-timer-experience</td><td>33/35<div class="bar"><i style="width:94%"></i></div></td><td>6 / 25</td><td><span class="pill mid">缺测试闭环</span> 后端边界与前端状态检查仍未完成。</td></tr>
+      <tr><td>improve-learning-economy-and-insights</td><td>32/32<div class="bar"><i style="width:100%"></i></div></td><td>6 / 7</td><td><span class="pill good">完成</span> 已补充运行时加固与跨平台图表升级，可进入严格校验与归档。</td></tr>
+      <tr><td>improve-plan-schedule-and-reminder-settings</td><td>16/16<div class="bar"><i style="width:100%"></i></div></td><td>2 / 3</td><td><span class="pill good">完成</span> 建议在 refine change 之前归档。</td></tr>
+      <tr><td>productionize-siliconflow-ai-planning</td><td>19/19<div class="bar"><i style="width:100%"></i></div></td><td>2 / 4</td><td><span class="pill good">完成</span> 应作为 constrained planner 的前置基线归档。</td></tr>
+      <tr><td>refine-checkin-schedule-and-active-task-rules</td><td>69/89<div class="bar"><i style="width:78%"></i></div></td><td>5 / 21</td><td><span class="pill high">测试债集中</span> 20 项未完成，多数是边界、并发、UI 与迁移验证。</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:18px">建议的 change 收敛顺序</h3>
+  <div class="card">
+    <ol>
+      <li>恢复 OpenSpec CLI 与 strict validate；修正验证脚本。</li>
+      <li>先归档无依赖争议的完成项：<code>improve-learning-economy-and-insights</code>。</li>
+      <li>AI 链：<code>productionize-siliconflow-ai-planning</code> → <code>build-constrained-planning-agent</code>。</li>
+      <li>计划/计时链：<code>improve-plan-schedule-and-reminder-settings</code> → <code>improve-daily-checkin-and-timer-experience</code> → <code>refine-checkin-schedule-and-active-task-rules</code>。</li>
+      <li>认证链：先完成 <code>add-unified-h5-and-wechat-account-auth</code> 的真实验收，再决定与 <code>add-friendly-ban-state-experience</code> 的归档先后；后者依赖新 H5/微信登录路径。</li>
+      <li>外部平台项单独标记 blocked：真实微信订阅模板验证不应和本地实现任务混在同一完成信号里。</li>
+    </ol>
+  </div>
+
+  <h2>未归档 delta 冲突热点</h2>
+  <table>
+    <thead><tr><th>Capability / Requirement</th><th>并行 changes</th><th>风险</th></tr></thead>
+    <tbody>
+      <tr><td>ai-plan-generator / AI generates a study plan from user description</td><td>4</td><td class="bad">最高：四份 MODIFIED delta，归档顺序会决定最终主规格。</td></tr>
+      <tr><td>AI generation has fallback behavior</td><td>2</td><td>provider 生产化与 constrained planner 同时修改。</td></tr>
+      <tr><td>study-timer / start、pause-resume</td><td>2</td><td>计时体验 change 与规则 refine change 重叠。</td></tr>
+      <tr><td>plan-management / schedule overlap &amp; overload</td><td>2</td><td>经济洞察 change 与规则 refine change 重叠。</td></tr>
+      <tr><td>plan-management / edit a study plan</td><td>2</td><td>计划设置与每日计时 change 重叠。</td></tr>
+      <tr><td>user-auth / login &amp; API authentication</td><td>2</td><td>统一账号与友好封禁同时改认证合同。</td></tr>
+      <tr><td>notification / subscribe to reminders</td><td>2</td><td>设置体验与完整通知工作流重叠。</td></tr>
+      <tr><td>user-onboarding / first-run onboarding</td><td>2</td><td>完整工作流与 nickname/phone 规则 refine 重叠。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>已归档 changes（12）</h2>
+  <p class="note"><b>整体判断：</b>归档区健康度较好。12 个 change 的任务全部完成，147 个归档 delta Requirement 名称均能映射到当前 13 个主规格模块；说明历史规格同步至少在名称层面完整。</p>
+  <table>
+    <thead><tr><th>日期 / Change</th><th>任务</th><th>规格数 / Requirements</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td>2026-07-20-study-checkin-miniapp</td><td>68/68</td><td>9 / 68</td><td>项目初始全域规格，体量最大。</td></tr>
+      <tr><td>2026-07-23-admin-web-console</td><td>34/34</td><td>1 / 11</td><td>管理面从小程序拆出。</td></tr>
+      <tr><td>2026-07-23-anti-abuse-and-slack-balance</td><td>14/14</td><td>1 / 4</td><td>防刷与躺平余额。</td></tr>
+      <tr><td>2026-07-23-group-study-experience</td><td>36/36</td><td>1 / 9</td><td>小组、排行、提醒。</td></tr>
+      <tr><td>2026-07-23-onboarding-and-recovery</td><td>14/14</td><td>1 / 3</td><td>新手与落后恢复。</td></tr>
+      <tr><td>2026-07-23-ops-and-compliance-entrypoints</td><td>15/15</td><td>1 / 4</td><td>政策、反馈、版本入口。</td></tr>
+      <tr><td>2026-07-23-privacy-account-controls</td><td>16/16</td><td>1 / 4</td><td>账号与数据控制。</td></tr>
+      <tr><td>2026-07-23-product-polish-admin-and-miniapp</td><td>23/23</td><td>3 / 10</td><td class="warn">缺少 design.md；若当时设计简单可接受，但追溯性较弱。</td></tr>
+      <tr><td>2026-07-23-production-hardening-study-checkin</td><td>29/29</td><td>3 / 12</td><td>部署、微信、备份、日志。</td></tr>
+      <tr><td>2026-07-23-quality-and-testing</td><td>22/22</td><td>1 / 5</td><td>当前 verify 脚本仍引用旧短名。</td></tr>
+      <tr><td>2026-07-23-real-ai-plan-generation</td><td>32/32</td><td>1 / 7</td><td>模型适配与 preview 基础。</td></tr>
+      <tr><td>2026-07-23-task-scheduling-improvements</td><td>31/31</td><td>1 / 10</td><td>任务日程与延期/补录。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Change 治理问题</h2>
+  <section class="grid two">
+    <div class="card"><h3>1. 元数据和基线不清晰</h3><ul><li>10 个 active change 中 7 个缺少 <code>created</code>。</li><li>10 个 active proposal 均无一级标题。</li><li><code>openspec/config.yaml</code> 没有项目 context 与 artifact rules。</li><li>结果：AI 与人工都难以判断依赖、优先级、归档顺序和完成定义。</li></ul></div>
+    <div class="card"><h3>2. tasks 与实现不同步</h3><ul><li><code>refine...</code> 的 interval-union 测试仍未勾选，但 <code>TestCoveredMinutesUsesUnionAndRejectsAtSixty</code> 已存在。</li><li>reward idempotency、schedule resolution 等也已有部分测试，却被更大的组合任务继续标成未完成。</li><li>建议将大任务拆成可独立验证的边界项，并在实现提交中同步勾选。</li></ul></div>
+    <div class="card"><h3>3. 验证脚本仍需修正</h3><ul><li>默认 change 是 <code>quality-and-testing</code>，但该 change 已以日期前缀归档。</li><li>脚本只提供 PowerShell 入口。</li><li>OpenSpec 1.6.0 已安装且当前 change 可 strict validate；剩余问题是脚本默认目标与跨平台入口仍过期。</li></ul></div>
+    <div class="card"><h3>4. 外部验收和本地完成混杂</h3><ul><li>真实微信模板审批、生产邀请码、端到端验收属于外部状态。</li><li>它们让本地代码完成的 change 长期停留 active。</li><li>建议在 change 状态中明确区分 implementation complete、external acceptance pending、ready to archive。</li></ul></div>
+  </section>
+
+  <h2>代码质量与交付检查</h2>
+  <table>
+    <thead><tr><th>项目</th><th>结果</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>Go tests</td><td class="ok">通过</td><td>159 个测试函数；覆盖 Job 生命周期、同日任务排程、蓝图拆分、60 秒 deadline、派生 Preview 并发版本、连接复用、DNS rebinding、Token 和管理指标。历史 coverage 数值未在本轮重算。</td></tr>
+      <tr><td>Go vet</td><td class="ok">通过</td><td>无输出。</td></tr>
+      <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>前端与管理端 type-check、H5 build、微信小程序 build、管理端 Vite build 全部通过；仅有 Sass legacy API、UniApp 更新提示与管理端大 chunk 警告。</td></tr>
+      <tr><td>Frontend tests</td><td class="bad">0</td><td>没有 <code>*.test.*</code> 或 <code>*.spec.*</code> 文件。</td></tr>
+      <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td>OpenSpec 1.6.0 已安装；<code>build-constrained-planning-agent</code> strict validate 无 issue。</td></tr>
+      <tr><td>Git</td><td class="warn">有实施中改动</td><td>保留既有 AGENTS/OpenSpec/report 改动，并新增本轮后端、前端和管理端实现；尚未提交。</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:18px">部署 / 安全复核点</h3>
+  <section class="grid three">
+    <div class="card"><h3 class="warn">生产 CORS</h3><p><code>Access-Control-Allow-Origin: *</code> 对所有环境固定开放。应结合 H5/管理台真实域名确认是否需要生产白名单。</p></div>
+    <div class="card"><h3 class="warn">对象存储</h3><p>MinIO 使用 <code>latest</code> 标签，初始化时将 bucket 设为 anonymous download。若未来承载非公开素材，需要拆分 public/private bucket。</p></div>
+    <div class="card"><h3 class="warn">依赖基线</h3><p><code>go.mod</code> 声明 Go 1.19，Docker 使用 Go 1.22；多项依赖版本较旧。本轮 <code>npm ci</code> 审计报告 frontend 82 项、admin 9 项依赖告警，未执行可能引入破坏性升级的 force fix；尚未逐项确认可利用性。未安装 govulncheck，因此 Go 侧这里只标记 freshness 风险，不宣称存在具体 CVE。</p></div>
+  </section>
+
+  <h2>架构深化候选</h2>
+  <p>以下候选关注把 shallow implementation 收进更 deep 的 module，以减少跨文件跳转、提高 locality、测试性和 AI 可导航性。这里只确定候选方向，不设计具体 interface。</p>
+
+  <section class="card candidate strong">
+    <h3>候选 A：OpenSpec change portfolio 收敛 <span class="pill high">强烈推荐 · 立即</span></h3>
+    <p><b>文件：</b><code>openspec/changes/*</code>、<code>openspec/config.yaml</code>、<code>scripts/verify.ps1</code></p>
+    <p><b>问题：</b>10 个 active change 同时改 100 条 delta requirements，存在 10 组同名 Requirement 重叠；4 个完成项未归档，验证入口失效，导致“规格基线”这个 interface 比实际 implementation 更难理解。</p>
+    <p><b>方向：</b>先恢复验证与状态元数据，再按依赖链归档完成项，把外部验收单独标识；让主规格重新成为唯一稳定基线。</p>
+    <p><b>收益：</b>消除归档顺序歧义，减少后续 change 合并冲突，提高规格 locality 与发布可追溯性。</p>
+    <div class="diagram"><div class="side"><b>Before</b><br>10 active deltas<br>↕ 同名 Requirement 交叉覆盖<br>↕ tasks 与代码状态漂移<br>→ 主规格基线不清</div><div class="to">→</div><div class="side"><b>After</b><br>有序 dependency chain<br>→ strict validate gate<br>→ 完成项及时 archive/sync<br>→ 主规格是稳定事实源</div></div>
+  </section>
+
+  <section class="card candidate strong" style="margin-top:14px">
+    <h3>候选 B：权威 Schedule Domain Engine <span class="pill high">强烈推荐</span></h3>
+    <p><b>文件：</b><code>backend/handlers/plan.go</code>、<code>schedule_rules.go</code>、<code>recovery.go</code>、<code>handlers/ai.go</code>、<code>services/ai_planner.go</code></p>
+    <p><b>问题：</b>occupancy、overlap、overload、计划移动、恢复预览、AI 排程分散在 handlers 与 services；AI 规划还有独立的 free-slot implementation。理解一个规则需要跨多个 module 来回跳转。constrained planner 的未完成任务也明确要求抽取这些规则。</p>
+    <p><b>方向：</b>形成一个 deep 的权威排程 module，让手工计划、批量移动、恢复和 AI 计划共用同一条验证/修复 seam；handler 只做 HTTP adapter。</p>
+    <p><b>收益：</b>单一规则源、减少分叉、可做表驱动边界测试，并提高所有排程功能的 leverage。</p>
+    <div class="diagram"><div class="side"><b>Before</b><br>Plan handler ─ rules<br>Recovery handler ─ rules<br>AI handler ─ planner ─ own slot rules<br>多条 transaction 路径</div><div class="to">→</div><div class="side"><b>After</b><br>HTTP / AI adapters<br>↓<br><b>Deep Schedule Domain Engine</b><br>↓<br>Repository / clock adapters</div></div>
+  </section>
+
+  <section class="card candidate strong" style="margin-top:14px">
+    <h3>候选 C：Task + Daily Check-in Lifecycle module <span class="pill high">强烈推荐</span></h3>
+    <p><b>文件：</b><code>backend/handlers/study.go</code>、<code>checkin.go</code>、<code>task_rules_test.go</code>、<code>frontend/src/pages/checkin/checkin.vue</code></p>
+    <p><b>问题：</b>任务 start/pause/resume/achieved/complete、session 关闭、每日打卡、reward idempotency 和页面状态同时分散在 1000 行 handler 与 541 行页面。interface 看起来只是若干路由，但 implementation 状态机很深且缺少明确 module 边界。</p>
+    <p><b>方向：</b>将状态转换、事务、奖励与阻塞原因收进一个 deep lifecycle module；后端路由与前端页面分别作为 adapter，围绕同一状态模型测试。</p>
+    <p><b>收益：</b>并发和幂等规则更可证明，页面不再自行拼装业务状态，降低 20 项 refine 测试债的维护成本。</p>
+    <div class="diagram"><div class="side"><b>Before</b><br>多路由别名<br>+ study.go 状态逻辑<br>+ checkin.go 奖励逻辑<br>+ 页面 computed/分支</div><div class="to">→</div><div class="side"><b>After</b><br><b>Deep Learning Lifecycle</b><br>统一 transition / invariant / outcome<br>↙ API adapter　↘ UI state adapter</div></div>
+  </section>
+
+  <section class="card candidate med" style="margin-top:14px">
+    <h3>候选 D：前端 Study Flow client module <span class="pill mid">中等推荐</span></h3>
+    <p><b>文件：</b><code>frontend/src/api/index.ts</code>、<code>api/request.ts</code>、<code>pages/checkin/checkin.vue</code>、<code>pages/login/login.vue</code></p>
+    <p><b>问题：</b>单个 API 文件有 60 个导出，domain type 与 endpoint implementation 集中；核心页面直接管理请求、计时器、弹窗、冲突、导航和文本。模块数量少，但 locality 仍然差，因为一个用户动作跨越大量浅逻辑。</p>
+    <p><b>方向：</b>按完整用户工作流形成 deep client module，而不是简单把每个 endpoint 拆成更多 shallow 文件；优先围绕 check-in 与认证流程建立可测试 seam。</p>
+    <p><b>收益：</b>页面体积下降、错误语义一致、H5/微信差异更容易集中，前端测试可从 workflow module 起步。</p>
+    <div class="diagram"><div class="side"><b>Before</b><br>Page → giant API object<br>Page 自行管理 timer/error/navigation<br>0 frontend tests</div><div class="to">→</div><div class="side"><b>After</b><br>Page → deep workflow client<br>→ request/platform adapters<br>状态转换可单测</div></div>
+  </section>
+
+  <div class="footer">本报告为持续维护索引。最近一次完整扫描使用了只读文件分析、OpenSpec 结构统计、Requirement 重叠检查、Go test/vet/coverage；当时未安装 npm 依赖和 OpenSpec CLI。后续变更应增量更新相关结论与验证状态。</div>
+</main></body></html>

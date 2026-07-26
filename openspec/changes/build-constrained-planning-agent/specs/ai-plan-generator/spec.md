@@ -3,89 +3,151 @@
 ## MODIFIED Requirements
 
 ### Requirement: AI generates a study plan from user description
-The system SHALL use a backend planning Agent to create a valid local plan candidate and MAY use the configured model to enrich that candidate within bounded constraints.
+The system SHALL use a backend planning Agent to return a valid local baseline promptly and SHALL allow the configured model to asynchronously decompose the goal into an AI-enhanced plan version.
 
-#### Scenario: Generate an enriched plan
-- **WHEN** the Agent has produced a valid candidate and model enrichment succeeds within budget
-- **THEN** the system returns a revalidated editable preview with source `local_enriched`
+#### Scenario: Return an immediate baseline
+- **WHEN** the user submits a valid planning request
+- **THEN** the Agent returns a conflict-free local preview with preview ID, version, source `local`, and decomposition status without waiting for the full model deadline
 
-#### Scenario: Generate without model enrichment
-- **WHEN** enrichment is disabled, unavailable, quota-limited, invalid, or times out
-- **THEN** the system returns the valid local preview with source `local` and a truthful enrichment status
+#### Scenario: Generate an AI-decomposed version
+- **WHEN** the background model job returns a valid learning blueprint within its configured budget
+- **THEN** the Agent schedules and revalidates the blueprint and publishes a new preview version with source `ai_decomposed`
+
+#### Scenario: User accepts the baseline early
+- **WHEN** the user commits the valid local preview while model decomposition is still queued or running
+- **THEN** the system creates the local plan and prevents a later model result from replacing the committed plan
+
+#### Scenario: Generate without model decomposition
+- **WHEN** decomposition is disabled, unavailable, quota-limited, invalid, or times out
+- **THEN** the local preview remains usable and the job exposes a truthful terminal fallback status
 
 ### Requirement: AI asks for user availability before generating
-The system SHALL validate and reconcile desired daily hours, available time ranges, start date, skip dates, and current schedule occupancy before model collaboration.
+The system SHALL validate desired plan duration, daily capacity, available time ranges, start date, skip dates, and current schedule occupancy before creating the local baseline or model job.
 
 #### Scenario: Desired hours exceed availability
 - **WHEN** requested daily hours exceed the supplied daily time range
-- **THEN** the Agent uses available capacity, adjusts duration or plan length where possible, and returns an explanatory warning
+- **THEN** the Agent uses actual available capacity and returns an explanatory warning
 
 #### Scenario: Requested time is occupied
-- **WHEN** the requested time intersects existing unfinished work
-- **THEN** the Agent searches another valid time or eligible date and returns the repaired schedule rather than an avoidable conflict
+- **WHEN** requested availability intersects existing unfinished work
+- **THEN** the Agent searches another valid time or eligible date and returns a repaired local schedule rather than an avoidable conflict
 
 ### Requirement: AI considers historical learning ability
-The system SHALL use safe aggregate learning history to change actual local task pacing, review cadence, and buffer placement before enrichment.
+The system SHALL provide only safe aggregate learning history to local pacing and model decomposition and SHALL not expose raw private learning records in the provider prompt.
 
 #### Scenario: User has lower recent completion
 - **WHEN** recent completion or postponement signals indicate overload risk
-- **THEN** the Agent reduces local task density or duration and adds review or buffer capacity
+- **THEN** the local baseline reduces density and the model brief requests smaller tasks, review cadence, and buffer capacity
 
 ### Requirement: AI usage is controlled
-The system SHALL meter only external model enrichment attempts and SHALL keep local planning available independently of model quota.
+The system SHALL meter external model job attempts independently of local planning and SHALL bound concurrent and daily model usage per user.
 
 #### Scenario: Model quota is exhausted
-- **WHEN** a user has no remaining enrichment quota
-- **THEN** local planning still succeeds and no additional model request is made
+- **WHEN** a user has no remaining decomposition quota
+- **THEN** local planning still succeeds and no model job is started
+
+#### Scenario: User submits duplicate generation requests
+- **WHEN** equivalent requests are submitted while a matching non-terminal job exists
+- **THEN** the system reuses or rejects the duplicate job without consuming unbounded additional provider attempts
 
 ### Requirement: AI generation has fallback behavior
-The system SHALL treat local planning as a first-class capability rather than constructing it only after model failure.
+The system SHALL keep the local baseline available throughout the asynchronous model lifecycle and SHALL never require model success to create a valid plan.
 
-#### Scenario: Model exceeds interactive deadline
-- **WHEN** enrichment does not complete within the Agent's total model budget
-- **THEN** the provider request is cancelled and the valid local candidate is returned before the API request budget expires
+#### Scenario: Model exceeds the background deadline
+- **WHEN** decomposition does not complete within the configured 15-120 second model budget
+- **THEN** the provider request is cancelled, the job becomes `fallback`, and the local baseline remains available
+
+#### Scenario: Backend restarts during decomposition
+- **WHEN** a claimed job loses its worker lease during a process restart
+- **THEN** the system returns the job to the queue at most once or completes it as fallback without creating duplicate preview versions
 
 ## ADDED Requirements
 
-### Requirement: Planning Agent owns final constraints
-The planning Agent SHALL own dates, time slots, workload limits, conflict repair, derived totals, final validation, and persistence.
+### Requirement: AI decomposes the learning goal into a task blueprint
+The model SHALL produce a bounded structured blueprint containing ordered learning stages and a variable number of concrete tasks rather than merely rewriting a fixed local task list.
 
-#### Scenario: Model suggests invalid schedule changes
-- **WHEN** model output moves work outside availability or into a conflicting slot
-- **THEN** the Agent rejects or repairs those changes before returning the preview
+#### Scenario: Model chooses meaningful stages
+- **WHEN** a user requests a multi-day programming, reading, exam, project, or general learning plan
+- **THEN** the blueprint contains goal-specific stage names, ordered task objectives, estimated effort, difficulty, and prerequisite hints
+
+#### Scenario: Model varies task count
+- **WHEN** the learning goal requires more or fewer semantic tasks than the requested plan duration
+- **THEN** the blueprint may return a different task count while remaining within configured schema and size limits
+
+#### Scenario: Model attempts to provide authoritative schedule fields
+- **WHEN** model output includes persisted IDs or untrusted final dates and time ranges
+- **THEN** the Agent ignores or rejects those fields and schedules the semantic blueprint itself
+
+### Requirement: Planning Agent owns final constraints
+The planning Agent SHALL own dates, time slots, workload limits, occupancy, conflict repair, derived totals, final validation, and persistence for local and AI-decomposed previews.
+
+#### Scenario: Blueprint contains an oversized task
+- **WHEN** a task cannot fit within the user's daily capacity
+- **THEN** the Agent splits it into ordered parts or falls back with a bounded warning rather than persisting an impossible schedule
+
+#### Scenario: Blueprint tasks exceed available dates
+- **WHEN** the ordered tasks cannot fit in the requested range without conflict
+- **THEN** the Agent uses later eligible dates when allowed or rejects the AI version while preserving the local baseline
+
+#### Scenario: Blueprint contains prerequisites
+- **WHEN** task B depends on task A
+- **THEN** the final schedule places A before B after all packing and conflict repair
 
 ### Requirement: Local planner uses progressive stage templates
-The system SHALL decompose goals with maintained learning, reading, exam, project, and general stage templates.
+The system SHALL retain maintained learning, reading, exam, project, and general templates as a fast independent baseline and as safe hints for model decomposition.
 
-#### Scenario: Generate a project plan locally
-- **WHEN** a goal is classified as project delivery
-- **THEN** the local candidate progresses through requirements, setup, milestones, integration, and review
+#### Scenario: Model is unavailable
+- **WHEN** no model job can be started or completed
+- **THEN** the user still receives a progressive local plan suitable for editing and commit
 
-### Requirement: Planning response is observable
-The system SHALL return source, enrichment status, warnings, bounded failure reason, phase timing metadata, and the advertised overall request budget.
+### Requirement: Planning jobs are observable
+The system SHALL expose user-scoped job status, current phase, provider/model, bounded failure reason, attempts, timings, expiry, and newest available preview version.
 
-#### Scenario: Local result follows provider timeout
-- **WHEN** a local preview is returned after enrichment timeout
-- **THEN** the client can explain that the plan is valid locally generated work and that AI enhancement did not complete
+#### Scenario: Poll a running job
+- **WHEN** the client requests the status of its queued, decomposing, or scheduling job
+- **THEN** the response reports the current phase without exposing raw provider errors, credentials, or another user's data
 
-### Requirement: Editable preview provenance is bound
-The system SHALL bind each generated candidate's immutable plan metadata, task count, and ordered opaque task identities in a signed, user-scoped, expiring token without trusting a client-supplied original preview.
+#### Scenario: AI version becomes ready
+- **WHEN** scheduling and validation of the blueprint succeed
+- **THEN** the job becomes `ready` and references an immutable AI-decomposed preview version
 
-#### Scenario: User edits an allowed preview field
-- **WHEN** the user edits a task date, start/end time, title, objective, description, or difficulty while preserving task identities and count
-- **THEN** commit revalidates the schedule, recomputes derived values, and may persist the edited candidate
+#### Scenario: Poll another user's job
+- **WHEN** a user requests a job they do not own
+- **THEN** the system returns not found or forbidden without disclosing job metadata
 
-#### Scenario: Client substitutes unrelated tasks
-- **WHEN** commit removes, adds, reorders, or replaces a signed task identity, or changes signed plan metadata
-- **THEN** commit rejects the candidate before persistence
+### Requirement: Model output budget scales with plan scope
+The system SHALL calculate a bounded model output allowance from requested duration and expected blueprint size instead of using one fixed token limit for every plan.
+
+#### Scenario: Generate a longer plan
+- **WHEN** the user requests a plan with many learning days
+- **THEN** the model receives a larger bounded output allowance than a one-day plan while remaining below the configured provider safety limit
+
+### Requirement: Editable preview versions are bound
+The system SHALL store immutable user-scoped preview versions with expiry, context fingerprint, task identities, source, and signed provenance.
+
+#### Scenario: AI result arrives before user edits
+- **WHEN** the AI version becomes ready while the displayed local baseline is untouched
+- **THEN** the client may replace the displayed baseline with the newer version
+
+#### Scenario: AI result arrives after user edits
+- **WHEN** the user has edited the local baseline before the AI version becomes ready
+- **THEN** the client preserves the edits and offers the AI version for explicit review instead of overwriting them
+
+#### Scenario: User changes preview structure
+- **WHEN** the user adds, removes, splits, or reorders preview tasks
+- **THEN** the server creates a derived preview version with fresh ordered task identities and provenance before commit
+
+#### Scenario: Commit a stale or expired version
+- **WHEN** the client submits a preview version that is stale, expired, or does not match its provenance
+- **THEN** commit returns a typed conflict before persistence
 
 ### Requirement: Preview commit is concurrency-safe
-The system SHALL reconcile bounded SQLite busy and uniqueness races by user, idempotency key, and normalized committed payload.
+The system SHALL reconcile bounded SQLite busy and uniqueness races by user, preview version, idempotency key, and normalized committed payload.
 
 #### Scenario: Identical commits race
-- **WHEN** concurrent requests use the same user, idempotency key, and payload
-- **THEN** exactly one plan is created and every successful replay returns that plan
+- **WHEN** concurrent requests use the same user, preview version, idempotency key, and payload
+- **THEN** exactly one plan is created and successful replays return that plan
 
-#### Scenario: An idempotency key is reused for another payload
-- **WHEN** the same user and key are submitted with a different normalized preview
-- **THEN** the system returns conflict rather than an internal error
+#### Scenario: AI finishes during commit
+- **WHEN** an AI version is published while the user is committing an older valid local version
+- **THEN** the local commit completes against its immutable version and the AI result cannot mutate the created plan

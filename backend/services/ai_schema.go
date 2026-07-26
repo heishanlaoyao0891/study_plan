@@ -48,14 +48,14 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 	if len(preview.Tasks) == 0 {
 		return PlanValidationError{Message: "at least one task is required"}
 	}
-	if len(preview.Tasks) > defaultMaxPreviewDays {
-		return PlanValidationError{Message: fmt.Sprintf("plan preview exceeds %d days", defaultMaxPreviewDays)}
+	if len(preview.Tasks) > maxGeneratedPreviewTasks {
+		return PlanValidationError{Message: fmt.Sprintf("plan preview exceeds %d tasks", maxGeneratedPreviewTasks)}
 	}
 	skip := map[string]bool{}
 	for _, date := range input.SkipDates {
 		skip[date] = true
 	}
-	seen := map[string]bool{}
+	intervalsByDate := map[string][]ScheduleInterval{}
 	availableStart, availableEnd, slotErr := parsePlanningSlot(input.AvailableTimeSlot)
 	for _, task := range preview.Tasks {
 		if strings.TrimSpace(task.Date) == "" {
@@ -67,10 +67,6 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 		if skip[task.Date] {
 			return PlanValidationError{Message: fmt.Sprintf("task falls on skipped date %s", task.Date)}
 		}
-		if seen[task.Date] {
-			return PlanValidationError{Message: fmt.Sprintf("duplicate task date %s", task.Date)}
-		}
-		seen[task.Date] = true
 		if task.EstimatedMinutes <= 0 {
 			return PlanValidationError{Message: fmt.Sprintf("task %s must have positive estimated minutes", task.Date)}
 		}
@@ -102,6 +98,13 @@ func ValidatePlanPreview(preview PlanPreview, input PlanGenerationInput) error {
 				return PlanValidationError{Message: fmt.Sprintf("task %s falls outside available time slot", task.Date)}
 			}
 		}
+		current := ScheduleInterval{Start: start.Hour()*60 + start.Minute(), End: end.Hour()*60 + end.Minute()}
+		for _, existing := range intervalsByDate[task.Date] {
+			if ScheduleIntervalsOverlap(current, existing) {
+				return PlanValidationError{Message: fmt.Sprintf("tasks overlap on %s", task.Date)}
+			}
+		}
+		intervalsByDate[task.Date] = append(intervalsByDate[task.Date], current)
 	}
 	return nil
 }

@@ -14,18 +14,20 @@ type AdminAuditLog struct {
 func (AdminAuditLog) TableName() string { return "admin_audit_logs" }
 
 type AIConfig struct {
-	ID                    uint      `gorm:"primaryKey" json:"id"`
-	Provider              string    `gorm:"size:32;default:mock;not null" json:"provider"`
-	ModelName             string    `gorm:"size:128" json:"model_name"`
-	BaseURL               string    `gorm:"size:512" json:"base_url"`
-	RequestTimeoutSeconds int       `gorm:"default:30" json:"request_timeout_seconds"`
-	DailyGenerationLimit  int       `gorm:"default:5" json:"daily_generation_limit"`
-	Enabled               bool      `gorm:"default:true" json:"enabled"`
-	APIKeyCiphertext      string    `gorm:"size:2048" json:"-"`
-	APIKeyEncrypted       bool      `gorm:"default:false" json:"-"`
-	UpdatedBy             *uint     `json:"updated_by,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ID                          uint      `gorm:"primaryKey" json:"id"`
+	Provider                    string    `gorm:"size:32;default:mock;not null" json:"provider"`
+	ModelName                   string    `gorm:"size:128" json:"model_name"`
+	BaseURL                     string    `gorm:"size:512" json:"base_url"`
+	RequestTimeoutSeconds       int       `gorm:"default:30" json:"request_timeout_seconds"`
+	InteractiveTargetSeconds    int       `gorm:"default:2" json:"interactive_target_seconds"`
+	BackgroundJobTimeoutSeconds int       `gorm:"default:60" json:"background_job_timeout_seconds"`
+	DailyGenerationLimit        int       `gorm:"default:5" json:"daily_generation_limit"`
+	Enabled                     bool      `gorm:"default:true" json:"enabled"`
+	APIKeyCiphertext            string    `gorm:"size:2048" json:"-"`
+	APIKeyEncrypted             bool      `gorm:"default:false" json:"-"`
+	UpdatedBy                   *uint     `json:"updated_by,omitempty"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 func (AIConfig) TableName() string { return "ai_configs" }

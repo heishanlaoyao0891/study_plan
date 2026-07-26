@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"study_plan_backend/config"
 	"study_plan_backend/db"
@@ -42,6 +43,7 @@ func TestProtectAIAPIKeyRejectsMissingEncryptionSecret(t *testing.T) {
 
 func usePublicTestServer(t *testing.T, server *httptest.Server) string {
 	t.Helper()
+	resetProviderClientCache()
 	address := strings.TrimPrefix(server.URL, "http://")
 	oldLookup, oldDial := lookupProviderIP, dialProvider
 	lookupProviderIP = func(context.Context, string) ([]net.IPAddr, error) {
@@ -51,9 +53,78 @@ func usePublicTestServer(t *testing.T, server *httptest.Server) string {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
 	t.Cleanup(func() {
+		resetProviderClientCache()
 		lookupProviderIP, dialProvider = oldLookup, oldDial
 	})
 	return "http://provider.example"
+}
+
+func TestProviderClientCacheReusesTransportAndRefreshesCredentials(t *testing.T) {
+	resetProviderClientCache()
+	t.Cleanup(resetProviderClientCache)
+	lookups := 0
+	oldLookup := lookupProviderIP
+	lookupProviderIP = func(context.Context, string) ([]net.IPAddr, error) {
+		lookups++
+		return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+	}
+	t.Cleanup(func() { lookupProviderIP = oldLookup })
+	cfg := models.AIConfig{BaseURL: "https://provider.example/v1", APIKeyCiphertext: "key-one"}
+	first, err := reusableProviderClientContext(context.Background(), cfg, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := reusableProviderClientContext(context.Background(), cfg, time.Minute)
+	if err != nil || first != second || lookups != 1 {
+		t.Fatalf("provider client was not reused: same=%v lookups=%d err=%v", first == second, lookups, err)
+	}
+	cfg.APIKeyCiphertext = "key-two"
+	refreshed, err := reusableProviderClientContext(context.Background(), cfg, time.Minute)
+	if err != nil || refreshed == first || lookups != 2 {
+		t.Fatalf("credential refresh did not replace cached client: replaced=%v lookups=%d err=%v", refreshed != first, lookups, err)
+	}
+}
+
+func TestProviderDialRejectsDNSRebinding(t *testing.T) {
+	resetProviderClientCache()
+	t.Cleanup(resetProviderClientCache)
+	lookups := 0
+	oldLookup, oldDial := lookupProviderIP, dialProvider
+	lookupProviderIP = func(context.Context, string) ([]net.IPAddr, error) {
+		lookups++
+		if lookups == 1 {
+			return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+		}
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+	dialProvider = func(context.Context, string, string) (net.Conn, error) {
+		t.Fatal("dial must not run after private DNS rebinding")
+		return nil, nil
+	}
+	t.Cleanup(func() { lookupProviderIP, dialProvider = oldLookup, oldDial })
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "model", BaseURL: "http://provider.example/v1", RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "key"}
+	_, err := NewAIProvider(cfg).Generate("test", 64)
+	if err == nil || !strings.Contains(err.Error(), "local or private") || lookups < 2 {
+		t.Fatalf("DNS rebinding was not blocked at dial time: lookups=%d err=%v", lookups, err)
+	}
+}
+
+func TestProviderCapturesTokenUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []interface{}{map[string]interface{}{"message": map[string]string{"content": `{"ok":true}`}}},
+			"usage":   map[string]int{"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+		})
+	}))
+	defer server.Close()
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "key"}
+	telemetry := &AIProviderTelemetry{}
+	if _, err := NewAIProvider(cfg).GenerateContext(WithAIProviderTelemetry(context.Background(), telemetry), "test", 64); err != nil {
+		t.Fatal(err)
+	}
+	if telemetry.PromptTokens != 12 || telemetry.CompletionTokens != 7 || telemetry.TotalTokens != 19 {
+		t.Fatalf("token usage was not captured: %+v", telemetry)
+	}
 }
 
 func TestOpenAICompatibleProviderTestValidatesStructuredPlan(t *testing.T) {

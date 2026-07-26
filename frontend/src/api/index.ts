@@ -78,7 +78,7 @@ export interface Plan {
   schedule_overrides?: ScheduleOverride[]
   public_to_group: boolean
   ai_generated: boolean
-  generation_source: '' | 'local' | 'local_enriched'
+  generation_source: '' | 'manual' | 'local' | 'local_enriched' | 'ai_decomposed'
   is_shared: boolean
   sort_order: number
   created_at: string
@@ -377,18 +377,69 @@ export interface PlanningPreview {
 
 export interface PlanningResponse {
   preview: PlanningPreview
-  mode: 'ai' | 'fallback'
-  source: 'local' | 'local_enriched'
+  mode: 'pending' | 'ai' | 'fallback'
+  source: 'local' | 'local_enriched' | 'ai_decomposed'
   provenance_token: string
+  preview_id: string
+  preview_version: number
+  expires_at: string
+  context_fingerprint: string
+  job: PlanningJob | null
   warnings: string[]
   enrichment: {
-    status: 'success' | 'disabled' | 'configuration_error' | 'quota_limited' | 'timeout' | 'cancelled' | 'invalid_output' | 'provider_error'
+    status: PlanningJobStatus | 'success' | 'disabled' | 'configuration_error' | 'quota_limited' | 'timeout' | 'invalid_output' | 'provider_error'
     reason: string
     provider: string
     model: string
   }
   phase_timings_ms: Record<string, number>
   request_budget_ms: number
+}
+
+export type PlanningJobStatus = 'queued' | 'decomposing' | 'scheduling' | 'ready' | 'fallback' | 'cancelled' | 'expired'
+
+export interface PlanningJob {
+  id: string
+  status: PlanningJobStatus
+  phase: PlanningJobStatus
+  provider?: string
+  model?: string
+  preview_id: string
+  baseline_version: number
+  result_version?: number
+  attempt_count: number
+  failure_reason?: string
+  background_budget_seconds: number
+  created_at: string
+  updated_at: string
+  expires_at: string
+}
+
+export interface PlanningJobResponse {
+  job: PlanningJob
+  preview?: PlanningPreview
+  preview_id?: string
+  preview_version?: number
+  source?: PlanningResponse['source']
+  expires_at?: string
+  context_fingerprint?: string
+  provenance_token?: string
+}
+
+export type PreviewMutation =
+  | { operation: 'add'; task: PlanningPreviewTask; insert_after_identity?: string }
+  | { operation: 'remove'; task_identity: string }
+  | { operation: 'split'; task_identity: string; first_part_minutes: number }
+  | { operation: 'reorder'; ordered_identities: string[] }
+
+export interface PreviewMutationResponse {
+  preview: PlanningPreview
+  preview_id: string
+  preview_version: number
+  source: PlanningResponse['source']
+  expires_at: string
+  context_fingerprint: string
+  provenance_token: string
 }
 
 export type FeedbackCategory = 'issue' | 'suggestion' | 'content' | 'account' | 'other'
@@ -683,8 +734,17 @@ export const AIApi = {
   regeneratePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {
     return api.post<PlanningResponse>('/api/ai/regenerate', data)
   },
-  commitPlan(preview: PlanningPreview, provenance_token: string, idempotency_key: string, confirm_overload = false) {
-    return api.post<any>('/api/ai/commit-plan', { preview, provenance_token, idempotency_key, confirm_overload })
+  planningJob(id: string) {
+    return api.get<PlanningJobResponse>(`/api/ai/jobs/${id}`)
+  },
+  cancelPlanningJob(id: string) {
+    return api.delete<{ job: PlanningJob }>(`/api/ai/jobs/${id}`)
+  },
+  mutatePreview(previewId: string, version: number, mutation: PreviewMutation) {
+    return api.post<PreviewMutationResponse>(`/api/ai/previews/${previewId}/versions/${version}/mutate`, mutation)
+  },
+  commitPlan(preview: PlanningPreview, preview_id: string, preview_version: number, provenance_token: string, idempotency_key: string, confirm_overload = false) {
+    return api.post<any>('/api/ai/commit-plan', { preview, preview_id, preview_version, provenance_token, idempotency_key, confirm_overload })
   },
 }
 

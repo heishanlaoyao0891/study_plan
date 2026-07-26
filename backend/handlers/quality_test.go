@@ -160,7 +160,7 @@ func TestRequireCompleteAccountAllowsCompleteUser(t *testing.T) {
 	}
 }
 
-func TestDailyTaskUniqueIndex(t *testing.T) {
+func TestDailyTasksAllowMultipleRowsPerPlanDate(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "u1", Nickname: "u1"}
 	if err := db.DB.Create(&user).Error; err != nil {
@@ -174,8 +174,8 @@ func TestDailyTaskUniqueIndex(t *testing.T) {
 	if err := db.DB.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DB.Create(&models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "B"}).Error; err == nil {
-		t.Fatal("expected unique index to reject duplicate daily task")
+	if err := db.DB.Create(&models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2026-07-20", Title: "B"}).Error; err != nil {
+		t.Fatalf("multiple tasks on one plan date should be allowed: %v", err)
 	}
 }
 
@@ -197,8 +197,11 @@ func TestAutoMigrateCreatesCriticalTablesAndIndexes(t *testing.T) {
 			t.Fatalf("expected table for %T", model)
 		}
 	}
-	if !db.DB.Migrator().HasIndex(&models.DailyTask{}, "idx_daily_tasks_user_plan_date") {
-		t.Fatal("expected daily task unique index")
+	if db.DB.Migrator().HasIndex(&models.DailyTask{}, "idx_daily_tasks_user_plan_date") {
+		t.Fatal("legacy one-task-per-day index should be removed")
+	}
+	if !db.DB.Migrator().HasIndex(&models.DailyTask{}, "idx_daily_tasks_user_date_schedule") {
+		t.Fatal("expected daily task schedule lookup index")
 	}
 	if !db.DB.Migrator().HasIndex(&models.Checkin{}, "idx_checkins_user_plan_date") {
 		t.Fatal("expected checkin unique index")

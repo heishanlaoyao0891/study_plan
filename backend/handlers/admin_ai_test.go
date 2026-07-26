@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -40,6 +41,41 @@ func TestAIProviderRequiresNewKeyForDifferentOrigin(t *testing.T) {
 
 	if strings.Contains(recorder.Body.String(), "stored-secret-key") || !strings.Contains(recorder.Body.String(), "new API key is required") {
 		t.Fatalf("expected different-origin test to reject stored-key reuse without disclosure: %s", recorder.Body.String())
+	}
+}
+
+func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
+	setupTestDB(t)
+	now := time.Now().UTC()
+	jobs := []models.PlanningJob{
+		{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", UserID: 1, RequestFingerprint: "a", Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ExpiresAt: now.Add(time.Hour)},
+		{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UserID: 1, RequestFingerprint: "b", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, Provider: "siliconflow", ModelName: "model", ProviderLatencyMS: 100, TotalTokens: 10, ExpiresAt: now.Add(time.Hour)},
+		{ID: "cccccccccccccccccccccccccccccccc", UserID: 1, RequestFingerprint: "c", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 200, TotalTokens: 20, ExpiresAt: now.Add(time.Hour)},
+		{ID: "dddddddddddddddddddddddddddddddd", UserID: 1, RequestFingerprint: "d", Status: models.PlanningJobStatusFallback, Phase: models.PlanningJobStatusFallback, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 900, TotalTokens: 30, FailureReason: "invalid_blueprint", ExpiresAt: now.Add(time.Hour)},
+	}
+	if err := db.DB.Create(&jobs).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.GET("/metrics", GetAIPlanningMetrics)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	var response struct {
+		Data struct {
+			QueueDepth   int64            `json:"queue_depth"`
+			SuccessRate  float64          `json:"success_rate"`
+			FallbackRate float64          `json:"fallback_rate"`
+			P50          int64            `json:"p50_latency_ms"`
+			P95          int64            `json:"p95_latency_ms"`
+			TotalTokens  int64            `json:"total_tokens"`
+			Reasons      map[string]int64 `json:"fallback_reasons"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Data.QueueDepth != 1 || response.Data.SuccessRate != 2.0/3.0 || response.Data.FallbackRate != 1.0/3.0 || response.Data.P50 != 200 || response.Data.P95 != 900 || response.Data.TotalTokens != 60 || response.Data.Reasons["invalid_blueprint"] != 1 {
+		t.Fatalf("unexpected planning metrics: %+v", response.Data)
 	}
 }
 

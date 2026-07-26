@@ -1,32 +1,45 @@
 ## Why
 
-Plan generation currently treats the model as the primary planner and the backend as a validator or fallback. This creates long synchronous requests, allows the model to propose avoidable schedule conflicts, blocks useful local planning when AI is disabled or quota-limited, and labels deterministic output as AI-generated. The product needs its own planning Agent that understands account history, workload, dates, occupied time, and product rules while using the model only as a bounded planning collaborator.
+The backend planning Agent already produces a fast, conflict-free local candidate, but the configured model is currently limited to an eight-second synchronous enrichment window and may only rewrite semantic fields on a fixed task skeleton. Even when the model succeeds, it cannot choose meaningful learning stages, vary the task count, or genuinely decompose the user's goal. In practice the recommended SiliconFlow model often exceeds the short interactive deadline, so users repeatedly receive a generic local plan and the external AI provides little product value.
+
+The product needs AI to participate in curriculum and task decomposition without giving it authority over unsafe dates, occupied time, workload limits, or persistence. Model latency must be separated from the interactive HTTP response so H5 and mini-program users receive immediate feedback while the model receives enough time to produce useful work.
 
 ## What Changes
 
-- Make a backend planning Agent the authoritative orchestrator for validation, context collection, stage decomposition, scheduling, conflict repair, and final verification.
-- Generate a deterministic conflict-free candidate plan before calling any model.
-- Add local stage templates for learning, reading, exam preparation, project delivery, and general goals.
-- Send the model a precise planning brief containing the normalized goal, local stage skeleton, candidate dates/times, workload profile, and safe aggregate history.
-- Allow the model to enrich task semantics and suggest schedule adjustments, but never bypass Agent-owned constraints or persisted occupancy.
-- Enforce one total interactive generation budget and return the valid local candidate when enrichment times out or fails.
-- Separate local planning availability from model enablement and model quota.
-- Return truthful source, enrichment status, warnings, fallback reason, and phase timing metadata.
-- Add frontend loading, duplicate-submit prevention, source explanation, and conflict-adjustment warnings.
+- Return a valid local baseline preview immediately and create a persistent asynchronous planning job when model decomposition is enabled.
+- Ask the model for a compact learning blueprint containing stages, variable task count, objectives, difficulty, estimated effort, ordering, and prerequisite hints rather than a fully scheduled plan.
+- Let the backend planning Agent convert the blueprint into concrete dates and time slots, repair capacity or occupancy conflicts, recompute totals, and perform final validation.
+- Keep the local baseline available while the job is queued or running, and preserve it as the fallback when the model times out, fails, exceeds quota, or returns invalid output.
+- Add job status, progress phase, preview ID, preview version, expiry, source, phase timings, and bounded failure metadata.
+- Prevent a late AI result from silently overwriting a preview the user has already edited; expose the newer version for explicit review instead.
+- Separate the short interactive response budget from a configurable background model budget. Default the model job budget to 60 seconds and allow administrators to configure 15-120 seconds.
+- Size the model output budget from the requested plan scope and reuse safe provider transports without weakening public-origin enforcement.
+- Preserve the existing `/api/ai/*` routes with additive job metadata while introducing a status endpoint for polling.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `ai-plan-generator`: Replace model-first generation with an Agent-orchestrated, constraint-first planning workflow and optional bounded model collaboration.
-- `plan-management`: Reuse authoritative scheduling and overload rules while creating and committing generated previews.
-- `admin-config`: Separate planning availability from model enrichment controls and configure the interactive enrichment time budget.
+- `ai-plan-generator`: Make the model a real task-decomposition collaborator through asynchronous planning jobs while the Agent remains the final authority.
+- `plan-management`: Schedule, version, review, and transactionally commit local or AI-decomposed previews with the same authoritative rules.
+- `admin-config`: Configure and observe separate interactive and background model budgets, provider health, completion rate, latency, and fallback reasons.
 
 ## Confirmed Decisions
 
-- The Agent owns validation, dates, time ranges, workload, conflict repair, final plan totals, and persistence.
-- SiliconFlow is an optional planning collaborator for semantic decomposition and enrichment, not the source of truth.
-- Version one uses rule-based stage templates rather than a large maintained domain curriculum library.
-- A valid local plan is returned when SiliconFlow is disabled, unavailable, over quota, invalid, or too slow.
-- Model enrichment may improve titles, objectives, descriptions, summaries, rationale, and stage labels; schedule suggestions are accepted only after deterministic repair and revalidation.
-- Existing `/api/ai/*` routes remain compatible during the client migration.
+- AI owns semantic learning decomposition: stages, task intent, task count suggestions, objectives, descriptions, difficulty, estimated effort, ordering, and prerequisite hints.
+- The backend Agent owns account context, privacy boundaries, dates, time slots, workload limits, conflict repair, derived totals, final validation, and persistence.
+- The initial API response returns the local baseline promptly instead of holding a mobile request open for the full model call.
+- Background model decomposition defaults to a 60-second deadline and is configurable from 15 to 120 seconds.
+- The model returns a compact blueprint without persisted IDs or authoritative dates and times.
+- The backend may split an oversized blueprint task into sequenced parts when it cannot fit within the user's daily capacity, and reports that repair in warnings.
+- AI results create a new preview version. They auto-replace the displayed baseline only when the user has not edited or committed an older version.
+- Users may accept the local baseline without waiting for AI, continue waiting, or explicitly review an AI version that arrives later.
+- Local planning remains available when model decomposition is disabled, unavailable, quota-limited, invalid, or too slow.
+
+## Non-Goals
+
+- The model does not own final scheduling, conflict resolution, workload enforcement, or database writes.
+- This change does not add an open-ended chatbot or streaming token UI.
+- This change does not require a distributed queue; a persistent database-backed job runner is sufficient for the current deployment scale.
+- This change does not redesign the provider's general retry policy beyond what is necessary for safe connection reuse.
+- Broad fault-injection matrices and unrelated planning-page enhancements are deferred once the functional completion paths in this change are verified.

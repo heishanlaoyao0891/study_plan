@@ -32,6 +32,7 @@ func main() {
 	}
 	services.StartArchiveSync()
 	services.StartNotificationScheduler(db.DB)
+	services.StartPlanningJobWorker(db.DB)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -99,6 +100,9 @@ func main() {
 		// AI 计划
 		bound.POST("/ai/generate-plan", handlers.GeneratePlan)
 		bound.POST("/ai/regenerate", handlers.RegeneratePlan)
+		bound.GET("/ai/jobs/:id", handlers.GetPlanningJob)
+		bound.DELETE("/ai/jobs/:id", handlers.CancelPlanningJob)
+		bound.POST("/ai/previews/:id/versions/:version/mutate", handlers.MutatePlanningPreview)
 		bound.POST("/ai/commit-plan", handlers.CommitAIPlan)
 		bound.PUT("/ai/plan/:id/edit", handlers.EditAIPlan)
 
@@ -183,6 +187,7 @@ func main() {
 		admin.PUT("/slack-config/:userId", handlers.UpsertUserSlackConfig)
 		admin.GET("/suspicious-records", handlers.GetSuspiciousRecords)
 		admin.GET("/ai-config", handlers.GetAIConfig)
+		admin.GET("/ai-metrics", handlers.GetAIPlanningMetrics)
 		admin.PUT("/ai-config", handlers.UpdateAIConfig)
 		admin.POST("/ai-config/test", handlers.TestAIProvider)
 		admin.GET("/subscription-config", handlers.GetSubscriptionMessageConfig)

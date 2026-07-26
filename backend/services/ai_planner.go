@@ -489,20 +489,11 @@ func planningTaskMinutes(ctx PlanningContext) int {
 }
 
 func firstFreePlanningSlot(availableStart, availableEnd, duration int, occupied [][2]int) (int, bool) {
-	sort.Slice(occupied, func(i, j int) bool { return occupied[i][0] < occupied[j][0] })
-	candidate := availableStart
+	rows := make([]ScheduleInterval, 0, len(occupied))
 	for _, interval := range occupied {
-		if interval[1] <= candidate || interval[0] >= availableEnd {
-			continue
-		}
-		if candidate+duration <= interval[0] {
-			return candidate, true
-		}
-		if interval[1] > candidate {
-			candidate = interval[1]
-		}
+		rows = append(rows, ScheduleInterval{Start: interval[0], End: interval[1]})
 	}
-	return candidate, candidate+duration <= availableEnd
+	return FirstFreeScheduleSlot(availableStart, availableEnd, duration, rows)
 }
 
 func stageIndex(index, total, stageCount int) int {
@@ -553,8 +544,8 @@ func recomputePlanTotals(preview *PlanPreview) {
 }
 
 func NormalizeCommittedPlanPreview(preview PlanPreview) (PlanPreview, error) {
-	if len(preview.Tasks) == 0 || len(preview.Tasks) > defaultMaxPreviewDays {
-		return PlanPreview{}, fmt.Errorf("task count must be between 1 and %d", defaultMaxPreviewDays)
+	if len(preview.Tasks) == 0 || len(preview.Tasks) > maxGeneratedPreviewTasks {
+		return PlanPreview{}, fmt.Errorf("task count must be between 1 and %d", maxGeneratedPreviewTasks)
 	}
 	for index := range preview.Tasks {
 		task := &preview.Tasks[index]

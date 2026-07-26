@@ -64,6 +64,8 @@ export interface AIConfig {
   model_name: string
   base_url: string
   request_timeout_seconds: number
+  interactive_target_seconds: number
+  background_job_timeout_seconds: number
   daily_generation_limit: number
   enabled: boolean
   api_key_masked?: string
@@ -71,6 +73,21 @@ export interface AIConfig {
   key_storage?: 'missing' | 'plaintext' | 'encrypted'
   effective_mode?: 'disabled' | 'fallback' | 'ai'
   fallback_enabled?: boolean
+}
+
+export interface AIPlanningMetrics {
+  window_days: number
+  queue_depth: number
+  status_counts: Record<string, number>
+  success_rate: number
+  fallback_rate: number
+  p50_latency_ms: number
+  p95_latency_ms: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  fallback_reasons: Record<string, number>
+  provider_models: Record<string, number>
 }
 
 export interface SubscriptionConfig {
@@ -239,6 +256,9 @@ export const AdminApi = {
   },
   aiConfig() {
     return request<AIConfig>('/api/admin/ai-config')
+  },
+  aiMetrics() {
+    return request<AIPlanningMetrics>('/api/admin/ai-metrics')
   },
   saveAIConfig(data: AIConfig & { api_key?: string }) {
     return request<AIConfig>('/api/admin/ai-config', { method: 'PUT', body: JSON.stringify(data) })

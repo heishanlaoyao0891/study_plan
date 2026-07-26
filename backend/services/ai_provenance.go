@@ -13,11 +13,14 @@ import (
 )
 
 type PlanProvenanceClaims struct {
-	UserID         uint     `json:"user_id"`
-	Source         string   `json:"source"`
-	ImmutableHash  string   `json:"immutable_hash"`
-	TaskIdentities []string `json:"task_identities"`
-	Type           string   `json:"type"`
+	UserID             uint     `json:"user_id"`
+	Source             string   `json:"source"`
+	PreviewID          string   `json:"preview_id,omitempty"`
+	PreviewVersion     int      `json:"preview_version,omitempty"`
+	ContextFingerprint string   `json:"context_fingerprint,omitempty"`
+	ImmutableHash      string   `json:"immutable_hash"`
+	TaskIdentities     []string `json:"task_identities"`
+	Type               string   `json:"type"`
 	jwt.RegisteredClaims
 }
 
@@ -28,7 +31,18 @@ func HashPlanPreview(preview PlanPreview) string {
 }
 
 func SignPlanProvenance(userID uint, source string, preview PlanPreview) (string, error) {
-	if source != "local" && source != "local_enriched" {
+	return signPlanProvenance(userID, source, "", 0, "", time.Now().Add(30*time.Minute), preview)
+}
+
+func SignPlanVersionProvenance(userID uint, source, previewID string, version int, contextFingerprint string, expiresAt time.Time, preview PlanPreview) (string, error) {
+	if previewID == "" || version < 1 || contextFingerprint == "" {
+		return "", errors.New("preview version metadata is required")
+	}
+	return signPlanProvenance(userID, source, previewID, version, contextFingerprint, expiresAt, preview)
+}
+
+func signPlanProvenance(userID uint, source, previewID string, version int, contextFingerprint string, expiresAt time.Time, preview PlanPreview) (string, error) {
+	if source != "local" && source != "local_enriched" && source != "ai_decomposed" {
 		return "", errors.New("invalid generation source")
 	}
 	now := time.Now()
@@ -39,7 +53,7 @@ func SignPlanProvenance(userID uint, source string, preview PlanPreview) (string
 		}
 		identities[index] = task.Identity
 	}
-	claims := PlanProvenanceClaims{UserID: userID, Source: source, ImmutableHash: HashPlanPreviewImmutable(preview), TaskIdentities: identities, Type: "plan_preview", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(now.Add(30 * time.Minute)), IssuedAt: jwt.NewNumericDate(now), Issuer: "study_plan_preview"}}
+	claims := PlanProvenanceClaims{UserID: userID, Source: source, PreviewID: previewID, PreviewVersion: version, ContextFingerprint: contextFingerprint, ImmutableHash: HashPlanPreviewImmutable(preview), TaskIdentities: identities, Type: "plan_preview", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(expiresAt), IssuedAt: jwt.NewNumericDate(now), Issuer: "study_plan_preview"}}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(config.App.JWTSecret))
 }
 
@@ -51,7 +65,7 @@ func ParsePlanProvenance(token string, userID uint) (*PlanProvenanceClaims, erro
 		}
 		return []byte(config.App.JWTSecret), nil
 	})
-	if err != nil || !parsed.Valid || claims.Type != "plan_preview" || claims.Issuer != "study_plan_preview" || claims.UserID != userID || claims.ImmutableHash == "" || len(claims.TaskIdentities) == 0 || (claims.Source != "local" && claims.Source != "local_enriched") {
+	if err != nil || !parsed.Valid || claims.Type != "plan_preview" || claims.Issuer != "study_plan_preview" || claims.UserID != userID || claims.ImmutableHash == "" || len(claims.TaskIdentities) == 0 || (claims.Source != "local" && claims.Source != "local_enriched" && claims.Source != "ai_decomposed") {
 		return nil, errors.New("invalid or expired preview provenance")
 	}
 	return claims, nil

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"errors"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -36,13 +38,15 @@ type suspiciousRecordResp struct {
 }
 
 type aiConfigReq struct {
-	Provider              string `json:"provider"`
-	ModelName             string `json:"model_name"`
-	BaseURL               string `json:"base_url"`
-	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
-	DailyGenerationLimit  int    `json:"daily_generation_limit"`
-	Enabled               *bool  `json:"enabled"`
-	APIKey                string `json:"api_key"`
+	Provider                    string `json:"provider"`
+	ModelName                   string `json:"model_name"`
+	BaseURL                     string `json:"base_url"`
+	RequestTimeoutSeconds       int    `json:"request_timeout_seconds"`
+	InteractiveTargetSeconds    int    `json:"interactive_target_seconds"`
+	BackgroundJobTimeoutSeconds int    `json:"background_job_timeout_seconds"`
+	DailyGenerationLimit        int    `json:"daily_generation_limit"`
+	Enabled                     *bool  `json:"enabled"`
+	APIKey                      string `json:"api_key"`
 }
 
 type subscriptionConfigReq struct {
@@ -408,6 +412,65 @@ func GetAIConfig(c *gin.Context) {
 	api.OK(c, aiConfigResp(cfg))
 }
 
+func GetAIPlanningMetrics(c *gin.Context) {
+	from := time.Now().UTC().AddDate(0, 0, -30)
+	var jobs []models.PlanningJob
+	if err := db.DB.Where("created_at >= ?", from).Find(&jobs).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai planning metrics failed")
+		return
+	}
+	statusCounts := map[string]int64{}
+	fallbackReasons := map[string]int64{}
+	latencies := make([]int64, 0, len(jobs))
+	providerModels := map[string]int64{}
+	var promptTokens, completionTokens, totalTokens int64
+	var queueDepth int64
+	for _, job := range jobs {
+		statusCounts[job.Status]++
+		if job.Status == models.PlanningJobStatusQueued || job.Status == models.PlanningJobStatusDecomposing || job.Status == models.PlanningJobStatusScheduling {
+			queueDepth++
+		}
+		if job.FailureReason != "" {
+			fallbackReasons[job.FailureReason]++
+		}
+		if job.ProviderLatencyMS > 0 {
+			latencies = append(latencies, job.ProviderLatencyMS)
+		}
+		if job.Provider != "" || job.ModelName != "" {
+			providerModels[job.Provider+"/"+job.ModelName]++
+		}
+		promptTokens += int64(job.PromptTokens)
+		completionTokens += int64(job.CompletionTokens)
+		totalTokens += int64(job.TotalTokens)
+	}
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	ready, fallback := statusCounts[models.PlanningJobStatusReady], statusCounts[models.PlanningJobStatusFallback]
+	terminal := ready + fallback
+	successRate, fallbackRate := 0.0, 0.0
+	if terminal > 0 {
+		successRate = float64(ready) / float64(terminal)
+		fallbackRate = float64(fallback) / float64(terminal)
+	}
+	api.OK(c, gin.H{
+		"window_days": 30, "queue_depth": queueDepth, "status_counts": statusCounts,
+		"success_rate": successRate, "fallback_rate": fallbackRate,
+		"p50_latency_ms": planningLatencyPercentile(latencies, 0.50), "p95_latency_ms": planningLatencyPercentile(latencies, 0.95),
+		"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
+		"fallback_reasons": fallbackReasons, "provider_models": providerModels,
+	})
+}
+
+func planningLatencyPercentile(values []int64, percentile float64) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	index := int(math.Ceil(float64(len(values))*percentile)) - 1
+	if index < 0 {
+		index = 0
+	}
+	return values[index]
+}
+
 func UpdateAIConfig(c *gin.Context) {
 	adminID := c.GetUint(middleware.CtxUserIDKey)
 	var req aiConfigReq
@@ -428,6 +491,12 @@ func UpdateAIConfig(c *gin.Context) {
 	cfg.BaseURL = strings.TrimSpace(req.BaseURL)
 	services.NormalizeAIConfig(&cfg)
 	cfg.RequestTimeoutSeconds = req.RequestTimeoutSeconds
+	if req.InteractiveTargetSeconds > 0 {
+		cfg.InteractiveTargetSeconds = req.InteractiveTargetSeconds
+	}
+	if req.BackgroundJobTimeoutSeconds > 0 {
+		cfg.BackgroundJobTimeoutSeconds = req.BackgroundJobTimeoutSeconds
+	}
 	cfg.DailyGenerationLimit = req.DailyGenerationLimit
 	if req.Enabled != nil {
 		cfg.Enabled = *req.Enabled
@@ -478,6 +547,12 @@ func TestAIProvider(c *gin.Context) {
 	services.NormalizeAIConfig(&cfg)
 	if req.RequestTimeoutSeconds > 0 {
 		cfg.RequestTimeoutSeconds = req.RequestTimeoutSeconds
+	}
+	if req.InteractiveTargetSeconds > 0 {
+		cfg.InteractiveTargetSeconds = req.InteractiveTargetSeconds
+	}
+	if req.BackgroundJobTimeoutSeconds > 0 {
+		cfg.BackgroundJobTimeoutSeconds = req.BackgroundJobTimeoutSeconds
 	}
 	if req.APIKey != "" {
 		cfg.APIKeyCiphertext = req.APIKey
@@ -580,7 +655,7 @@ func firstAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 60, DailyGenerationLimit: 5, Enabled: true}
 		err = db.DB.Create(&cfg).Error
 	} else if err == nil {
 		original := cfg
@@ -617,17 +692,19 @@ func aiConfigResp(cfg models.AIConfig) gin.H {
 		}
 	}
 	return gin.H{
-		"provider":                cfg.Provider,
-		"model_name":              cfg.ModelName,
-		"base_url":                cfg.BaseURL,
-		"request_timeout_seconds": cfg.RequestTimeoutSeconds,
-		"daily_generation_limit":  cfg.DailyGenerationLimit,
-		"enabled":                 cfg.Enabled,
-		"has_api_key":             cfg.APIKeyCiphertext != "",
-		"api_key_masked":          maskSecret(cfg.APIKeyCiphertext),
-		"key_storage":             keyStorage,
-		"effective_mode":          effectiveMode,
-		"fallback_enabled":        true,
+		"provider":                       cfg.Provider,
+		"model_name":                     cfg.ModelName,
+		"base_url":                       cfg.BaseURL,
+		"request_timeout_seconds":        cfg.RequestTimeoutSeconds,
+		"interactive_target_seconds":     cfg.InteractiveTargetSeconds,
+		"background_job_timeout_seconds": cfg.BackgroundJobTimeoutSeconds,
+		"daily_generation_limit":         cfg.DailyGenerationLimit,
+		"enabled":                        cfg.Enabled,
+		"has_api_key":                    cfg.APIKeyCiphertext != "",
+		"api_key_masked":                 maskSecret(cfg.APIKeyCiphertext),
+		"key_storage":                    keyStorage,
+		"effective_mode":                 effectiveMode,
+		"fallback_enabled":               true,
 	}
 }
 

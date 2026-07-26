@@ -3,6 +3,8 @@ package services
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"study_plan_backend/config"
@@ -21,6 +24,18 @@ type AIProvider interface {
 	Test() error
 	Generate(prompt string, maxTokens int) (string, error)
 	GenerateContext(ctx context.Context, prompt string, maxTokens int) (string, error)
+}
+
+type AIProviderTelemetry struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+type aiProviderTelemetryKey struct{}
+
+func WithAIProviderTelemetry(ctx context.Context, telemetry *AIProviderTelemetry) context.Context {
+	return context.WithValue(ctx, aiProviderTelemetryKey{}, telemetry)
 }
 
 const (
@@ -39,6 +54,16 @@ var (
 	dialProvider     = (&net.Dialer{}).DialContext
 )
 
+type cachedProviderClient struct {
+	origin string
+	client *http.Client
+}
+
+var providerClientCache = struct {
+	sync.Mutex
+	items map[string]cachedProviderClient
+}{items: map[string]cachedProviderClient{}}
+
 func NormalizeAIProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "openai", "openai-compatible", AIProviderOpenAICompatible:
@@ -51,6 +76,12 @@ func NormalizeAIProvider(provider string) string {
 }
 
 func NormalizeAIConfig(cfg *models.AIConfig) {
+	if cfg.InteractiveTargetSeconds == 0 {
+		cfg.InteractiveTargetSeconds = 2
+	}
+	if cfg.BackgroundJobTimeoutSeconds == 0 {
+		cfg.BackgroundJobTimeoutSeconds = 60
+	}
 	legacyDeepSeek := strings.EqualFold(strings.TrimSpace(cfg.Provider), "deepseek")
 	if !legacyDeepSeek {
 		cfg.Provider = NormalizeAIProvider(cfg.Provider)
@@ -136,16 +167,13 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 	if !p.Config.Enabled {
 		return "", fmt.Errorf("provider is disabled")
 	}
-	if err := ValidateAIConfigContext(ctx, p.Config, false); err != nil {
-		return "", err
-	}
 	reqBody := buildCompletionRequest(p.Config, prompt, maxTokens)
 	body, _ := json.Marshal(reqBody)
 	timeout := time.Duration(maxInt(p.Config.RequestTimeoutSeconds, 30)) * time.Second
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < timeout {
 		timeout = time.Until(deadline)
 	}
-	client, err := restrictedProviderClientContext(ctx, p.Config.BaseURL, timeout)
+	client, err := reusableProviderClientContext(ctx, p.Config, timeout)
 	if err != nil {
 		return "", err
 	}
@@ -199,6 +227,11 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 					Content json.RawMessage `json:"content"`
 				} `json:"message"`
 			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 {
 			return "", fmt.Errorf("provider returned invalid completion")
@@ -206,6 +239,11 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 		content, err := decodeCompletionContent(decoded.Choices[0].Message.Content)
 		if err != nil {
 			return "", err
+		}
+		if telemetry, ok := ctx.Value(aiProviderTelemetryKey{}).(*AIProviderTelemetry); ok && telemetry != nil {
+			telemetry.PromptTokens = decoded.Usage.PromptTokens
+			telemetry.CompletionTokens = decoded.Usage.CompletionTokens
+			telemetry.TotalTokens = decoded.Usage.TotalTokens
 		}
 		return content, nil
 	}
@@ -218,6 +256,10 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 func buildCompletionRequest(cfg models.AIConfig, prompt string, maxTokens int) map[string]any {
 	contract := `Return exactly one JSON object with this shape and these exact key names. Do not rename tasks to task, steps, schedule, or daily_tasks. Do not wrap the JSON in Markdown:
 {"title":"string","summary":"string","estimated_total_hours":1,"rationale":"string","tasks":[{"date":"YYYY-MM-DD","planned_start":"HH:mm","planned_end":"HH:mm","title":"string","objective":"specific action different from title","description":"string","estimated_minutes":60,"difficulty":"easy"}]}`
+	if strings.Contains(prompt, `"contract":"planning_blueprint_v1"`) {
+		contract = `Return exactly one JSON object and no Markdown. Do not include dates, time slots, persisted IDs, or private data. Use this schema:
+{"title":"string","summary":"string","rationale":"string","stages":[{"id":"stage_1","name":"string","objective":"string","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"string","objective":"specific action different from title","description":"string","effort_minutes":60,"difficulty":"easy|medium|hard","order":1,"prerequisite_ids":[]}]}`
+	}
 	request := map[string]any{
 		"model":       cfg.ModelName,
 		"messages":    []map[string]string{{"role": "system", "content": contract}, {"role": "user", "content": prompt}},
@@ -258,6 +300,65 @@ func completionEndpoint(baseURL string) string {
 		return baseURL + "/chat/completions"
 	}
 	return baseURL + "/v1/chat/completions"
+}
+
+func reusableProviderClientContext(ctx context.Context, cfg models.AIConfig, timeout time.Duration) (*http.Client, error) {
+	key, origin, err := providerClientCacheKey(cfg)
+	if err != nil {
+		return nil, err
+	}
+	providerClientCache.Lock()
+	if cached, ok := providerClientCache.items[key]; ok {
+		providerClientCache.Unlock()
+		return cached.client, nil
+	}
+	providerClientCache.Unlock()
+	client, err := restrictedProviderClientContext(ctx, cfg.BaseURL, timeout)
+	if err != nil {
+		return nil, err
+	}
+	client.Timeout = 0
+	providerClientCache.Lock()
+	if cached, ok := providerClientCache.items[key]; ok {
+		providerClientCache.Unlock()
+		if transport, ok := client.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+		return cached.client, nil
+	}
+	for existingKey, cached := range providerClientCache.items {
+		if cached.origin == origin && existingKey != key {
+			if transport, ok := cached.client.Transport.(*http.Transport); ok {
+				transport.CloseIdleConnections()
+			}
+			delete(providerClientCache.items, existingKey)
+		}
+	}
+	providerClientCache.items[key] = cachedProviderClient{origin: origin, client: client}
+	providerClientCache.Unlock()
+	return client, nil
+}
+
+func providerClientCacheKey(cfg models.AIConfig) (string, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(cfg.BaseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", "", fmt.Errorf("base_url must be an absolute HTTP(S) URL")
+	}
+	origin := strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+	payload := origin + "\x00" + cfg.APIKeyCiphertext + "\x00" + fmt.Sprintf("%t", cfg.APIKeyEncrypted)
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:]), origin, nil
+}
+
+func resetProviderClientCache() {
+	providerClientCache.Lock()
+	defer providerClientCache.Unlock()
+	for _, cached := range providerClientCache.items {
+		if transport, ok := cached.client.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
+	providerClientCache.items = map[string]cachedProviderClient{}
 }
 
 func restrictedProviderClient(baseURL string, timeout time.Duration) (*http.Client, error) {
@@ -403,6 +504,20 @@ func ValidateAIConfigContext(ctx context.Context, cfg models.AIConfig, requireEn
 	if cfg.RequestTimeoutSeconds < 1 || cfg.RequestTimeoutSeconds > 120 {
 		return fmt.Errorf("request_timeout_seconds must be between 1 and 120")
 	}
+	interactiveTarget := cfg.InteractiveTargetSeconds
+	if interactiveTarget == 0 {
+		interactiveTarget = 2
+	}
+	if interactiveTarget < 1 || interactiveTarget > 5 {
+		return fmt.Errorf("interactive_target_seconds must be between 1 and 5")
+	}
+	backgroundBudget := cfg.BackgroundJobTimeoutSeconds
+	if backgroundBudget == 0 {
+		backgroundBudget = 60
+	}
+	if backgroundBudget < 15 || backgroundBudget > 120 {
+		return fmt.Errorf("background_job_timeout_seconds must be between 15 and 120")
+	}
 	if cfg.DailyGenerationLimit < 1 || cfg.DailyGenerationLimit > 100 {
 		return fmt.Errorf("daily_generation_limit must be between 1 and 100")
 	}
@@ -453,7 +568,7 @@ func loadAIConfigContext(ctx context.Context) (models.AIConfig, error) {
 	database := db.DB.WithContext(ctx)
 	err := database.Order("id ASC").First(&cfg).Error
 	if err != nil {
-		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 60, DailyGenerationLimit: 5, Enabled: true}
 		if createErr := database.Create(&cfg).Error; createErr != nil {
 			return cfg, createErr
 		}

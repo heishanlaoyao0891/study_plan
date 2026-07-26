@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -65,12 +66,11 @@ func TestGeneratePlanReportsRuleFallbackTruthfully(t *testing.T) {
 	}
 }
 
-func TestGeneratePlanReturnsLocalPreviewForEnrichmentFailures(t *testing.T) {
+func TestGeneratePlanReturnsLocalPreviewWhenDecompositionCannotQueue(t *testing.T) {
 	tests := []struct {
 		name       string
 		configure  func()
 		status     string
-		cancel     bool
 		wantSource string
 	}{
 		{name: "disabled", configure: func() {
@@ -80,22 +80,14 @@ func TestGeneratePlanReturnsLocalPreviewForEnrichmentFailures(t *testing.T) {
 			}
 		}, status: "disabled", wantSource: "local"},
 		{name: "configuration error", configure: func() {
-			currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) { return "", nil })
-			validateAIConfigContext = func(context.Context, models.AIConfig, bool) error { return errors.New("bad config") }
+			currentAIProvider = func(context.Context) (models.AIConfig, services.AIProvider, error) {
+				return models.AIConfig{}, nil, errors.New("bad config")
+			}
 		}, status: "configuration_error", wantSource: "local"},
 		{name: "quota", configure: func() {
 			currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) { return "", nil })
 			canUseAIGeneration = func(context.Context, uint, int) (bool, int64, error) { return false, 5, nil }
 		}, status: "quota_limited", wantSource: "local"},
-		{name: "timeout", configure: func() {
-			currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) { return "", context.DeadlineExceeded })
-		}, status: "timeout", wantSource: "local"},
-		{name: "invalid output", configure: func() {
-			currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) { return "not json", nil })
-		}, status: "invalid_output", wantSource: "local"},
-		{name: "provider error", configure: func() {
-			currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) { return "", errors.New("provider unavailable") })
-		}, status: "provider_error", wantSource: "local"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -112,11 +104,6 @@ func TestGeneratePlanReturnsLocalPreviewForEnrichmentFailures(t *testing.T) {
 			body, _ := json.Marshal(gin.H{"goal": "Study Go", "days": 1, "hours_per_day": 1, "start_date": "2026-08-01", "available_time_slot": "20:00-21:00"})
 			request := httptest.NewRequest(http.MethodPost, "/generate", bytes.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
-			if test.cancel {
-				ctx, cancel := context.WithCancel(request.Context())
-				cancel()
-				request = request.WithContext(ctx)
-			}
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, request)
 			if recorder.Code != http.StatusOK {
@@ -138,6 +125,132 @@ func TestGeneratePlanReturnsLocalPreviewForEnrichmentFailures(t *testing.T) {
 				t.Fatalf("unexpected fallback response: %+v", response.Data)
 			}
 		})
+	}
+}
+
+func TestGeneratePlanPersistsBaselineQueuesAndDeduplicates(t *testing.T) {
+	setupTestDB(t)
+	originalCurrent, originalQuota := currentAIProvider, canUseAIGeneration
+	t.Cleanup(func() { currentAIProvider, canUseAIGeneration = originalCurrent, originalQuota })
+	currentAIProvider = validPlanningTestProvider(func(context.Context, string, int) (string, error) {
+		return "", errors.New("must not run in interactive request")
+	})
+	canUseAIGeneration = func(context.Context, uint, int) (bool, int64, error) { return true, 0, nil }
+
+	router := gin.New()
+	router.POST("/generate", func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uint(42)) }, GeneratePlan)
+	body, _ := json.Marshal(gin.H{"goal": "Study Go", "days": 1, "hours_per_day": 1, "start_date": "2026-08-01", "available_time_slot": "20:00-21:00"})
+	generate := func() struct {
+		PreviewID      string `json:"preview_id"`
+		PreviewVersion int    `json:"preview_version"`
+		Job            struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"job"`
+	} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/generate", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("generation failed: %s", recorder.Body.String())
+		}
+		var envelope struct {
+			Data struct {
+				PreviewID      string `json:"preview_id"`
+				PreviewVersion int    `json:"preview_version"`
+				Job            struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+				} `json:"job"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		return envelope.Data
+	}
+	first, second := generate(), generate()
+	if first.PreviewID == "" || first.PreviewVersion != 1 || first.Job.Status != models.PlanningJobStatusQueued {
+		t.Fatalf("missing persisted planning metadata: %+v", first)
+	}
+	if second.PreviewID != first.PreviewID || second.Job.ID != first.Job.ID {
+		t.Fatalf("equivalent active request was not deduplicated: first=%+v second=%+v", first, second)
+	}
+	var jobCount, versionCount int64
+	db.DB.Model(&models.PlanningJob{}).Count(&jobCount)
+	db.DB.Model(&models.PlanningPreviewVersion{}).Count(&versionCount)
+	if jobCount != 1 || versionCount != 1 {
+		t.Fatalf("expected one transactional job/baseline, got jobs=%d versions=%d", jobCount, versionCount)
+	}
+}
+
+func TestPlanningJobStatusIsUserScoped(t *testing.T) {
+	setupTestDB(t)
+	now := time.Now().UTC()
+	version := models.PlanningPreviewVersion{PreviewID: "0123456789abcdef0123456789abcdef", Version: 1, UserID: 7, Source: "local", ContextFingerprint: strings.Repeat("a", 64), PreviewJSON: `{"title":"Study","tasks":[]}`, ProvenanceToken: "token", ExpiresAt: now.Add(time.Hour)}
+	if err := db.DB.Create(&version).Error; err != nil {
+		t.Fatal(err)
+	}
+	job := models.PlanningJob{ID: "abcdef0123456789abcdef0123456789", UserID: 7, RequestFingerprint: strings.Repeat("a", 64), Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: version.PreviewID, BaselinePreviewVersion: 1, RequestJSON: `{}`, BackgroundBudgetSeconds: 60, ExpiresAt: now.Add(time.Hour)}
+	if err := db.DB.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	getJob := func(uid uint) []byte {
+		router := gin.New()
+		router.GET("/jobs/:id", func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uid) }, GetPlanningJob)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/jobs/"+job.ID, nil))
+		return recorder.Body.Bytes()
+	}
+	if response := getJob(8); responseCode(t, response) != http.StatusNotFound {
+		t.Fatalf("other user could inspect planning job: %s", response)
+	}
+	if response := getJob(7); responseCode(t, response) != 0 {
+		t.Fatalf("owner could not inspect planning job: %s", response)
+	}
+}
+
+func TestPersistedPreviewVersionCommitIsBoundAndIdempotent(t *testing.T) {
+	setupTestDB(t)
+	originalCurrent := currentAIProvider
+	t.Cleanup(func() { currentAIProvider = originalCurrent })
+	currentAIProvider = func(context.Context) (models.AIConfig, services.AIProvider, error) {
+		return models.AIConfig{Provider: services.AIProviderMock, Enabled: false, RequestTimeoutSeconds: 30}, planningTestProvider{}, nil
+	}
+	router := gin.New()
+	router.POST("/generate", func(c *gin.Context) { c.Set(middleware.CtxUserIDKey, uint(71)) }, GeneratePlan)
+	body := []byte(`{"goal":"Study Go","days":1,"hours_per_day":1,"start_date":"2026-08-01","available_time_slot":"20:00-21:00"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/generate", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+	var generated struct {
+		Data struct {
+			Preview        services.PlanPreview `json:"preview"`
+			PreviewID      string               `json:"preview_id"`
+			PreviewVersion int                  `json:"preview_version"`
+			Provenance     string               `json:"provenance_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &generated); err != nil {
+		t.Fatal(err)
+	}
+	commitBody := gin.H{"preview": generated.Data.Preview, "preview_id": generated.Data.PreviewID, "preview_version": generated.Data.PreviewVersion, "provenance_token": generated.Data.Provenance, "idempotency_key": "versioned_commit_key_1234"}
+	first := callJSONHandler(t, CommitAIPlan, 71, "/commit", "", commitBody)
+	second := callJSONHandler(t, CommitAIPlan, 71, "/commit", "", commitBody)
+	if responseCode(t, first) != 0 || responseCode(t, second) != 0 {
+		t.Fatalf("versioned commit or replay failed: first=%s second=%s", first, second)
+	}
+	var version models.PlanningPreviewVersion
+	if err := db.DB.Where("preview_id = ? AND version = ?", generated.Data.PreviewID, generated.Data.PreviewVersion).First(&version).Error; err != nil || version.CommittedAt == nil {
+		t.Fatalf("preview version was not marked committed: version=%+v err=%v", version, err)
+	}
+	tampered := commitBody
+	tampered["preview_version"] = generated.Data.PreviewVersion + 1
+	tampered["idempotency_key"] = "versioned_commit_key_5678"
+	if response := callJSONHandler(t, CommitAIPlan, 71, "/commit", "", tampered); responseCode(t, response) != http.StatusConflict {
+		t.Fatalf("mismatched preview version was accepted: %s", response)
 	}
 }
 

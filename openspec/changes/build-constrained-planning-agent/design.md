@@ -1,67 +1,109 @@
 ## Context
 
-The backend already has local date expansion, a rule fallback preview, learning profile queries, active-plan load, recent outcomes, persisted conflict checks, interval-union validation, manual schedule templates, and transactional commit. Recovery scheduling already demonstrates candidate search, preview, stale-state checks, and apply-time revalidation. These capabilities are fragmented across services and handlers, while the current generation handler calls the provider synchronously with a large token budget and up to two full attempts.
+The backend already validates planning input, loads safe aggregate learning history, finds exact occupied intervals, builds conflict-free local tasks, validates schedule unions, returns fallback metadata, and commits previews transactionally. The current model collaboration is still synchronous: the request advertises a 12-second total budget and cancels enrichment after eight seconds. Provider configuration may allow 30-120 seconds, but the shorter child context always wins.
+
+The current prompt sends the complete local plan and requires the model to preserve task count, order, dates, and time ranges. Merge logic rejects any changed task count or order and accepts only title, objective, description, and difficulty. This makes the model a semantic rewriter rather than a task-decomposition collaborator. A large model may also need more than eight seconds to return a complete multi-day JSON object, especially after DNS, TCP, TLS, and provider queue latency.
 
 ## Decisions
 
-### Agent pipeline is deterministic before it is generative
+### Planning has an immediate baseline and an asynchronous AI version
 
-Generation runs through explicit phases:
+`POST /api/ai/generate-plan` continues to validate the request, load context, create a conflict-free local baseline, assign a preview ID and version, and return promptly. When model decomposition is enabled and quota is available, the same request also creates a persistent planning job and returns its ID and initial state.
 
-1. Validate and normalize goal, day count, start date, skip dates, desired daily hours, and available time range.
-2. Load safe aggregate learning profile, active workload, outcomes, and exact occupied intervals.
-3. Classify the goal into a local stage template and build progressive learning stages.
-4. Allocate requested work into conflict-free candidate dates and time slots.
-5. Validate the local candidate with the same schedule and workload rules used by normal plan creation.
-6. Optionally ask SiliconFlow to enrich the fixed planning brief and suggest bounded adjustments.
-7. Merge only allowed fields, repair schedule suggestions against current occupancy, and validate again.
-8. Return the enriched candidate or the already valid local candidate with truthful metadata.
+The client displays the baseline immediately with `source=local` and a visible `decomposition_status`. It polls a job-status resource while the user remains on the preview page. The user may commit the local baseline without waiting.
 
-### Input contradictions become warnings or corrections
+The interactive response target is distinct from the model deadline. Its default is two seconds and its configurable range is one to five seconds. Missing that target is an operational warning; failure to build a valid local baseline remains a request failure.
 
-The Agent rejects malformed dates and impossible ranges. When desired daily hours exceed the supplied available interval, the interval is authoritative for that day and the response explains the reduced daily capacity or extends the plan duration when allowed. Skip dates and existing occupied intervals are always authoritative. The Agent searches alternate time within availability first, then a later eligible date, instead of returning a conflict that it can repair.
+### AI produces a learning blueprint, not a persisted schedule
 
-### Stage templates provide independent planning value
+The provider receives:
 
-Version one includes small reusable templates:
+- the normalized goal and refinement;
+- target plan duration, daily capacity, skip dates, and high-level slot inventory;
+- safe aggregate learning profile and workload signals;
+- the locally classified goal type and optional stage hints;
+- a compact output contract.
 
-- Learning: foundation, guided practice, independent practice, review.
-- Reading: scope, progressive sections, notes, synthesis.
-- Exam: diagnosis, topic cycles, timed practice, review and buffer.
-- Project: requirements, setup, milestones, integration, review.
-- General: understand, practice, apply, consolidate.
+The model returns a blueprint containing plan title, summary, rationale, ordered stages, and ordered tasks. Each task contains stage, title, concrete objective, description, estimated minutes, difficulty, and optional prerequisite references. The model may vary the task count and stage boundaries. It does not return database IDs or authoritative dates and time ranges.
 
-Templates determine stage order, task intent, review cadence, and buffer placement. They do not embed a large Web3, programming, language, or exam-specific curriculum.
+The output token allowance is calculated from requested plan scope and bounded by provider-safe minimum and maximum values. The contract remains structured JSON and requests non-thinking mode when supported.
 
-### Model collaboration is bounded
+### The backend turns the blueprint into an executable plan
 
-The provider receives a typed, delimited brief and a canonical candidate skeleton. It cannot add cross-user data or raw records. Interactive generation advertises one 12-second overall request budget. Context queries, quota checks, validation, and enrichment all use the request context and share an 11.5-second work deadline, reserving the final 500 milliseconds for local response serialization. Retries are allowed only for transient failures and only inside that total deadline. Cancellation stops database and provider work; enrichment failures after a valid local candidate still return that candidate.
+After validating the blueprint schema and content bounds, the Agent allocates tasks into the user's available dates and time ranges. It uses the same occupancy, overlap, overload, and mutation rules as manual plans and recovery scheduling.
 
-### Preview provenance is explicit
+The scheduler may:
 
-Responses distinguish `local` and `local_enriched`. Enrichment status distinguishes success, disabled, quota-limited, timeout, provider failure, and invalid output. Model quota counts only actual external enrichment attempts. Local planning does not consume model quota. Committed plans record generation source separately from the legacy `ai_generated` compatibility flag.
+- place multiple short tasks on one eligible date when capacity permits;
+- move work to a later eligible date;
+- split an oversized task into ordered parts when it cannot fit in a daily slot;
+- preserve prerequisite ordering;
+- reject or repair invalid estimated effort or difficulty values;
+- return warnings describing material repairs.
 
-Each generated task receives an opaque identity. The signed, user-scoped, expiring provenance token binds plan title, summary, rationale, task count, and ordered task identities. The commit client does not submit a second purported original preview. The current review UI may edit task date, start/end time, title, objective, description, and difficulty; it may not alter plan metadata, task count, task identity, or task order. Estimated minutes, total hours, sorted persistence order, plan dates, and weekly target are recomputed server-side.
+The model never bypasses final schedule validation. If the blueprint cannot be repaired into a valid plan, the job falls back to the local baseline with a bounded reason.
 
-Commit idempotency is user-and-key scoped and payload-aware. SQLite busy and unique races receive bounded retries and winner reconciliation: the same key and normalized payload replays the winner, while the same key with a different normalized payload returns conflict.
+### Planning jobs are persistent and observable
 
-### Compatibility precedes route renaming
+Each job is user-scoped and stores request identity, status, current phase, provider/model, baseline preview ID and version, result version, timestamps, expiry, attempt count, bounded error reason, and phase timings. Job states are:
 
-Existing `/api/ai/generate-plan`, `/api/ai/regenerate`, and `/api/ai/commit-plan` remain available. Their response becomes typed and additive. A later client can migrate to neutral `/api/planning/previews` resources with preview ID, version, expiry, and idempotent commit.
+`queued -> decomposing -> scheduling -> ready`
+
+Terminal alternatives are `fallback`, `cancelled`, and `expired`.
+
+An in-process worker claims queued jobs transactionally. A process restart returns abandoned running jobs to `queued` once when their lease expires. Jobs and preview versions expire after a bounded retention window.
+
+The job-status response never exposes raw provider errors, credentials, prompts containing private records, or other users' data.
+
+### Preview versions prevent late-result overwrite
+
+The local baseline is preview version 1. A successful AI decomposition produces a new immutable version with `source=ai_decomposed`. Every version carries task identities, request/context fingerprint, creation time, and expiry.
+
+The client tracks the version it displayed and whether the user has edited it. If the AI version arrives while the baseline is untouched, the client may replace it automatically. If the baseline was edited, the AI version is presented as a separate review option. A late result never silently overwrites user edits or a committed plan.
+
+Stored preview versions remain immutable. Field edits may be submitted as a draft derived from one base version and are revalidated at commit. Adding, removing, splitting, or reordering tasks uses a server-side preview mutation that creates a new derived version with fresh ordered task identities and provenance. The client cannot invent identities or change version structure only in the final commit payload.
+
+Commit requires preview ID, version, provenance, and idempotency key. The backend revalidates current occupancy and workload transactionally. A stale or expired version returns a typed conflict rather than being trusted.
+
+### Model timeout is a background operational control
+
+The model job deadline defaults to 60 seconds and is configurable from 15 to 120 seconds. This budget includes provider validation, connection establishment, request execution, response reading, and bounded transient retry.
+
+Interactive response budget and background model budget are stored and reported separately. Changing the background budget affects new jobs and does not extend an already running job.
+
+### Provider transport is safe and reusable
+
+The provider layer reuses a transport per validated provider origin so normal requests can reuse DNS results and idle TCP/TLS connections. Configuration save/test still validates that the destination resolves only to public addresses. Dial-time public-address validation remains in place to protect against DNS rebinding, but redundant validation inside one generation attempt is removed or cached for the attempt.
+
+Redirects remain restricted to the validated origin. Idle connections and cached provider clients are discarded when provider URL, credential version, or relevant transport configuration changes.
+
+### Compatibility is additive
+
+Existing generation and commit routes remain available. Generation responses add job and preview-version metadata. A job-status route returns state and the newest available preview version. Existing clients that ignore job metadata continue to receive and commit the local baseline.
+
+A future route family may use neutral planning resources, but route renaming is not required for this change.
 
 ## Risks / Trade-offs
 
-- Local templates can feel generic -> use model enrichment when available and keep previews editable.
-- Conflict-free allocation is more complex than rejecting conflicts -> reuse schedule resolution and recovery candidate search.
-- A strict model deadline can reduce enrichment completion -> smaller semantic-only schema and no model-owned schedule generation reduce output size.
-- Returning a local candidate after model failure can hide provider incidents -> expose bounded reason codes and phase timings to users/admins.
-- Existing plans only have an AI boolean -> add source provenance without guessing historical details.
+- AI results can arrive after the user starts editing -> preserve immutable versions and require explicit review when the baseline is dirty.
+- Persistent jobs add lifecycle and restart complexity -> use database leases, bounded retries, expiry, and idempotent state transitions.
+- Variable task counts make scheduling more complex -> keep all final constraints in the Agent and add property/boundary tests for packing, splitting, ordering, and conflicts.
+- Longer model budgets increase cost and queue occupancy -> retain per-user quota, cap concurrency, record latency/token usage, and allow users to commit the local baseline immediately.
+- Model decomposition can still be generic -> include goal-specific refinement, safe learning profile signals, and editable results while retaining local fallback.
+- Transport reuse must not weaken SSRF protection -> cache only validated origins and retain dial-time public-IP enforcement.
 
 ## Migration Plan
 
-1. Add typed Agent request/response metadata and characterization tests behind existing routes.
-2. Extract reusable schedule occupancy, validation, and candidate allocation services.
-3. Replace fallback generation with the first-class local stage planner.
-4. Change the model request to enrich the canonical skeleton under a total deadline.
-5. Add source/provenance fields and preserve existing plan rows with an unknown legacy source.
-6. Update the frontend from “AI generation” to “smart planning” with optional AI-enhanced status.
+1. Add persistent preview IDs, versions, context fingerprints, and planning job records without changing existing local generation behavior.
+2. Add job creation and polling metadata to existing generation responses and update the frontend to display baseline/job states.
+3. Define and validate the compact AI blueprint contract and dynamic output budget.
+4. Add the worker, provider transport reuse, background timeout, retry policy, and job observability.
+5. Add blueprint-to-schedule allocation, packing, splitting, repair warnings, and final validation.
+6. Produce immutable AI preview versions and handle untouched, edited, committed, stale, and expired baseline states.
+7. Update admin controls and metrics for interactive target, background timeout, success rate, p50/p95 latency, token usage, and fallback reasons.
+8. Remove the synchronous semantic-only enrichment path after compatible clients have migrated.
+
+## Deferred Work
+
+- A broader redesign of provider retry classification and jitter policy is outside this change once the background deadline and safe reusable transport are working.
+- Exhaustive fault-injection suites that do not directly verify authoritative scheduling, preview mutations, transport safety, metrics, or the user workflow are deferred to a later quality change.

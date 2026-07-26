@@ -57,6 +57,8 @@ func AutoMigrate() error {
 		&models.AdminCredential{},
 		&models.AdminAuditLog{},
 		&models.AIConfig{},
+		&models.PlanningPreviewVersion{},
+		&models.PlanningJob{},
 		&models.SubscriptionMessageConfig{},
 		&models.NotificationDeliveryLog{},
 		&models.NotificationSubscription{},
@@ -68,6 +70,12 @@ func AutoMigrate() error {
 		return err
 	}
 	if err := migrateAIConfigs(); err != nil {
+		return err
+	}
+	if err := DB.Model(&models.Plan{}).Where("generation_source = '' OR generation_source IS NULL").Update("generation_source", "manual").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_planning_jobs_active_request ON planning_jobs (user_id, request_fingerprint) WHERE status IN ('queued', 'decomposing', 'scheduling')").Error; err != nil {
 		return err
 	}
 	// 复合唯一索引：同一用户/同一天/同一计划 只能有一条打卡记录
@@ -86,9 +94,10 @@ func AutoMigrate() error {
 	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_motivations_user_date ON daily_motivations (user_id, date)").Error; err != nil {
 		return err
 	}
-	if err := DB.Exec(
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_tasks_user_plan_date ON daily_tasks (user_id, plan_id, date)",
-	).Error; err != nil {
+	if err := DB.Exec("DROP INDEX IF EXISTS idx_daily_tasks_user_plan_date").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_daily_tasks_user_date_schedule ON daily_tasks (user_id, date, planned_start, planned_end)").Error; err != nil {
 		return err
 	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {
