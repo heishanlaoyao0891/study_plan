@@ -1,4 +1,9 @@
 {
+  "easycom": {
+    "custom": {
+      "^qiun-data-charts$": "@qiun/uni-ucharts/components/qiun-data-charts/qiun-data-charts.vue"
+    }
+  },
   "pages": [
     { "path": "pages/checkin/checkin", "style": { "navigationBarTitleText": "今日打卡" } },
     { "path": "pages/plans/plans", "style": { "navigationBarTitleText": "我的计划" } },

@@ -47,3 +47,11 @@
 - [x] Normalize nullable group list responses before rendering and keep empty history as an array.
 - [x] Add a visible account and data entry for logout, deactivation, and deletion on H5 and mini-program.
 - [x] Re-run backend tests and all frontend builds.
+
+## 8. Chart Component Upgrade
+
+- [x] Replace the H5 and mini-program statistics bars with interactive uCharts visualizations.
+- [x] Replace the admin operations charts with tree-shaken ECharts components.
+- [x] Build H5, WeChat, and admin targets and run frontend type-checking.
+- [x] Verify non-empty H5 and admin canvases without horizontal overflow at mobile and desktop viewports.
+- [x] Verify the WeChat output contains the complete `qiun-data-charts` component registration and compiled component files.
