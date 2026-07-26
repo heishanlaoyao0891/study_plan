@@ -32,6 +32,7 @@
       <ConfigRow label="23:30 决策提醒" v-model:template-id="form.decision_template_id" v-model:enabled="form.decision_enabled" v-model:page="form.decision_page" v-model:mapping="form.decision_field_mapping" />
       <ConfigRow label="未打卡提醒" v-model:template-id="form.missed_checkin_template_id" v-model:enabled="form.missed_checkin_enabled" v-model:page="form.missed_checkin_page" v-model:mapping="form.missed_checkin_field_mapping" />
       <ConfigRow label="小组督学提醒" v-model:template-id="form.group_nudge_template_id" v-model:enabled="form.group_nudge_enabled" v-model:page="form.group_nudge_page" v-model:mapping="form.group_nudge_field_mapping" />
+			<ConfigRow label="躺平币余额提醒" v-model:template-id="form.slack_balance_template_id" v-model:enabled="form.slack_balance_enabled" v-model:page="form.slack_balance_page" v-model:mapping="form.slack_balance_field_mapping" />
       <button class="primary small-button" :disabled="saving">{{ saving ? '保存中…' : '保存订阅配置' }}</button>
     </form>
     <table class="data-table status-table">
@@ -69,12 +70,13 @@ const examples = [
   { label: '23:30 决策提醒', page: 'pages/checkin/checkin', mapping: '{"thing1":"title","thing2":"message"}', trigger: '23:30 仍有学习中或待处理任务' },
   { label: '未打卡提醒', page: 'pages/checkin/checkin', mapping: '{"thing1":"title","date2":"date","thing3":"message"}', trigger: '任务结束时间到达且当天未打卡' },
   { label: '小组督学提醒', page: 'pages/group/group', mapping: '{"name1":"sender","thing2":"message"}', trigger: '小组成员主动发起督学' },
+	{ label: '躺平币余额提醒', page: 'pages/slack/slack', mapping: '{"thing1":"message"}', trigger: '余额从 10 分钟以上降至 10 分钟以内' },
 ]
 const form = reactive<SubscriptionConfig>({
-  study_start_template_id: '', completion_template_id: '', decision_template_id: '', missed_checkin_template_id: '', group_nudge_template_id: '',
-  study_start_enabled: false, completion_enabled: false, decision_enabled: false, missed_checkin_enabled: false, group_nudge_enabled: false,
-  study_start_page: '', completion_page: '', decision_page: '', missed_checkin_page: '', group_nudge_page: '',
-  study_start_field_mapping: '', completion_field_mapping: '', decision_field_mapping: '', missed_checkin_field_mapping: '', group_nudge_field_mapping: '', recent_status: [],
+  study_start_template_id: '', completion_template_id: '', decision_template_id: '', missed_checkin_template_id: '', group_nudge_template_id: '', slack_balance_template_id: '',
+  study_start_enabled: false, completion_enabled: false, decision_enabled: false, missed_checkin_enabled: false, group_nudge_enabled: false, slack_balance_enabled: false,
+  study_start_page: '', completion_page: '', decision_page: '', missed_checkin_page: '', group_nudge_page: '', slack_balance_page: '',
+  study_start_field_mapping: '', completion_field_mapping: '', decision_field_mapping: '', missed_checkin_field_mapping: '', group_nudge_field_mapping: '', slack_balance_field_mapping: '', recent_status: [],
 })
 
 onMounted(async () => {

@@ -41,6 +41,81 @@ func TestCoveredMinutesUsesUnionAndRejectsAtSixty(t *testing.T) {
 	}
 }
 
+func TestFullyContainedTaskAllowsAtMostThirtyMinutes(t *testing.T) {
+	allowed := []models.DailyTask{
+		{ID: 1, Date: "2026-07-20", Title: "A", PlannedStart: "10:00", PlannedEnd: "10:30"},
+		{ID: 2, Date: "2026-07-20", Title: "B", PlannedStart: "09:30", PlannedEnd: "11:00"},
+	}
+	if err := validateScheduleTasks(allowed); err != nil {
+		t.Fatalf("contained 30-minute task should pass: %v", err)
+	}
+	blocked := append([]models.DailyTask{}, allowed...)
+	blocked[0].PlannedEnd = "10:31"
+	if err := validateScheduleTasks(blocked); err == nil {
+		t.Fatal("contained task longer than 30 minutes must fail")
+	}
+}
+
+func TestSlackStopCanCreateDebtAndRecordsExactDelta(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "slack-debt", Nickname: "Slack Debt", SlackBalance: 5}
+	if err := db.DB.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-20 * time.Minute)
+	record := models.SlackRecord{UserID: user.ID, StartTime: start, Activity: "休息"}
+	if err := db.DB.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := callJSONHandler(t, StopSlack, user.ID, "/slack/stop", "", nil)
+	if responseCode(t, response) != 0 {
+		t.Fatalf("stop failed: %s", response)
+	}
+	if err := db.DB.First(&user, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.First(&record, record.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.SlackBalance >= 0 || record.DeltaMin != -record.DurationMin {
+		t.Fatalf("expected signed debt and exact ledger delta: user=%+v record=%+v", user, record)
+	}
+}
+
+func TestStatsMetricsCountOvertimePerTask(t *testing.T) {
+	metrics := statsMetrics{}
+	applyStatsTask(&metrics, models.DailyTask{StudyMinutes: 90, Status: models.TaskStatusCompleted}, 60)
+	applyStatsTask(&metrics, models.DailyTask{StudyMinutes: 20, Status: models.TaskStatusPending}, 60)
+	finalizeStatsMetrics(&metrics)
+	if metrics.StudyMinutes != 110 || metrics.PlannedMinutes != 120 || metrics.OvertimeMinutes != 30 || metrics.CompletionRate == nil || *metrics.CompletionRate != 50 {
+		t.Fatalf("unexpected stats aggregate: %+v", metrics)
+	}
+}
+
+func TestAdminUserSegmentUsesStatusBanAndLoginRecency(t *testing.T) {
+	now := time.Now()
+	active := now.Add(-24 * time.Hour)
+	general := now.Add(-14 * 24 * time.Hour)
+	zombie := now.Add(-40 * 24 * time.Hour)
+	bannedUntil := now.Add(time.Hour)
+	tests := []struct {
+		user models.User
+		want string
+	}{
+		{models.User{AccountStatus: models.AccountStatusDeleted}, "deleted"},
+		{models.User{AccountStatus: models.AccountStatusInactive}, "inactive"},
+		{models.User{AccountStatus: models.AccountStatusActive, BannedUntil: &bannedUntil}, "banned"},
+		{models.User{AccountStatus: models.AccountStatusActive, LastLoginAt: &active}, "active"},
+		{models.User{AccountStatus: models.AccountStatusActive, LastLoginAt: &general}, "general"},
+		{models.User{AccountStatus: models.AccountStatusActive, LastLoginAt: &zombie}, "zombie"},
+	}
+	for _, test := range tests {
+		if got := adminUserSegment(test.user, now); got != test.want {
+			t.Fatalf("segment=%s want=%s user=%+v", got, test.want, test.user)
+		}
+	}
+}
+
 func TestValidatePlanDraftUsesRealTasksAndNamesBothPlans(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "schedule-preview", Nickname: "Schedule User", NicknameNormalized: "schedule user"}

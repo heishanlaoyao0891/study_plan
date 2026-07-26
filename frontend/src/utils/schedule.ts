@@ -19,6 +19,7 @@ export interface ScheduleConflict {
   covered_minutes: number
   covered_intervals: CoveredInterval[]
   conflicting_tasks: Array<{ task_id?: number; plan_id?: number; plan_title?: string; title: string; start: string; end: string }>
+	fully_contained?: boolean
 }
 
 function toMinutes(value: string): number | null {
@@ -41,12 +42,14 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
     if (current.start === null || current.end === null || current.end <= current.start) continue
     const intersections: Array<[number, number]> = []
     const conflictingTasks: ScheduleConflict['conflicting_tasks'] = []
+		let fullyContained = false
     for (const other of valid) {
       if (other === current || other.interval.date !== current.interval.date || other.start === null || other.end === null || other.end <= other.start) continue
       const start = Math.max(current.start, other.start)
       const end = Math.min(current.end, other.end)
       if (end > start) {
         intersections.push([start, end])
+				if (other.start <= current.start && other.end >= current.end) fullyContained = true
         conflictingTasks.push({ title: other.interval.title, start: toTime(start), end: toTime(end) })
       }
     }
@@ -58,7 +61,7 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
       else previous[1] = Math.max(previous[1], range[1])
     }
     const coveredMinutes = merged.reduce((sum, range) => sum + range[1] - range[0], 0)
-    if (coveredMinutes >= 60) {
+		if (coveredMinutes >= 60 || (fullyContained && coveredMinutes > 30)) {
       conflicts.push({
         id: current.interval.id,
         title: current.interval.title,
@@ -66,6 +69,7 @@ export function validateScheduleUnion(intervals: ScheduleInterval[]): ScheduleCo
         covered_minutes: coveredMinutes,
         covered_intervals: merged.map(range => ({ start: toTime(range[0]), end: toTime(range[1]) })),
         conflicting_tasks: conflictingTasks,
+				fully_contained: fullyContained,
       })
     }
   }
@@ -76,6 +80,7 @@ export function formatScheduleConflicts(conflicts: ScheduleConflict[]): string {
   return conflicts.map(item => {
     const currentTitle = item.plan_title || item.title
     const peers = (item.conflicting_tasks || []).map(peer => `计划「${peer.plan_title || peer.title}」(${peer.start}-${peer.end})`).join('、')
-    return `${item.date} 计划「${currentTitle}」与 ${peers || '其他计划'} 重叠；「${currentTitle}」累计被覆盖 ${item.covered_minutes} 分钟（${item.covered_intervals.map(range => `${range.start}-${range.end}`).join('、')}）`
+		const rule = item.fully_contained ? '完整时段被其他任务包含，最多允许 30 分钟' : '累计覆盖须少于 60 分钟'
+		return `${item.date} 计划「${currentTitle}」与 ${peers || '其他计划'} 重叠；「${currentTitle}」累计被覆盖 ${item.covered_minutes} 分钟（${item.covered_intervals.map(range => `${range.start}-${range.end}`).join('、')}），${rule}`
   }).join('\n')
 }

@@ -8,6 +8,7 @@
       <view class="role" v-if="member">{{ member.role === 'leader' ? '组长' : '成员' }}</view>
     </view>
 	<view class="feedback" :class="feedbackType" v-if="feedback">{{ feedback }}</view>
+	<view class="panel loading" v-if="loading">正在读取小组信息...</view>
 
     <view class="panel" v-if="!group">
       <view class="panel-title">创建或加入</view>
@@ -48,6 +49,7 @@
 			<button class="remove" v-if="isLeader && m.role !== 'leader'" @click="removeMember(m)">移除</button>
           </view>
         </view>
+				<view class="empty" v-if="!members.length">暂时没有可展示的成员数据</view>
       </view>
 
       <view class="panel">
@@ -58,6 +60,7 @@
           <view>#{{ index + 1 }} {{ row.nickname || `用户 #${row.user_id}` }}</view>
           <view>{{ row.streak }} 天 · {{ row.study_minutes }} 分</view>
         </view>
+				<view class="empty" v-if="!leaderboard.length">当前周期还没有排行数据</view>
       </view>
 
       <view class="panel actions">
@@ -71,7 +74,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import { GroupApi, type GroupMemberView, type StudyGroup, type StudyGroupMember } from '@/api'
 
 const group = ref<StudyGroup | null>(null)
@@ -85,19 +88,31 @@ const inviteCode = ref('')
 const shareLink = ref('')
 const feedback = ref('')
 const feedbackType = ref<'success' | 'error'>('success')
+const loading = ref(false)
 const isLeader = computed(() => member.value?.role === 'leader')
 
 async function load() {
+	loading.value = true
 	try {
 		const current = await GroupApi.current()
 		group.value = current.group || null
 		member.value = current.member || null
-		members.value = group.value ? await GroupApi.members() : []
-		leaderboard.value = group.value ? (await GroupApi.leaderboard('weekly')).rows || [] : []
-		history.value = await GroupApi.history()
+		members.value = []
+		leaderboard.value = []
+		const requests = group.value
+			? [GroupApi.members(), GroupApi.leaderboard('weekly'), GroupApi.history()]
+			: [Promise.resolve([]), Promise.resolve({ rows: [] }), GroupApi.history()]
+		const [memberResult, rankResult, historyResult] = await Promise.allSettled(requests)
+		if (memberResult.status === 'fulfilled') members.value = memberResult.value as GroupMemberView[]
+		if (rankResult.status === 'fulfilled') leaderboard.value = ((rankResult.value as any).rows || []) as GroupMemberView[]
+		if (historyResult.status === 'fulfilled') history.value = historyResult.value as StudyGroup[]
+		const failures = [memberResult, rankResult, historyResult].filter(result => result.status === 'rejected').length
+		if (failures) showFeedback(`${failures} 个小组区域加载失败，可稍后重试`, 'error')
 	} catch (error: any) {
+		group.value = null
+		member.value = null
 		showFeedback(error?.message || '小组信息加载失败', 'error')
-	}
+	} finally { loading.value = false }
 }
 
 async function createGroup() {
@@ -254,6 +269,7 @@ function showFeedback(message: string, type: 'success' | 'error' = 'success') {
 onLoad((query: any) => {
   if (query?.code) joinCode.value = String(query.code)
 })
+onShareAppMessage(() => ({ title: group.value ? `加入「${group.value.name}」一起学习` : '加入学习小组', path: shareLink.value || '/pages/group/group' }))
 onShow(load)
 </script>
 
@@ -283,4 +299,5 @@ button { margin: 0 0 14rpx; border-radius: 10rpx; }
 .member-actions button.remove { color: #be123c; background: #fff1f2; }
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
+.loading, .empty { color: #7b8498; font-size: 24rpx; text-align: center; }
 </style>

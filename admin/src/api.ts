@@ -19,15 +19,20 @@ export interface AdminUser {
   slack_balance?: number
   username?: string
   account_status?: 'active' | 'inactive' | 'deleted'
+	last_login_at?: string
+	last_login_method?: string
+	created_at?: string
   plan_count?: number
   checkin_count?: number
 }
 
+export interface DashboardSlice { key: string; label: string; count: number }
+export interface DashboardDay { date: string; count?: number; study_minutes?: number; checkin_users?: number }
 export interface OverviewMetrics {
-  users: number
-  active_plans: number
-  checkins_today: number
-  banned_users: number
+  as_of: string
+  range: { start: string; end: string; days: number }
+  summary: { user_accounts: number; active_users_7d: number; active_plans: number; checkins_today: number; study_minutes_today: number }
+  charts: { segments: DashboardSlice[]; registrations: DashboardDay[]; learning_activity: DashboardDay[]; plan_statuses: DashboardSlice[] }
 }
 
 export interface UserListResp {
@@ -74,21 +79,25 @@ export interface SubscriptionConfig {
   decision_template_id: string
   missed_checkin_template_id: string
   group_nudge_template_id: string
+	slack_balance_template_id: string
   study_start_enabled: boolean
   completion_enabled: boolean
   decision_enabled: boolean
   missed_checkin_enabled: boolean
   group_nudge_enabled: boolean
+	slack_balance_enabled: boolean
   study_start_page: string
   completion_page: string
   decision_page: string
   missed_checkin_page: string
   group_nudge_page: string
+	slack_balance_page: string
   study_start_field_mapping: string
   completion_field_mapping: string
   decision_field_mapping: string
   missed_checkin_field_mapping: string
   group_nudge_field_mapping: string
+	slack_balance_field_mapping: string
   recent_status?: Array<{ id: number; reminder_type: string; status: string; message?: string; created_at: string }>
 }
 

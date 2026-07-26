@@ -36,6 +36,7 @@ const reminderCopies: Record<string, { name: string; purpose: string }> = {
   decision_2330: { name: '深夜学习决策', purpose: '23:30 仍在学习时，提醒你继续、结束或推迟。' },
   missed_checkin: { name: '未打卡提醒', purpose: '错过计划开始时间后，提醒你回来打卡。' },
   group_nudge: { name: '小组督学提醒', purpose: '学习伙伴向你发起督学时及时通知。' },
+	slack_balance: { name: '躺平币余额提醒', purpose: '可用分钟即将耗尽或进入负数时提醒你及时补回。' },
 }
 const events = ref<any[]>([]), templates = ref<NotificationTemplate[]>([]), subscriptions = ref<NotificationSubscription[]>([]), loading = ref(false), authorizing = ref('')
 

@@ -133,6 +133,7 @@ func Login(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
 	}
+	recordUserLogin(&user, "wechat")
 	api.OK(c, loginResp{Token: token, User: user, NicknameRequired: user.NicknameNormalized == ""})
 }
 

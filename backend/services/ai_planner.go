@@ -373,12 +373,13 @@ func GetUserLearningProfile(userID uint) (LearningProfile, error) {
 func GetUserLearningProfileWithContext(requestContext context.Context, userID uint) (LearningProfile, error) {
 	now := shanghaiTimeNow()
 	from := now.AddDate(0, 0, -30).Format(aiPlanDateLayout)
+	today := now.Format(aiPlanDateLayout)
 	var total, completed int64
 	database := db.DB.WithContext(requestContext)
-	if err := database.Model(&models.DailyTask{}).Distinct("date").Where("user_id = ? AND date >= ?", userID, from).Count(&total).Error; err != nil {
+	if err := database.Model(&models.DailyTask{}).Distinct("date").Where("user_id = ? AND date >= ? AND date <= ?", userID, from, today).Count(&total).Error; err != nil {
 		return LearningProfile{}, err
 	}
-	if err := database.Model(&models.DailyCheckin{}).Where("user_id = ? AND date >= ? AND completed = ?", userID, from, true).Count(&completed).Error; err != nil {
+	if err := database.Model(&models.DailyCheckin{}).Where("user_id = ? AND date >= ? AND date <= ? AND completed = ?", userID, from, today, true).Count(&completed).Error; err != nil {
 		return LearningProfile{}, err
 	}
 	var sessions []models.StudySession
@@ -467,7 +468,8 @@ func classifyPlanningGoal(goal string) string {
 
 func planningTaskMinutes(ctx PlanningContext) int {
 	start, end, _ := parsePlanningSlot(ctx.Input.AvailableTimeSlot)
-	minutes := minInt(ctx.Input.HoursPerDay*60, end-start)
+	capacity := minInt(ctx.Input.HoursPerDay*60, end-start)
+	minutes := capacity
 	if ctx.LearningProfile.CompletionRate > 0 && ctx.LearningProfile.CompletionRate < 0.6 {
 		minutes = minutes * 2 / 3
 	} else if ctx.LearningProfile.CompletionRate > 0 && ctx.LearningProfile.CompletionRate < 0.8 {
@@ -475,6 +477,10 @@ func planningTaskMinutes(ctx PlanningContext) int {
 	}
 	if ctx.LearningProfile.AverageStudyMins > 0 && ctx.LearningProfile.AverageStudyMins < minutes {
 		minutes = ctx.LearningProfile.AverageStudyMins
+	}
+	minimum := minInt(60, capacity)
+	if minutes < minimum {
+		minutes = minimum
 	}
 	if minutes < 30 && end-start >= 30 {
 		minutes = 30

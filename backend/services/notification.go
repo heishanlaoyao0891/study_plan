@@ -54,6 +54,8 @@ func TemplateFor(cfg models.SubscriptionMessageConfig, reminderType string) Noti
 		return NotificationTemplate{reminderType, cfg.MissedCheckinTemplateID, cfg.MissedCheckinEnabled, cfg.MissedCheckinPage, cfg.MissedCheckinMapping}
 	case "group_nudge":
 		return NotificationTemplate{reminderType, cfg.GroupNudgeTemplateID, cfg.GroupNudgeEnabled, cfg.GroupNudgePage, cfg.GroupNudgeFieldMapping}
+	case "slack_balance":
+		return NotificationTemplate{reminderType, cfg.SlackBalanceTemplateID, cfg.SlackBalanceEnabled, cfg.SlackBalancePage, cfg.SlackBalanceMapping}
 	default:
 		return NotificationTemplate{ReminderType: reminderType}
 	}

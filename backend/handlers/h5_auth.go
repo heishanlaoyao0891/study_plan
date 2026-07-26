@@ -66,7 +66,7 @@ func H5Register(c *gin.Context) {
 		handleRegistrationError(c, err)
 		return
 	}
-	respondWithUserToken(c, user)
+	respondWithUserToken(c, user, "h5_register")
 }
 
 func H5Login(c *gin.Context) {
@@ -84,7 +84,7 @@ func H5Login(c *gin.Context) {
 	if !allowActiveUser(c, &user) {
 		return
 	}
-	respondWithUserToken(c, user)
+	respondWithUserToken(c, user, "h5_password")
 }
 
 func WeChatRegister(c *gin.Context) {
@@ -103,7 +103,7 @@ func WeChatRegister(c *gin.Context) {
 		handleRegistrationError(c, err)
 		return
 	}
-	respondWithUserToken(c, user)
+	respondWithUserToken(c, user, "wechat_register")
 }
 
 func WeChatLink(c *gin.Context) {
@@ -148,7 +148,7 @@ func WeChatLink(c *gin.Context) {
 		handleRegistrationError(c, err)
 		return
 	}
-	respondWithUserToken(c, user)
+	respondWithUserToken(c, user, "wechat_link")
 }
 
 func registerInvitedAccount(inviteCode, username, nickname, password, openID string) (models.User, error) {
@@ -233,13 +233,22 @@ func hashPassword(password string) (string, error) {
 	return string(hash), err
 }
 
-func respondWithUserToken(c *gin.Context, user models.User) {
+func respondWithUserToken(c *gin.Context, user models.User, method string) {
 	token, err := services.SignToken(user.ID, user.OpenID, user.Role, user.SecurityVersion)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
 		return
 	}
+	recordUserLogin(&user, method)
 	api.OK(c, loginResp{Token: token, User: user, NicknameRequired: false})
+}
+
+func recordUserLogin(user *models.User, method string) {
+	now := time.Now()
+	if err := db.DB.Model(user).Updates(map[string]interface{}{"last_login_at": now, "last_login_method": method}).Error; err == nil {
+		user.LastLoginAt = &now
+		user.LastLoginMethod = method
+	}
 }
 
 func allowActiveUser(c *gin.Context, user *models.User) bool {

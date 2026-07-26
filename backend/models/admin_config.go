@@ -37,21 +37,25 @@ type SubscriptionMessageConfig struct {
 	DecisionTemplateID      string    `gorm:"size:128" json:"decision_template_id"`
 	MissedCheckinTemplateID string    `gorm:"size:128" json:"missed_checkin_template_id"`
 	GroupNudgeTemplateID    string    `gorm:"size:128" json:"group_nudge_template_id"`
+	SlackBalanceTemplateID  string    `gorm:"size:128" json:"slack_balance_template_id"`
 	StudyStartEnabled       bool      `json:"study_start_enabled"`
 	CompletionEnabled       bool      `json:"completion_enabled"`
 	DecisionEnabled         bool      `json:"decision_enabled"`
 	MissedCheckinEnabled    bool      `json:"missed_checkin_enabled"`
 	GroupNudgeEnabled       bool      `json:"group_nudge_enabled"`
+	SlackBalanceEnabled     bool      `json:"slack_balance_enabled"`
 	StudyStartPage          string    `gorm:"size:256" json:"study_start_page"`
 	CompletionPage          string    `gorm:"size:256" json:"completion_page"`
 	DecisionPage            string    `gorm:"size:256" json:"decision_page"`
 	MissedCheckinPage       string    `gorm:"size:256" json:"missed_checkin_page"`
 	GroupNudgePage          string    `gorm:"size:256" json:"group_nudge_page"`
+	SlackBalancePage        string    `gorm:"size:256" json:"slack_balance_page"`
 	StudyStartFieldMapping  string    `gorm:"type:text" json:"study_start_field_mapping"`
 	CompletionFieldMapping  string    `gorm:"type:text" json:"completion_field_mapping"`
 	DecisionFieldMapping    string    `gorm:"type:text" json:"decision_field_mapping"`
 	MissedCheckinMapping    string    `gorm:"type:text" json:"missed_checkin_field_mapping"`
 	GroupNudgeFieldMapping  string    `gorm:"type:text" json:"group_nudge_field_mapping"`
+	SlackBalanceMapping     string    `gorm:"type:text" json:"slack_balance_field_mapping"`
 	UpdatedBy               *uint     `json:"updated_by,omitempty"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`

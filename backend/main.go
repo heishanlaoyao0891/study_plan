@@ -146,6 +146,7 @@ func main() {
 		bound.GET("/stats/monthly-report", handlers.MonthlyReport)
 		bound.GET("/stats/slack-distribution", handlers.SlackDistribution)
 		bound.GET("/stats/efficiency", handlers.EfficiencyStats)
+		bound.GET("/stats/trend", handlers.StatsTrend)
 
 		// 提醒占位
 		bound.GET("/notifications/subscriptions", handlers.NotificationSubscriptions)

@@ -51,21 +51,25 @@ type subscriptionConfigReq struct {
 	DecisionTemplateID      string `json:"decision_template_id"`
 	MissedCheckinTemplateID string `json:"missed_checkin_template_id"`
 	GroupNudgeTemplateID    string `json:"group_nudge_template_id"`
+	SlackBalanceTemplateID  string `json:"slack_balance_template_id"`
 	StudyStartEnabled       bool   `json:"study_start_enabled"`
 	CompletionEnabled       bool   `json:"completion_enabled"`
 	DecisionEnabled         bool   `json:"decision_enabled"`
 	MissedCheckinEnabled    bool   `json:"missed_checkin_enabled"`
 	GroupNudgeEnabled       bool   `json:"group_nudge_enabled"`
+	SlackBalanceEnabled     bool   `json:"slack_balance_enabled"`
 	StudyStartPage          string `json:"study_start_page"`
 	CompletionPage          string `json:"completion_page"`
 	DecisionPage            string `json:"decision_page"`
 	MissedCheckinPage       string `json:"missed_checkin_page"`
 	GroupNudgePage          string `json:"group_nudge_page"`
+	SlackBalancePage        string `json:"slack_balance_page"`
 	StudyStartFieldMapping  string `json:"study_start_field_mapping"`
 	CompletionFieldMapping  string `json:"completion_field_mapping"`
 	DecisionFieldMapping    string `json:"decision_field_mapping"`
 	MissedCheckinMapping    string `json:"missed_checkin_field_mapping"`
 	GroupNudgeFieldMapping  string `json:"group_nudge_field_mapping"`
+	SlackBalanceMapping     string `json:"slack_balance_field_mapping"`
 }
 
 // ListUsers 管理员：列出所有用户
@@ -131,16 +135,107 @@ func GetAdminUserDetail(c *gin.Context) {
 }
 
 func AdminOverview(c *gin.Context) {
-	var users int64
-	var activePlans int64
-	var checkinsToday int64
-	var bannedUsers int64
-	today := shanghaiToday()
-	db.DB.Model(&models.User{}).Count(&users)
-	db.DB.Model(&models.Plan{}).Where("status = ?", models.PlanStatusActive).Count(&activePlans)
-	db.DB.Model(&models.DailyCheckin{}).Where("date = ? AND completed = ?", today, true).Count(&checkinsToday)
-	db.DB.Model(&models.User{}).Where("banned_until IS NOT NULL AND banned_until > ?", time.Now()).Count(&bannedUsers)
-	api.OK(c, gin.H{"users": users, "active_plans": activePlans, "checkins_today": checkinsToday, "banned_users": bannedUsers})
+	now := shanghaiNow()
+	today := now.Format(dateLayout)
+	start := now.AddDate(0, 0, -29).Format(dateLayout)
+	var users []models.User
+	if err := db.DB.Where("role = ?", models.RoleUser).Find(&users).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query dashboard users failed")
+		return
+	}
+	segments := map[string]int{"active": 0, "general": 0, "zombie": 0, "banned": 0, "inactive": 0, "deleted": 0}
+	newUsers := map[string]int{}
+	activeUsers := 0
+	for _, user := range users {
+		segment := adminUserSegment(user, now)
+		segments[segment]++
+		if segment == "active" {
+			activeUsers++
+		}
+		createdDate := user.CreatedAt.In(now.Location()).Format(dateLayout)
+		if createdDate >= start && createdDate <= today {
+			newUsers[createdDate]++
+		}
+	}
+	var plans []models.Plan
+	if err := db.DB.Select("status").Find(&plans).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query dashboard plans failed")
+		return
+	}
+	planStatuses := map[string]int{"active": 0, "paused": 0, "archived": 0}
+	for _, plan := range plans {
+		planStatuses[plan.Status]++
+	}
+	type learningRow struct {
+		Date         string
+		StudyMinutes int
+		CheckinUsers int
+	}
+	learning := make([]learningRow, 0, 30)
+	studyByDate := map[string]int{}
+	checkinsByDate := map[string]int{}
+	var taskRows []struct {
+		Date    string
+		Minutes int
+	}
+	if err := db.DB.Model(&models.DailyTask{}).Select("date, COALESCE(SUM(study_minutes),0) AS minutes").Where("date >= ? AND date <= ?", start, today).Group("date").Scan(&taskRows).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query dashboard study failed")
+		return
+	}
+	for _, row := range taskRows {
+		studyByDate[row.Date] = row.Minutes
+	}
+	var checkinRows []struct {
+		Date  string
+		Count int
+	}
+	if err := db.DB.Model(&models.DailyCheckin{}).Select("date, COUNT(DISTINCT user_id) AS count").Where("date >= ? AND date <= ? AND completed = ?", start, today, true).Group("date").Scan(&checkinRows).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query dashboard checkins failed")
+		return
+	}
+	for _, row := range checkinRows {
+		checkinsByDate[row.Date] = row.Count
+	}
+	registrations := make([]gin.H, 0, 30)
+	for offset := 29; offset >= 0; offset-- {
+		date := now.AddDate(0, 0, -offset).Format(dateLayout)
+		registrations = append(registrations, gin.H{"date": date, "count": newUsers[date]})
+		learning = append(learning, learningRow{Date: date, StudyMinutes: studyByDate[date], CheckinUsers: checkinsByDate[date]})
+	}
+	segmentRows := []gin.H{}
+	for _, item := range []struct{ Key, Label string }{{"active", "7日活跃"}, {"general", "8-30日一般"}, {"zombie", "30日未登录"}, {"banned", "封禁"}, {"inactive", "停用"}, {"deleted", "已删除"}} {
+		segmentRows = append(segmentRows, gin.H{"key": item.Key, "label": item.Label, "count": segments[item.Key]})
+	}
+	planRows := []gin.H{{"key": "active", "label": "进行中", "count": planStatuses[models.PlanStatusActive]}, {"key": "paused", "label": "已暂停", "count": planStatuses[models.PlanStatusPaused]}, {"key": "archived", "label": "已归档", "count": planStatuses[models.PlanStatusArchived]}}
+	api.OK(c, gin.H{
+		"as_of": now, "range": gin.H{"start": start, "end": today, "days": 30},
+		"summary": gin.H{"user_accounts": len(users), "active_users_7d": activeUsers, "active_plans": planStatuses[models.PlanStatusActive], "checkins_today": checkinsByDate[today], "study_minutes_today": studyByDate[today]},
+		"charts":  gin.H{"segments": segmentRows, "registrations": registrations, "learning_activity": learning, "plan_statuses": planRows},
+	})
+}
+
+func adminUserSegment(user models.User, now time.Time) string {
+	if user.AccountStatus == models.AccountStatusDeleted {
+		return "deleted"
+	}
+	if user.AccountStatus == models.AccountStatusInactive {
+		return "inactive"
+	}
+	if user.BannedUntil != nil && user.BannedUntil.After(now) {
+		return "banned"
+	}
+	last := user.CreatedAt
+	if user.LastLoginAt != nil {
+		last = *user.LastLoginAt
+	}
+	age := now.Sub(last)
+	if age <= 7*24*time.Hour {
+		return "active"
+	}
+	if age <= 30*24*time.Hour {
+		return "general"
+	}
+	return "zombie"
 }
 
 // BanUser 管理员：封禁用户
@@ -431,21 +526,25 @@ func UpdateSubscriptionMessageConfig(c *gin.Context) {
 	cfg.DecisionTemplateID = strings.TrimSpace(req.DecisionTemplateID)
 	cfg.MissedCheckinTemplateID = strings.TrimSpace(req.MissedCheckinTemplateID)
 	cfg.GroupNudgeTemplateID = strings.TrimSpace(req.GroupNudgeTemplateID)
+	cfg.SlackBalanceTemplateID = strings.TrimSpace(req.SlackBalanceTemplateID)
 	cfg.StudyStartEnabled = req.StudyStartEnabled
 	cfg.CompletionEnabled = req.CompletionEnabled
 	cfg.DecisionEnabled = req.DecisionEnabled
 	cfg.MissedCheckinEnabled = req.MissedCheckinEnabled
 	cfg.GroupNudgeEnabled = req.GroupNudgeEnabled
+	cfg.SlackBalanceEnabled = req.SlackBalanceEnabled
 	cfg.StudyStartPage = strings.TrimSpace(req.StudyStartPage)
 	cfg.CompletionPage = strings.TrimSpace(req.CompletionPage)
 	cfg.DecisionPage = strings.TrimSpace(req.DecisionPage)
 	cfg.MissedCheckinPage = strings.TrimSpace(req.MissedCheckinPage)
 	cfg.GroupNudgePage = strings.TrimSpace(req.GroupNudgePage)
+	cfg.SlackBalancePage = strings.TrimSpace(req.SlackBalancePage)
 	cfg.StudyStartFieldMapping = strings.TrimSpace(req.StudyStartFieldMapping)
 	cfg.CompletionFieldMapping = strings.TrimSpace(req.CompletionFieldMapping)
 	cfg.DecisionFieldMapping = strings.TrimSpace(req.DecisionFieldMapping)
 	cfg.MissedCheckinMapping = strings.TrimSpace(req.MissedCheckinMapping)
 	cfg.GroupNudgeFieldMapping = strings.TrimSpace(req.GroupNudgeFieldMapping)
+	cfg.SlackBalanceMapping = strings.TrimSpace(req.SlackBalanceMapping)
 	for _, reminderType := range reminderTypes {
 		if err := services.ValidateTemplate(services.TemplateFor(cfg, reminderType)); err != nil {
 			api.Fail(c, http.StatusBadRequest, err.Error())
@@ -541,21 +640,25 @@ func subscriptionConfigResp(cfg models.SubscriptionMessageConfig) gin.H {
 		"decision_template_id":         cfg.DecisionTemplateID,
 		"missed_checkin_template_id":   cfg.MissedCheckinTemplateID,
 		"group_nudge_template_id":      cfg.GroupNudgeTemplateID,
+		"slack_balance_template_id":    cfg.SlackBalanceTemplateID,
 		"study_start_enabled":          cfg.StudyStartEnabled,
 		"completion_enabled":           cfg.CompletionEnabled,
 		"decision_enabled":             cfg.DecisionEnabled,
 		"missed_checkin_enabled":       cfg.MissedCheckinEnabled,
 		"group_nudge_enabled":          cfg.GroupNudgeEnabled,
+		"slack_balance_enabled":        cfg.SlackBalanceEnabled,
 		"study_start_page":             cfg.StudyStartPage,
 		"completion_page":              cfg.CompletionPage,
 		"decision_page":                cfg.DecisionPage,
 		"missed_checkin_page":          cfg.MissedCheckinPage,
 		"group_nudge_page":             cfg.GroupNudgePage,
+		"slack_balance_page":           cfg.SlackBalancePage,
 		"study_start_field_mapping":    cfg.StudyStartFieldMapping,
 		"completion_field_mapping":     cfg.CompletionFieldMapping,
 		"decision_field_mapping":       cfg.DecisionFieldMapping,
 		"missed_checkin_field_mapping": cfg.MissedCheckinMapping,
 		"group_nudge_field_mapping":    cfg.GroupNudgeFieldMapping,
+		"slack_balance_field_mapping":  cfg.SlackBalanceMapping,
 		"recent_status":                recent,
 	}
 }

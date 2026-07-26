@@ -83,6 +83,12 @@ func TestUpsertGroupInvitationReplacesOldCode(t *testing.T) {
 	}
 }
 
+func TestGroupShareLinkUsesRegisteredPage(t *testing.T) {
+	if got := groupShareLink("abc"); got != "/pages/group/group?code=abc" {
+		t.Fatalf("unexpected group share link %q", got)
+	}
+}
+
 func TestExpiredGroupTransitionsBeforeReadAndAllowsFutureGroup(t *testing.T) {
 	setupGroupTestDB(t)
 	user := models.User{OpenID: "expired-user", Nickname: "expired-user"}

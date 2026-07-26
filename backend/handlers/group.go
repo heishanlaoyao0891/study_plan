@@ -812,7 +812,7 @@ func upsertGroupInvitation(groupID, createdBy uint, days int) (models.StudyGroup
 }
 
 func groupShareLink(code string) string {
-	return "/pages/group/join?code=" + code
+	return "/pages/group/group?code=" + code
 }
 
 func randomInviteCode() (string, error) {

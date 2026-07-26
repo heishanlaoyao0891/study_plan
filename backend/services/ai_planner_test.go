@@ -81,6 +81,19 @@ func TestLocalPlanningStageTemplatesAndProfilePacing(t *testing.T) {
 	}
 }
 
+func TestOneHourRequestIsNotReducedByProfile(t *testing.T) {
+	for _, profile := range []LearningProfile{{CompletionRate: 0.4}, {CompletionRate: 0.7}, {AverageStudyMins: 40}} {
+		ctx := PlanningContext{Input: PlanGenerationInput{HoursPerDay: 1, AvailableTimeSlot: "20:00-21:00"}, LearningProfile: profile}
+		if got := planningTaskMinutes(ctx); got != 60 {
+			t.Fatalf("one-hour request became %d minutes for profile %+v", got, profile)
+		}
+	}
+	ctx := PlanningContext{Input: PlanGenerationInput{HoursPerDay: 2, AvailableTimeSlot: "19:00-21:00"}, LearningProfile: LearningProfile{CompletionRate: 0.4}}
+	if got := planningTaskMinutes(ctx); got != 80 {
+		t.Fatalf("larger workload should retain adaptive pacing, got %d", got)
+	}
+}
+
 func TestLocalPlanIntroductionStaysChineseDuringEnrichment(t *testing.T) {
 	ctx := PlanningContext{Input: PlanGenerationInput{Goal: "学习 Go", Days: 1, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}}
 	local, err := BuildLocalPlan(ctx)

@@ -49,6 +49,8 @@ type User struct {
 	Role                  string         `gorm:"size:16;default:user;not null" json:"role"`
 	BannedUntil           *time.Time     `json:"banned_until,omitempty"`
 	BannedReason          string         `gorm:"size:256" json:"banned_reason,omitempty"`
+	LastLoginAt           *time.Time     `gorm:"index" json:"last_login_at,omitempty"`
+	LastLoginMethod       string         `gorm:"size:24" json:"last_login_method,omitempty"`
 	CreatedAt             time.Time      `json:"created_at"`
 	UpdatedAt             time.Time      `json:"updated_at"`
 	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`

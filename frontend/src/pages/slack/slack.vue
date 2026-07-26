@@ -7,14 +7,18 @@
       </view>
       <view class="balance">{{ balance }}<text>分钟</text></view>
     </view>
+		<view class="debt" v-if="balance < 0">已透支 {{ Math.abs(balance) }} 分钟。完成任务并打卡获得的躺平币会优先补回，补回前不能继续使用。</view>
+		<view class="low" v-else-if="lowBalance">躺平币即将用完，可前往提醒设置授权余额提醒。</view>
 
     <view class="action-card">
       <view class="title">记录一次安心休息</view>
       <input class="input" v-model="activity" placeholder="今天躺平主要在干什么？" />
       <view class="actions">
-        <button class="start" @click="start">开始躺平</button>
-        <button class="stop" @click="stop">结束躺平</button>
+				<button class="start" :disabled="!canStart" @click="start">开始躺平</button>
+				<button class="stop" :disabled="!activeSession" @click="stop">结束躺平</button>
       </view>
+			<view class="blocked" v-if="blockedReason">{{ blockedReason }}</view>
+			<button class="reminder" v-if="lowBalance" @click="goNotifications">设置余额提醒</button>
     </view>
 
     <view class="section-title">最近记录</view>
@@ -36,11 +40,16 @@ import { SlackApi } from '@/api'
 const balance = ref(0)
 const activity = ref('')
 const records = ref<any[]>([])
+const canStart = ref(false), blockedReason = ref(''), lowBalance = ref(false), activeSession = ref<any>(null)
 
 async function load() {
   try {
     const [b, rs] = await Promise.all([SlackApi.balance(), SlackApi.records()])
     balance.value = b.balance
+		canStart.value = b.can_start
+		blockedReason.value = b.blocked_reason || ''
+		lowBalance.value = b.low_balance
+		activeSession.value = b.active_session || null
     records.value = rs || []
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
@@ -48,6 +57,7 @@ async function load() {
 }
 
 async function start() {
+	if (!canStart.value) return
   if (!activity.value.trim()) {
     uni.showToast({ title: '先写躺平内容', icon: 'none' })
     return
@@ -63,6 +73,7 @@ async function start() {
 }
 
 async function stop() {
+	if (!activeSession.value) return
   try {
     await SlackApi.stop()
     await load()
@@ -71,6 +82,8 @@ async function stop() {
     uni.showToast({ title: e?.message || '结束失败', icon: 'none' })
   }
 }
+
+function goNotifications() { uni.navigateTo({ url: '/pages/notifications/notifications' }) }
 
 function formatTime(v: string) {
   if (!v) return ''
@@ -107,4 +120,5 @@ onShow(load)
 .record-time { margin-top: 8rpx; color: #7b8498; font-size: 22rpx; }
 .record-min { color: #ff6f91; font-size: 30rpx; font-weight: 900; }
 .record-min text { font-size: 21rpx; }
+.debt,.low,.blocked{margin-top:16rpx;padding:20rpx;border-radius:12rpx;font-size:23rpx;line-height:1.55}.debt{background:#fff1f2;color:#b4233d}.low{background:#fff7df;color:#805b12}.blocked{color:#8a5b67;text-align:center}.reminder{margin-top:14rpx;background:#eef7f3;color:#176449}.start[disabled],.stop[disabled]{opacity:.45}
 </style>

@@ -635,7 +635,7 @@ export const MotivationApi = {
 
 export const SlackApi = {
   balance() {
-    return api.get<{ balance: number; unit: string }>('/api/slack/balance')
+		return api.get<{ balance: number; unit: string; can_start: boolean; blocked_reason: string; low_balance: boolean; active_session?: any }>('/api/slack/balance')
   },
   start(activity: string) {
     return api.post<any>('/api/slack/start', { activity })
@@ -649,6 +649,9 @@ export const SlackApi = {
 }
 
 export const StatsApi = {
+	trend(period: '7d' | '1m' | '1y', dimension: 'time' | 'plan') {
+		return api.get<StatsTrend>(`/api/stats/trend?period=${period}&dimension=${dimension}`)
+	},
   calendar(month?: string) {
     return api.get<any[]>(`/api/stats/calendar${month ? `?month=${month}` : ''}`)
   },
@@ -668,6 +671,10 @@ export const StatsApi = {
     return api.get<any>(`/api/stats/efficiency?days=${days}`)
   },
 }
+
+export interface StatsMetrics { study_minutes: number; planned_minutes: number; overtime_minutes: number; completed_tasks: number; total_tasks: number; completion_rate: number | null }
+export interface StatsPoint extends StatsMetrics { key: string; label: string; start: string; end: string; plan_id?: number; plan_title?: string }
+export interface StatsTrend { period: '7d' | '1m' | '1y'; dimension: 'time' | 'plan'; start: string; end: string; bucket_unit: 'day' | 'month' | 'plan'; summary: StatsMetrics; series: StatsPoint[] }
 
 export const AIApi = {
   generatePlan(data: { goal: string; hours_per_day?: number; days?: number; start_date?: string; available_time_slot?: string; skip_dates?: string[]; refinement?: string }) {

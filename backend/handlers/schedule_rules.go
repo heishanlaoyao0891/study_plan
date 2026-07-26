@@ -11,6 +11,7 @@ import (
 )
 
 const maxCoveredMinutesExclusive = 60
+const maxFullyCoveredMinutes = 30
 
 type coveredInterval struct {
 	Start string `json:"start"`
@@ -26,6 +27,7 @@ type invalidScheduleTask struct {
 	CoveredMinutes   int                    `json:"covered_minutes"`
 	CoveredIntervals []coveredInterval      `json:"covered_intervals"`
 	ConflictingTasks []scheduleConflictTask `json:"conflicting_tasks"`
+	FullyContained   bool                   `json:"fully_contained"`
 }
 
 type scheduleConflictTask struct {
@@ -47,6 +49,7 @@ func (e *scheduleConflictError) Metadata() map[string]interface{} {
 	return map[string]interface{}{
 		"invalid_tasks":                 e.InvalidTasks,
 		"max_covered_minutes_exclusive": maxCoveredMinutesExclusive,
+		"max_fully_covered_minutes":     maxFullyCoveredMinutes,
 	}
 }
 
@@ -85,6 +88,7 @@ func validateScheduleTasksWithPlanTitles(tasks []models.DailyTask, planTitles ma
 			taskEnd, _ := minuteOfDay(task.PlannedEnd)
 			covered := make([]minuteInterval, 0)
 			conflicting := make([]scheduleConflictTask, 0)
+			fullyContained := false
 			for otherIndex, other := range rows {
 				if index == otherIndex {
 					continue
@@ -94,6 +98,9 @@ func validateScheduleTasksWithPlanTitles(tasks []models.DailyTask, planTitles ma
 				start, end := maxIntValue(taskStart, otherStart), minIntValue(taskEnd, otherEnd)
 				if end > start {
 					covered = append(covered, minuteInterval{start: start, end: end})
+					if otherStart <= taskStart && otherEnd >= taskEnd {
+						fullyContained = true
+					}
 					conflicting = append(conflicting, scheduleConflictTask{TaskID: other.ID, PlanID: other.PlanID, PlanTitle: schedulePlanTitle(other, planTitles), Title: other.Title, Start: formatMinute(start), End: formatMinute(end)})
 				}
 			}
@@ -104,8 +111,8 @@ func validateScheduleTasksWithPlanTitles(tasks []models.DailyTask, planTitles ma
 				minutes += interval.end - interval.start
 				intervals = append(intervals, coveredInterval{Start: formatMinute(interval.start), End: formatMinute(interval.end)})
 			}
-			if minutes >= maxCoveredMinutesExclusive {
-				invalid = append(invalid, invalidScheduleTask{TaskID: task.ID, PlanID: task.PlanID, PlanTitle: schedulePlanTitle(task, planTitles), Title: task.Title, Date: date, CoveredMinutes: minutes, CoveredIntervals: intervals, ConflictingTasks: conflicting})
+			if minutes >= maxCoveredMinutesExclusive || (fullyContained && minutes > maxFullyCoveredMinutes) {
+				invalid = append(invalid, invalidScheduleTask{TaskID: task.ID, PlanID: task.PlanID, PlanTitle: schedulePlanTitle(task, planTitles), Title: task.Title, Date: date, CoveredMinutes: minutes, CoveredIntervals: intervals, ConflictingTasks: conflicting, FullyContained: fullyContained})
 			}
 		}
 	}

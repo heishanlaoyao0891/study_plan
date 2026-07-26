@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -12,6 +13,146 @@ import (
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
 )
+
+type statsMetrics struct {
+	StudyMinutes    int  `json:"study_minutes"`
+	PlannedMinutes  int  `json:"planned_minutes"`
+	OvertimeMinutes int  `json:"overtime_minutes"`
+	CompletedTasks  int  `json:"completed_tasks"`
+	TotalTasks      int  `json:"total_tasks"`
+	CompletionRate  *int `json:"completion_rate"`
+}
+
+type statsPoint struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Start     string `json:"start"`
+	End       string `json:"end"`
+	PlanID    uint   `json:"plan_id,omitempty"`
+	PlanTitle string `json:"plan_title,omitempty"`
+	statsMetrics
+}
+
+func StatsTrend(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	period, dimension := c.DefaultQuery("period", "7d"), c.DefaultQuery("dimension", "time")
+	if (period != "7d" && period != "1m" && period != "1y") || (dimension != "time" && dimension != "plan") {
+		api.Fail(c, http.StatusBadRequest, "period or dimension is invalid")
+		return
+	}
+	now := shanghaiNow()
+	end := now.Format(dateLayout)
+	startTime := now.AddDate(0, 0, -6)
+	if period == "1m" {
+		startTime = now.AddDate(0, 0, -29)
+	} else if period == "1y" {
+		startTime = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, -11, 0)
+	}
+	start := startTime.Format(dateLayout)
+	var tasks []models.DailyTask
+	if err := db.DB.Where("user_id = ? AND date >= ? AND date <= ?", uid, start, end).Order("date ASC, id ASC").Find(&tasks).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query trend failed")
+		return
+	}
+	planTitles := map[uint]string{}
+	var plans []models.Plan
+	if err := db.DB.Select("id", "title").Where("user_id = ?", uid).Find(&plans).Error; err == nil {
+		for _, plan := range plans {
+			planTitles[plan.ID] = plan.Title
+		}
+	}
+	points := map[string]int{}
+	series := make([]statsPoint, 0)
+	if dimension == "time" {
+		if period == "1y" {
+			for offset := 0; offset < 12; offset++ {
+				month := startTime.AddDate(0, offset, 0)
+				key := month.Format("2006-01")
+				pointEnd := month.AddDate(0, 1, -1)
+				if pointEnd.After(now) {
+					pointEnd = now
+				}
+				series = append(series, statsPoint{Key: key, Label: month.Format("06-01"), Start: month.Format(dateLayout), End: pointEnd.Format(dateLayout)})
+			}
+		} else {
+			days := 7
+			if period == "1m" {
+				days = 30
+			}
+			for offset := 0; offset < days; offset++ {
+				date := startTime.AddDate(0, 0, offset)
+				series = append(series, statsPoint{Key: date.Format(dateLayout), Label: date.Format("01-02"), Start: date.Format(dateLayout), End: date.Format(dateLayout)})
+			}
+		}
+		for index := range series {
+			points[series[index].Key] = index
+		}
+	} else {
+		for _, task := range tasks {
+			key := strconv.FormatUint(uint64(task.PlanID), 10)
+			if _, exists := points[key]; !exists {
+				series = append(series, statsPoint{Key: key, Label: planTitles[task.PlanID], Start: start, End: end, PlanID: task.PlanID, PlanTitle: planTitles[task.PlanID]})
+				points[key] = len(series) - 1
+			}
+		}
+	}
+	summary := statsMetrics{}
+	for _, task := range tasks {
+		key := task.Date
+		if period == "1y" && dimension == "time" {
+			key = task.Date[:7]
+		}
+		if dimension == "plan" {
+			key = strconv.FormatUint(uint64(task.PlanID), 10)
+		}
+		pointIndex, exists := points[key]
+		if !exists {
+			continue
+		}
+		planned := plannedRangeMinutes(task.PlannedStart, task.PlannedEnd)
+		if planned <= 0 {
+			planned = task.EstimatedMinutes
+		}
+		if planned <= 0 {
+			planned = 60
+		}
+		applyStatsTask(&series[pointIndex].statsMetrics, task, planned)
+		applyStatsTask(&summary, task, planned)
+	}
+	for index := range series {
+		finalizeStatsMetrics(&series[index].statsMetrics)
+	}
+	finalizeStatsMetrics(&summary)
+	if dimension == "plan" {
+		sort.Slice(series, func(i, j int) bool {
+			if series[i].StudyMinutes != series[j].StudyMinutes {
+				return series[i].StudyMinutes > series[j].StudyMinutes
+			}
+			return series[i].PlanID < series[j].PlanID
+		})
+	}
+	api.OK(c, gin.H{"period": period, "dimension": dimension, "timezone": "Asia/Shanghai", "start": start, "end": end, "bucket_unit": map[bool]string{true: "plan", false: map[bool]string{true: "month", false: "day"}[period == "1y"]}[dimension == "plan"], "summary": summary, "series": series})
+}
+
+func applyStatsTask(metrics *statsMetrics, task models.DailyTask, planned int) {
+	metrics.StudyMinutes += task.StudyMinutes
+	metrics.PlannedMinutes += planned
+	if task.StudyMinutes > planned {
+		metrics.OvertimeMinutes += task.StudyMinutes - planned
+	}
+	metrics.TotalTasks++
+	if task.Status == models.TaskStatusCompleted {
+		metrics.CompletedTasks++
+	}
+}
+
+func finalizeStatsMetrics(metrics *statsMetrics) {
+	if metrics.TotalTasks == 0 {
+		return
+	}
+	rate := metrics.CompletedTasks * 100 / metrics.TotalTasks
+	metrics.CompletionRate = &rate
+}
 
 func StatsCalendar(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
