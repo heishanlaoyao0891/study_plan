@@ -16,7 +16,8 @@
     { "path": "pages/ai/ai", "style": { "navigationBarTitleText": "AI 计划" } },
     { "path": "pages/notifications/notifications", "style": { "navigationBarTitleText": "提醒设置" } },
     { "path": "pages/onboarding/onboarding", "style": { "navigationBarTitleText": "新手引导" } },
-    { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } }
+    { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录", "navigationStyle": "default" } },
+    { "path": "pages/banned/banned", "style": { "navigationBarTitleText": "访问已暂停", "navigationStyle": "default" } }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",

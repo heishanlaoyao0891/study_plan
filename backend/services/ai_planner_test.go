@@ -81,6 +81,27 @@ func TestLocalPlanningStageTemplatesAndProfilePacing(t *testing.T) {
 	}
 }
 
+func TestLocalPlanIntroductionStaysChineseDuringEnrichment(t *testing.T) {
+	ctx := PlanningContext{Input: PlanGenerationInput{Goal: "学习 Go", Days: 1, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}}
+	local, err := BuildLocalPlan(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(local.Summary, "day") || strings.Contains(local.Rationale, "Agent") {
+		t.Fatalf("local introduction contains English copy: %+v", local)
+	}
+	enriched := local
+	enriched.Summary = "English summary"
+	enriched.Rationale = "English rationale"
+	merged, err := MergePlanEnrichment(local, enriched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.Summary != local.Summary || merged.Rationale != local.Rationale {
+		t.Fatalf("enrichment replaced canonical Chinese introduction: %+v", merged)
+	}
+}
+
 func TestLocalPlanningRepairsOccupancyAndHonorsSkipDates(t *testing.T) {
 	ctx := PlanningContext{
 		Input:     PlanGenerationInput{Goal: "学习 Go", Days: 2, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00", SkipDates: []string{"2026-08-02"}},
@@ -161,7 +182,7 @@ func TestPlanningPromptIncludesSkeletonAggregateContextAndRefinement(t *testing.
 	ctx := PlanningContext{Input: PlanGenerationInput{Goal: "Study Go", Days: 1, HoursPerDay: 1, Refinement: "focus on concurrency"}, ActivePlanLoad: ActivePlanLoad{ActivePlanCount: 2}, Occupancy: []PlanningOccupancy{{Date: "2026-08-01"}}}
 	local := PlanPreview{Title: "Study Go", Tasks: []PlanPreviewTask{{Date: "2026-08-02", PlannedStart: "20:00", PlannedEnd: "21:00", EstimatedMinutes: 60}}}
 	prompt := BuildPlanningPrompt(ctx, local)
-	for _, expected := range []string{"CANONICAL_LOCAL_SKELETON", "unfinished_occupancy_count", "focus on concurrency", "Preserve task count"} {
+	for _, expected := range []string{"CANONICAL_LOCAL_SKELETON", "unfinished_occupancy_count", "focus on concurrency", "task count", "Simplified Chinese"} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("prompt omitted %q: %s", expected, prompt)
 		}

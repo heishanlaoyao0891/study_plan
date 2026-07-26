@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,11 @@ type updatePlanReq struct {
 type shiftPlanReq struct {
 	Days      int    `json:"days" binding:"required"`
 	StartDate string `json:"start_date"`
+}
+
+type applyPlanShiftReq struct {
+	Token   string           `json:"token" binding:"required"`
+	Actions []recoveryAction `json:"actions" binding:"required"`
 }
 
 type invitePlanReq struct {
@@ -551,6 +557,153 @@ func ShiftPlan(c *gin.Context) {
 	api.OK(c, plan)
 }
 
+func ShiftPlanPreview(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	days, err := strconv.Atoi(c.Query("days"))
+	if err != nil || days < 1 || days > 365 {
+		api.Fail(c, http.StatusBadRequest, "days must be between 1 and 365")
+		return
+	}
+	startDate := time.Now().AddDate(0, 0, 1).Format(dateLayout)
+	var tasks []models.DailyTask
+	if err := db.DB.Where("plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", plan.ID, uid, models.TaskStatusCompleted, startDate).Order("date ASC, sort_order ASC, id ASC").Find(&tasks).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "build shift preview failed")
+		return
+	}
+	actions := make([]recoveryAction, 0, len(tasks))
+	shiftedIDs := make([]uint, 0, len(tasks))
+	for _, task := range tasks {
+		date, parseErr := time.Parse(dateLayout, task.Date)
+		if parseErr != nil {
+			api.Fail(c, http.StatusInternalServerError, "task date is invalid")
+			return
+		}
+		newDate := date.AddDate(0, 0, days).Format(dateLayout)
+		actions = append(actions, recoveryAction{TaskID: task.ID, Title: task.Title, PlanID: plan.ID, PlanTitle: plan.Title, OldDate: task.Date, NewDate: newDate, PlannedStart: task.PlannedStart, PlannedEnd: task.PlannedEnd, Reason: "计划整体延期", Valid: true, Version: task.UpdatedAt.UnixNano()})
+		shiftedIDs = append(shiftedIDs, task.ID)
+	}
+	occupancy := make([]models.DailyTask, 0)
+	if len(shiftedIDs) > 0 {
+		if err := db.DB.Select("id", "plan_id", "title", "date", "planned_start", "planned_end").Where("user_id = ? AND date >= ? AND id NOT IN ? AND (status <> ? OR plan_id = ?)", uid, startDate, shiftedIDs, models.TaskStatusCompleted, plan.ID).Order("date ASC, planned_start ASC").Find(&occupancy).Error; err != nil {
+			api.Fail(c, http.StatusInternalServerError, "load schedule occupancy failed")
+			return
+		}
+	}
+	token, err := storeRecoveryPreviewForMode(uid, actions, "plan_shift", plan.ID, days)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "store shift preview failed")
+		return
+	}
+	api.OK(c, gin.H{"mode": "plan_shift", "token": token, "version": 1, "plan_id": plan.ID, "plan_title": plan.Title, "days": days, "actions": actions, "occupancy": occupancy})
+}
+
+func ApplyPlanShift(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	plan, err := mustGetOwnedPlan(c, uid)
+	if err != nil {
+		return
+	}
+	var req applyPlanShiftReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "token and actions required")
+		return
+	}
+	recoveryPreviews.Lock()
+	defer recoveryPreviews.Unlock()
+	snapshot, ok := recoveryPreviewLocked(req.Token, uid)
+	if !ok || snapshot.Mode != "plan_shift" || snapshot.PlanID != plan.ID {
+		api.Conflict(c, "shift preview is stale", gin.H{"stale": true})
+		return
+	}
+	if len(req.Actions) != len(snapshot.Actions) {
+		api.Fail(c, http.StatusBadRequest, "all shifted tasks must be included")
+		return
+	}
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		candidates := make([]models.DailyTask, 0, len(req.Actions))
+		seen := map[uint]bool{}
+		for _, action := range req.Actions {
+			original, exists := snapshot.Actions[action.TaskID]
+			if !exists || seen[action.TaskID] {
+				return errors.New("shift action is not in preview")
+			}
+			seen[action.TaskID] = true
+			var task models.DailyTask
+			if err := tx.Where("id = ? AND user_id = ? AND plan_id = ?", action.TaskID, uid, plan.ID).First(&task).Error; err != nil {
+				return err
+			}
+			if task.UpdatedAt.UnixNano() != original.Version || task.Date != original.OldDate || task.Status == models.TaskStatusCompleted {
+				return errors.New("shift preview is stale")
+			}
+			if _, err := time.Parse(dateLayout, action.NewDate); err != nil || validatePlannedRange(action.PlannedStart, action.PlannedEnd) != nil {
+				return errors.New("invalid shifted task schedule")
+			}
+			task.Date, task.PlannedStart, task.PlannedEnd = action.NewDate, action.PlannedStart, action.PlannedEnd
+			candidates = append(candidates, task)
+		}
+		if err := validateScheduleMutation(tx, uid, candidates); err != nil {
+			return err
+		}
+		var occupied int64
+		ids := make([]uint, 0, len(candidates))
+		dates := make([]string, 0, len(candidates))
+		seenDates := map[string]bool{}
+		for _, task := range candidates {
+			if seenDates[task.Date] {
+				return &taskDateConflictError{Date: task.Date}
+			}
+			seenDates[task.Date] = true
+			ids, dates = append(ids, task.ID), append(dates, task.Date)
+		}
+		if err := tx.Model(&models.DailyTask{}).Where("user_id = ? AND plan_id = ? AND date IN ? AND id NOT IN ?", uid, plan.ID, dates, ids).Count(&occupied).Error; err != nil {
+			return err
+		}
+		if occupied > 0 {
+			return &taskDateConflictError{Date: ""}
+		}
+		base, _ := time.Parse(dateLayout, "0001-01-01")
+		for index, task := range candidates {
+			temporary := base.AddDate(0, 0, index).Format(dateLayout)
+			if err := tx.Model(&models.DailyTask{}).Where("id = ?", task.ID).Update("date", temporary).Error; err != nil {
+				return err
+			}
+		}
+		for _, task := range candidates {
+			if err := tx.Model(&models.DailyTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{"date": task.Date, "planned_start": task.PlannedStart, "planned_end": task.PlannedEnd}).Error; err != nil {
+				return err
+			}
+		}
+		var bounds struct{ StartDate, EndDate string }
+		if err := tx.Model(&models.DailyTask{}).Select("MIN(date) AS start_date, MAX(date) AS end_date").Where("plan_id = ?", plan.ID).Scan(&bounds).Error; err != nil {
+			return err
+		}
+		if bounds.StartDate != "" {
+			plan.StartDate, plan.EndDate = bounds.StartDate, bounds.EndDate
+			if err := tx.Model(plan).Updates(map[string]interface{}{"start_date": plan.StartDate, "end_date": plan.EndDate}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if respondScheduleError(c, err) {
+			return
+		}
+		if strings.Contains(err.Error(), "stale") {
+			api.Conflict(c, "shift preview is stale", gin.H{"stale": true})
+			return
+		}
+		api.Fail(c, http.StatusBadRequest, "apply shift failed: "+err.Error())
+		return
+	}
+	delete(recoveryPreviews.Items, req.Token)
+	api.OK(c, gin.H{"moved": len(req.Actions), "plan": plan})
+}
+
 func InvitePlanMember(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	plan, err := mustGetOwnedPlan(c, uid)
@@ -684,12 +837,25 @@ func shiftPlanTasks(tx *gorm.DB, uid uint, plan *models.Plan, days int, startDat
 	if err := tx.Where("plan_id = ? AND user_id = ? AND status <> ? AND date >= ?", plan.ID, uid, models.TaskStatusCompleted, startDate).Find(&tasks).Error; err != nil {
 		return err
 	}
+	taskIDs := make([]uint, 0, len(tasks))
+	destinationDates := make([]string, 0, len(tasks))
 	for index := range tasks {
 		parsed, err := time.Parse(dateLayout, tasks[index].Date)
 		if err != nil {
 			return err
 		}
 		tasks[index].Date = parsed.AddDate(0, 0, days).Format(dateLayout)
+		taskIDs = append(taskIDs, tasks[index].ID)
+		destinationDates = append(destinationDates, tasks[index].Date)
+	}
+	if len(tasks) == 0 {
+		return nil
+	}
+	var occupied models.DailyTask
+	if err := tx.Select("date").Where("user_id = ? AND plan_id = ? AND date IN ? AND id NOT IN ?", uid, plan.ID, destinationDates, taskIDs).Order("date ASC").First(&occupied).Error; err == nil {
+		return &taskDateConflictError{Date: occupied.Date}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
 	if err := validateScheduleMutation(tx, uid, tasks); err != nil {
 		return err
@@ -707,6 +873,12 @@ func shiftPlanTasks(tx *gorm.DB, uid uint, plan *models.Plan, days int, startDat
 	if e := tx.Save(plan).Error; e != nil {
 		return e
 	}
+	sort.Slice(tasks, func(i, j int) bool {
+		if tasks[i].Date != tasks[j].Date {
+			return tasks[i].Date > tasks[j].Date
+		}
+		return tasks[i].ID > tasks[j].ID
+	})
 	for _, task := range tasks {
 		if err := tx.Model(&models.DailyTask{}).Where("id = ?", task.ID).Update("date", task.Date).Error; err != nil {
 			return err

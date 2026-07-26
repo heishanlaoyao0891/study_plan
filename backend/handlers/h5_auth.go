@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"study_plan_backend/api"
+	"study_plan_backend/banstate"
 	"study_plan_backend/db"
 	"study_plan_backend/identity"
 	"study_plan_backend/models"
@@ -118,10 +119,14 @@ func WeChatLink(c *gin.Context) {
 	}
 	username := strings.ToLower(strings.TrimSpace(req.Username))
 	var user models.User
+	if err := db.DB.Where("username_normalized = ?", username).First(&user).Error; err != nil || user.PasswordHash == nil || bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password)) != nil {
+		api.Fail(c, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	if !allowActiveUser(c, &user) {
+		return
+	}
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("username_normalized = ?", username).First(&user).Error; err != nil || user.PasswordHash == nil || bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password)) != nil {
-			return errInvalidCredentials
-		}
 		if user.OpenID != "" && user.OpenID != claims.OpenID {
 			return errOpenIDInUse
 		}
@@ -238,8 +243,7 @@ func respondWithUserToken(c *gin.Context, user models.User) {
 }
 
 func allowActiveUser(c *gin.Context, user *models.User) bool {
-	if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
-		api.Fail(c, http.StatusForbidden, "user banned")
+	if banstate.Block(c, user, time.Now()) {
 		return false
 	}
 	if user.AccountStatus == models.AccountStatusDeleted {

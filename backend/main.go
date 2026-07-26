@@ -77,6 +77,8 @@ func main() {
 		bound.PUT("/plans/:id/pause", handlers.PausePlan)
 		bound.PUT("/plans/:id/resume", handlers.ResumePlan)
 		bound.PUT("/plans/:id/shift", handlers.ShiftPlan)
+		bound.GET("/plans/:id/shift-preview", handlers.ShiftPlanPreview)
+		bound.POST("/plans/:id/shift-apply", handlers.ApplyPlanShift)
 		bound.POST("/plans/:id/invite", handlers.InvitePlanMember)
 		bound.POST("/plans/:id/join", handlers.JoinPlan)
 		bound.POST("/groups", handlers.CreateStudyGroup)

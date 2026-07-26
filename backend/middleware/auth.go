@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"study_plan_backend/banstate"
 	"study_plan_backend/db"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
@@ -50,13 +51,8 @@ func Auth() gin.HandlerFunc {
 			})
 			return
 		}
-		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"code":         403,
-				"message":      "user banned",
-				"banned_until": user.BannedUntil,
-				"reason":       user.BannedReason,
-			})
+		if banstate.Block(c, &user, time.Now()) {
+			c.Abort()
 			return
 		}
 		c.Set(CtxUserIDKey, user.ID)

@@ -1,6 +1,8 @@
 // API 层封装：统一的请求方法 + token 管理
 // 使用 uni.request 发起请求，自动带上 Authorization header
 
+import { retainBanAndRoute } from '@/utils/ban-state'
+
 const API_BASE_KEY = 'api_base'
 const TOKEN_KEY = 'auth_token'
 const configuredApiBase = normalizeApiBase(import.meta.env.VITE_API_BASE || '')
@@ -83,13 +85,18 @@ export async function request<T = any>(path: string, options: RequestOptions = {
       header,
       success: (res: any) => {
         const status = res.statusCode || 200
+        const responseBody = res.data || {}
+        const businessCode = Number(responseBody.code)
+        if ((status === 403 || businessCode === 403) && retainBanAndRoute(responseBody, needAuth && !!getToken())) {
+          return reject({ code: 403, message: responseBody.message || '账号访问已暂停', raw: responseBody } as ApiError)
+        }
         if (status === 401) {
           clearToken()
           uni.reLaunch({ url: '/pages/login/login' })
           return reject({ code: 401, message: '登录已过期，请重新登录' } as ApiError)
         }
         if (status === 403) {
-          const data = res.data || {}
+          const data = responseBody
           if (data.nickname_required || data.data?.nickname_required) {
             uni.reLaunch({ url: '/pages/nickname/nickname' })
           }
@@ -99,7 +106,7 @@ export async function request<T = any>(path: string, options: RequestOptions = {
           const data = res.data || {}
           return reject({ code: status, message: data.message || '请求失败', raw: data.data || data } as ApiError)
         }
-        const body: ApiResp<T> = res.data || {}
+        const body: ApiResp<T> = responseBody
         if (body.code !== 0) {
           if ((body as any).nickname_required || (body.data as any)?.nickname_required) {
             uni.reLaunch({ url: '/pages/nickname/nickname' })

@@ -68,8 +68,6 @@ type subscriptionConfigReq struct {
 	GroupNudgeFieldMapping  string `json:"group_nudge_field_mapping"`
 }
 
-const farFutureYear = 2099
-
 // ListUsers 管理员：列出所有用户
 func ListUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -176,8 +174,7 @@ func BanUser(c *gin.Context) {
 
 	var until *time.Time
 	if req.DurationHours == 0 {
-		// 永久封禁：用一个远未来的时间戳
-		t := time.Date(farFutureYear, 12, 31, 23, 59, 59, 0, time.UTC)
+		t := models.PermanentBanUntil()
 		until = &t
 	} else {
 		t := time.Now().Add(time.Duration(req.DurationHours) * time.Hour)

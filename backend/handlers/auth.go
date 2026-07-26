@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"study_plan_backend/api"
+	"study_plan_backend/banstate"
 	"study_plan_backend/db"
 	"study_plan_backend/identity"
 	"study_plan_backend/middleware"
@@ -107,24 +108,6 @@ func Login(c *gin.Context) {
 		if !allowActiveUser(c, &user) {
 			return
 		}
-		if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":         403,
-				"message":      "user banned",
-				"banned_until": user.BannedUntil,
-				"reason":       user.BannedReason,
-			})
-			return
-		}
-		// 封禁时间已过，自动解封
-		if user.BannedUntil != nil {
-			db.DB.Model(&user).Updates(map[string]interface{}{
-				"banned_until":  nil,
-				"banned_reason": "",
-			})
-			user.BannedUntil = nil
-			user.BannedReason = ""
-		}
 		// WeChat login does not authoritatively provide the application nickname.
 		if req.AvatarURL != "" {
 			updates := map[string]interface{}{}
@@ -182,9 +165,8 @@ func AdminLogin(c *gin.Context) {
 		api.Fail(c, http.StatusForbidden, "admin only")
 		return
 	}
-	if cred.User.BannedUntil != nil && cred.User.BannedUntil.After(time.Now()) {
+	if banstate.Block(c, &cred.User, time.Now()) {
 		recordAdminLoginFailure(key)
-		api.Fail(c, http.StatusForbidden, "user banned")
 		return
 	}
 

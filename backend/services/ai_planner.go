@@ -170,7 +170,7 @@ func NormalizePlanGenerationInput(input PlanGenerationInput) (PlanGenerationInpu
 	input.AvailableTimeSlot = formatPlanningMinute(startMinute) + "-" + formatPlanningMinute(endMinute)
 	warnings := make([]string, 0, 1)
 	if input.HoursPerDay*60 > endMinute-startMinute {
-		warnings = append(warnings, fmt.Sprintf("Requested %d hours per day exceeds the %d-minute available slot; the available slot is authoritative.", input.HoursPerDay, endMinute-startMinute))
+		warnings = append(warnings, fmt.Sprintf("每天期望学习 %d 小时，但可用时段只有 %d 分钟，计划将以实际可用时段为准。", input.HoursPerDay, endMinute-startMinute))
 	}
 	seen := map[string]bool{}
 	normalizedSkip := make([]string, 0, len(input.SkipDates))
@@ -236,7 +236,7 @@ func BuildPlanningPrompt(ctx PlanningContext, local PlanPreview) string {
 		OccupancyCount     int                 `json:"unfinished_occupancy_count"`
 	}{ctx.Input, ctx.LearningProfile, ctx.ActivePlanLoad, ctx.RecentTaskOutcomes, len(ctx.Occupancy)})
 	skeleton, _ := json.Marshal(local)
-	return "You are a bounded semantic collaborator for a study planning agent. Enrich only title, summary, rationale, and each existing task's title, objective, description, and difficulty. Return the complete JSON object. Preserve task count, order, dates, planned_start, planned_end, estimated_minutes, and estimated_total_hours exactly. Do not add or remove tasks.\nNORMALIZED_BRIEF:\n" + string(brief) + "\nCANONICAL_LOCAL_SKELETON:\n" + string(skeleton) + "\nREFINEMENT_INSTRUCTIONS:\n" + defaultString(ctx.Input.Refinement, "none")
+	return "You are a bounded semantic collaborator for a study planning agent. Write all user-facing content in Simplified Chinese. Enrich only the title and each existing task's title, objective, description, and difficulty. Return the complete JSON object. Preserve summary, rationale, task count, order, dates, planned_start, planned_end, estimated_minutes, and estimated_total_hours exactly. Do not add or remove tasks.\nNORMALIZED_BRIEF:\n" + string(brief) + "\nCANONICAL_LOCAL_SKELETON:\n" + string(skeleton) + "\nREFINEMENT_INSTRUCTIONS:\n" + defaultString(ctx.Input.Refinement, "无")
 }
 
 func LoadPlanningOccupancy(userID uint, startDate string, searchDays int) ([]PlanningOccupancy, error) {
@@ -302,7 +302,7 @@ func BuildLocalPlan(ctx PlanningContext) (PlanPreview, error) {
 	}
 	preview := PlanPreview{
 		Title:     ctx.Input.Goal,
-		Summary:   fmt.Sprintf("%d-day %s plan with progressive stages, review, and buffer cadence.", len(tasks), stageType),
+		Summary:   fmt.Sprintf("这是一个为期 %d 天的渐进式学习计划，包含阶段练习、复盘和缓冲安排。", len(tasks)),
 		Rationale: localPlanRationale(ctx, stageType, minutes), Tasks: tasks,
 	}
 	recomputePlanTotals(&preview)
@@ -320,8 +320,6 @@ func MergePlanEnrichment(local, enriched PlanPreview) (PlanPreview, error) {
 	}
 	merged := local
 	merged.Title = semanticValue(enriched.Title, local.Title)
-	merged.Summary = semanticValue(enriched.Summary, local.Summary)
-	merged.Rationale = semanticValue(enriched.Rationale, local.Rationale)
 	merged.Tasks = append([]PlanPreviewTask(nil), local.Tasks...)
 	for index := range merged.Tasks {
 		merged.Tasks[index].Title = semanticValue(enriched.Tasks[index].Title, local.Tasks[index].Title)
@@ -533,11 +531,11 @@ func planningDifficulty(index, total int, completionRate float64) string {
 }
 
 func localPlanRationale(ctx PlanningContext, stageType string, minutes int) string {
-	pace := "steady"
+	pace := "稳定"
 	if ctx.LearningProfile.CompletionRate > 0 && ctx.LearningProfile.CompletionRate < 0.6 {
-		pace = "reduced to protect completion"
+		pace = "适当放缓"
 	}
-	return fmt.Sprintf("The Agent selected the %s template, set a %d-minute %s pace, preserved availability and skip dates, and repaired unfinished-task conflicts locally.", stageType, minutes, pace)
+	return fmt.Sprintf("计划采用渐进式任务安排，每次学习 %d 分钟，整体节奏%s；已避开不可用日期，并处理未完成任务的时间冲突。", minutes, pace)
 }
 
 func recomputePlanTotals(preview *PlanPreview) {

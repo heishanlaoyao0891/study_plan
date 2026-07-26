@@ -318,6 +318,7 @@ export interface RecoveryAction {
   reason: string
   valid?: boolean
   validation_message?: string
+	version?: number
 }
 
 export interface RecoveryPreview {
@@ -329,6 +330,9 @@ export interface RecoveryPreview {
   token?: string
   version?: string
   actions: RecoveryAction[]
+	plan_id?: number
+	plan_title?: string
+	days?: number
   occupancy?: RecoveryOccupancy[]
   occupied_intervals?: RecoveryOccupancy[]
 }
@@ -337,6 +341,7 @@ export interface RecoveryOccupancy {
   task_id?: number
   id?: number | string
   title?: string
+	plan_id?: number
   date: string
   planned_start?: string
   planned_end?: string
@@ -469,6 +474,12 @@ export const PlanApi = {
   delay(id: number, days: number) {
     return api.put<PlanDelayResult>(`/api/plans/${id}/shift`, { days })
   },
+	shiftPreview(id: number, days: number) {
+		return api.get<RecoveryPreview>(`/api/plans/${id}/shift-preview?days=${days}`)
+	},
+	applyShift(id: number, preview_token: string, actions: RecoveryAction[]) {
+		return api.post<RecoveryApplyResult>(`/api/plans/${id}/shift-apply`, { token: preview_token, actions })
+	},
   shift(id: number, days: number, start_date = '') {
     return api.put<Plan>(`/api/plans/${id}/shift`, { days, start_date })
   },

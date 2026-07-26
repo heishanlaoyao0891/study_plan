@@ -324,6 +324,56 @@ func TestShiftPlanTasksSkipsCompletedTasks(t *testing.T) {
 	}
 }
 
+func TestShiftPlanTasksMovesConsecutiveDatesWithoutTransientConflict(t *testing.T) {
+	setupTestDB(t)
+	uid := uint(1)
+	plan := models.Plan{UserID: uid, Title: "P", StartDate: "2026-07-20", EndDate: "2026-07-22"}
+	if err := db.DB.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	tasks := []models.DailyTask{
+		{UserID: uid, PlanID: plan.ID, Date: "2026-07-20", Title: "A", Status: models.TaskStatusPending},
+		{UserID: uid, PlanID: plan.ID, Date: "2026-07-21", Title: "B", Status: models.TaskStatusPending},
+		{UserID: uid, PlanID: plan.ID, Date: "2026-07-22", Title: "C", Status: models.TaskStatusPending},
+	}
+	if err := db.DB.Create(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error { return shiftPlanTasks(tx, uid, &plan, 1, "2026-07-20") }); err != nil {
+		t.Fatal(err)
+	}
+	var shifted []models.DailyTask
+	if err := db.DB.Order("date ASC").Find(&shifted).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index, expected := range []string{"2026-07-21", "2026-07-22", "2026-07-23"} {
+		if shifted[index].Date != expected {
+			t.Fatalf("task %d date = %s, want %s", index, shifted[index].Date, expected)
+		}
+	}
+}
+
+func TestShiftPlanTasksRejectsOccupiedDestination(t *testing.T) {
+	setupTestDB(t)
+	uid := uint(1)
+	plan := models.Plan{UserID: uid, Title: "P", StartDate: "2026-07-20", EndDate: "2026-07-21"}
+	if err := db.DB.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows := []models.DailyTask{
+		{UserID: uid, PlanID: plan.ID, Date: "2026-07-20", Title: "A", Status: models.TaskStatusPending},
+		{UserID: uid, PlanID: plan.ID, Date: "2026-07-21", Title: "B", Status: models.TaskStatusCompleted},
+	}
+	if err := db.DB.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	err := db.DB.Transaction(func(tx *gorm.DB) error { return shiftPlanTasks(tx, uid, &plan, 1, "2026-07-20") })
+	var conflict *taskDateConflictError
+	if !errors.As(err, &conflict) || conflict.Date != "2026-07-21" {
+		t.Fatalf("expected occupied date conflict, got %v", err)
+	}
+}
+
 func TestMakeupCostDeductsSlackAndRecordsDelta(t *testing.T) {
 	setupTestDB(t)
 	user := models.User{OpenID: "u1", Nickname: "u1", SlackBalance: 50}

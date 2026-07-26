@@ -50,6 +50,18 @@ func (e *scheduleConflictError) Metadata() map[string]interface{} {
 	}
 }
 
+type taskDateConflictError struct {
+	Date string `json:"date"`
+}
+
+func (e *taskDateConflictError) Error() string {
+	return "目标日期已有任务，无法整体延期"
+}
+
+func (e *taskDateConflictError) Metadata() map[string]interface{} {
+	return map[string]interface{}{"date": e.Date}
+}
+
 type minuteInterval struct{ start, end int }
 
 func validateScheduleTasks(tasks []models.DailyTask) error {
@@ -207,10 +219,14 @@ func maxIntValue(a, b int) int {
 }
 
 func respondScheduleError(c interface{ JSON(int, interface{}) }, err error) bool {
-	conflict, ok := err.(*scheduleConflictError)
-	if !ok {
+	switch conflict := err.(type) {
+	case *scheduleConflictError:
+		c.JSON(409, map[string]interface{}{"code": 409, "message": conflict.Error(), "data": conflict.Metadata()})
+		return true
+	case *taskDateConflictError:
+		c.JSON(409, map[string]interface{}{"code": 409, "message": conflict.Error(), "data": conflict.Metadata()})
+		return true
+	default:
 		return false
 	}
-	c.JSON(409, map[string]interface{}{"code": 409, "message": conflict.Error(), "data": conflict.Metadata()})
-	return true
 }

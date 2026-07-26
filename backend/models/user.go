@@ -18,7 +18,16 @@ const (
 	OnboardingStatusCompleted  = "completed"
 	OnboardingStatusSkipped    = "skipped"
 	CurrentOnboardingVersion   = 1
+	PermanentBanYear           = 2099
 )
+
+func PermanentBanUntil() time.Time {
+	return time.Date(PermanentBanYear, 12, 31, 23, 59, 59, 0, time.UTC)
+}
+
+func IsPermanentBan(until *time.Time) bool {
+	return until != nil && !until.Before(time.Date(PermanentBanYear, 1, 1, 0, 0, 0, 0, time.UTC))
+}
 
 type User struct {
 	ID                    uint           `gorm:"primaryKey" json:"id"`

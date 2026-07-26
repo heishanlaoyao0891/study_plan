@@ -20,6 +20,8 @@ import (
 type recoveryAction struct {
 	TaskID       uint   `json:"task_id"`
 	Title        string `json:"title"`
+	PlanID       uint   `json:"plan_id"`
+	PlanTitle    string `json:"plan_title"`
 	OldDate      string `json:"old_date"`
 	NewDate      string `json:"new_date"`
 	PlannedStart string `json:"planned_start"`
@@ -37,6 +39,9 @@ type recoverySnapshot struct {
 	UserID    uint
 	Actions   map[uint]recoveryAction
 	ExpiresAt time.Time
+	Mode      string
+	PlanID    uint
+	PlanDays  int
 }
 
 var recoveryPreviews = struct {
@@ -223,6 +228,10 @@ func nextPlanStudyDay(plan models.Plan, day time.Time) (time.Time, bool) {
 }
 
 func storeRecoveryPreview(uid uint, actions []recoveryAction) (string, error) {
+	return storeRecoveryPreviewForMode(uid, actions, "recovery", 0, 0)
+}
+
+func storeRecoveryPreviewForMode(uid uint, actions []recoveryAction, mode string, planID uint, planDays int) (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -233,7 +242,7 @@ func storeRecoveryPreview(uid uint, actions []recoveryAction) (string, error) {
 		rows[action.TaskID] = action
 	}
 	recoveryPreviews.Lock()
-	recoveryPreviews.Items[token] = recoverySnapshot{UserID: uid, Actions: rows, ExpiresAt: time.Now().Add(15 * time.Minute)}
+	recoveryPreviews.Items[token] = recoverySnapshot{UserID: uid, Actions: rows, ExpiresAt: time.Now().Add(15 * time.Minute), Mode: mode, PlanID: planID, PlanDays: planDays}
 	recoveryPreviews.Unlock()
 	return token, nil
 }

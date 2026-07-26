@@ -37,7 +37,7 @@
         <view class="field"><text>描述</text><textarea v-model="t.description" /></view>
         <view class="grid">
           <view class="field"><text>预计分钟</text><input :value="t.estimated_minutes" type="number" disabled /></view>
-          <view class="field"><text>难度</text><input v-model="t.difficulty" placeholder="easy/medium/hard" /></view>
+          <view class="field"><text>难度</text><picker :range="difficultyOptions" range-key="label" :value="difficultyIndex(t.difficulty)" @change="setDifficulty(t, $event.detail.value)"><view class="picker-value">{{ difficultyLabel(t.difficulty) }}</view></picker></view>
         </view>
       </view>
     </view>
@@ -64,6 +64,11 @@ const provenanceToken = ref('')
 const idempotencyKey = ref('')
 const warnings = ref<string[]>([])
 const enrichmentMessage = ref('计划由本地规则生成，未使用外部模型。')
+const difficultyOptions = [
+  { value: 'easy', label: '简单' },
+  { value: 'medium', label: '适中' },
+  { value: 'hard', label: '困难' },
+]
 let generationSequence = 0
 
 const enrichmentMessages: Record<PlanningResponse['enrichment']['status'], string> = {
@@ -75,6 +80,19 @@ const enrichmentMessages: Record<PlanningResponse['enrichment']['status'], strin
   cancelled: 'AI 增强已取消，已保留本地计划。',
   invalid_output: 'AI 返回内容未通过规则校验，已使用本地计划。',
   provider_error: 'AI 服务暂不可用，已返回本地计划。',
+}
+
+function difficultyIndex(value: string) {
+  const index = difficultyOptions.findIndex(option => option.value === value)
+  return index < 0 ? 0 : index
+}
+
+function difficultyLabel(value: string) {
+  return difficultyOptions[difficultyIndex(value)].label
+}
+
+function setDifficulty(task: PlanningPreviewTask, index: string | number) {
+  task.difficulty = difficultyOptions[Number(index)]?.value || 'easy'
 }
 
 async function generate() {

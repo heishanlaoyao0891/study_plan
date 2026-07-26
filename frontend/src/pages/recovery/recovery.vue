@@ -1,10 +1,10 @@
 <template>
   <view class="page">
     <view class="hero">
-      <view class="kicker">把落下的节奏轻轻接回来</view>
-      <view class="title">重新安排</view>
-      <view class="desc">先预览、选择和调整日期时间，确认后才会移动任务。</view>
-      <view class="meta">{{ preview?.mode || '规则安排' }} · {{ preview?.overdue_tasks || 0 }} 个逾期任务</view>
+      <view class="kicker">{{ shiftMode ? '先检查延期后的日程' : '把落下的节奏轻轻接回来' }}</view>
+      <view class="title">{{ shiftMode ? '延期预览' : '重新安排' }}</view>
+      <view class="desc">先预览并调整日期时间，确认后才会移动任务。</view>
+      <view class="meta">{{ shiftMode ? `${preview?.plan_title || '学习计划'} · 延期 ${preview?.days || shiftDays} 天` : `${preview?.overdue_tasks || 0} 个逾期任务` }}</view>
     </view>
 
     <view class="notice" v-if="preview && !previewToken">当前预览缺少版本 token，已禁止应用。请等待后端升级后刷新预览。</view>
@@ -15,7 +15,7 @@
     <view class="group" v-for="group in groupedRows" :key="group.name">
       <view class="group-title">{{ group.name }}</view>
       <view class="task" v-for="row in group.rows" :key="row.action.task_id" :class="{ deselected: !row.selected }">
-        <view class="task-head"><view><view class="task-title">{{ row.action.title }}</view><view class="old-date">原安排 {{ row.action.old_date }}</view></view><switch color="#ff7aa2" :checked="row.selected" @change="setSelected(row, $event)" /></view>
+        <view class="task-head"><view><view class="task-title">{{ row.action.title }}</view><view class="old-date">原安排 {{ row.action.old_date }}</view></view><switch v-if="!shiftMode" color="#ff7aa2" :checked="row.selected" @change="setSelected(row, $event)" /></view>
         <view class="reason">{{ row.action.reason || '根据未来学习日与可用时段安排' }}</view>
         <view class="pickers">
           <view><text>新日期</text><picker mode="date" :value="row.action.new_date" :start="today" @change="setValue(row, 'new_date', $event)"><view>{{ row.action.new_date }}</view></picker></view>
@@ -26,19 +26,21 @@
       </view>
     </view>
 
-    <view class="footer" v-if="rows.length"><view class="footer-copy">已选择 {{ selectedRows.length }}/{{ rows.length }} 项</view><button :disabled="!canApply || applying" :loading="applying" @click="apply">应用重新安排</button></view>
+    <view class="footer" v-if="rows.length"><view class="footer-copy">{{ shiftMode ? `共 ${rows.length} 项` : `已选择 ${selectedRows.length}/${rows.length} 项` }}</view><button :disabled="!canApply || applying" :loading="applying" @click="apply">{{ shiftMode ? '确认延期' : '应用重新安排' }}</button></view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import { RecoveryApi, type RecoveryAction, type RecoveryPreview } from '@/api'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { PlanApi, RecoveryApi, type RecoveryAction, type RecoveryPreview } from '@/api'
 import { localDateKey } from '@/utils/date'
 import { formatScheduleConflicts, validateScheduleUnion } from '@/utils/schedule'
 
 interface EditableRow { action: RecoveryAction; selected: boolean }
 const preview = ref<RecoveryPreview | null>(null), rows = ref<EditableRow[]>([]), loading = ref(false), applying = ref(false)
+const mode = ref('recovery'), shiftPlanId = ref(0), shiftDays = ref(0)
+const shiftMode = computed(() => mode.value === 'plan_shift')
 const today = localDateKey()
 const previewToken = computed(() => preview.value?.preview_token || preview.value?.token || preview.value?.version || '')
 const selectedRows = computed(() => rows.value.filter(row => row.selected))
@@ -48,15 +50,22 @@ const conflicts = computed(() => validateScheduleUnion([
   ...selectedRows.value.map(row => ({ id: row.action.task_id, title: row.action.title, date: row.action.new_date, start: row.action.planned_start, end: row.action.planned_end })),
   ...occupancy.value.map((row, index) => ({ id: row.task_id ?? row.id ?? `occupancy-${index}`, title: row.title || '现有任务', date: row.date, start: row.planned_start || row.start || '', end: row.planned_end || row.end || '' })),
 ]).filter(conflict => selectedRows.value.some(row => row.action.task_id === conflict.id)))
-const conflictMessage = computed(() => formatScheduleConflicts(conflicts.value))
+const duplicateDateMessage = computed(() => {
+  if (!shiftMode.value) return ''
+  const occupied = new Set(occupancy.value.filter(row => row.plan_id === shiftPlanId.value).map(row => row.date))
+  const seen = new Set<string>()
+  const duplicate = selectedRows.value.find(row => occupied.has(row.action.new_date) || seen.has(row.action.new_date) ? true : (seen.add(row.action.new_date), false))
+  return duplicate ? `${duplicate.action.new_date} 在当前计划中已有任务，请为冲突任务选择其他日期。` : ''
+})
+const conflictMessage = computed(() => [duplicateDateMessage.value, formatScheduleConflicts(conflicts.value)].filter(Boolean).join('\n'))
 const invalidRange = computed(() => selectedRows.value.some(row => !row.action.new_date || !row.action.planned_start || !row.action.planned_end || row.action.planned_start >= row.action.planned_end || row.action.valid === false))
-const canApply = computed(() => !!previewToken.value && selectedRows.value.length > 0 && !invalidRange.value && !conflicts.value.length)
+const canApply = computed(() => !!previewToken.value && selectedRows.value.length > 0 && !invalidRange.value && !conflicts.value.length && !duplicateDateMessage.value)
 const groupedRows = computed(() => { const groups = new Map<string, EditableRow[]>(); rows.value.forEach(row => { const name = row.action.plan_title || '学习计划'; groups.set(name, [...(groups.get(name) || []), row]) }); return Array.from(groups, ([name, grouped]) => ({ name, rows: grouped })) })
 
 async function load() {
   loading.value = true
   try {
-    preview.value = await RecoveryApi.preview()
+    preview.value = shiftMode.value ? await PlanApi.shiftPreview(shiftPlanId.value, shiftDays.value) : await RecoveryApi.preview()
     rows.value = (preview.value.actions || []).map(action => ({ selected: action.valid !== false, action: { ...action, planned_start: action.planned_start || '20:00', planned_end: action.planned_end || '21:00', reason: action.reason || '根据未来学习日与可用时段安排' } }))
   } catch (error: any) { uni.showToast({ title: error?.message || '预览加载失败', icon: 'none' }) }
   finally { loading.value = false }
@@ -70,12 +79,15 @@ async function apply() {
   if (!confirmed) return
   applying.value = true
   try {
-    const result = await RecoveryApi.apply(previewToken.value, selectedRows.value.map(row => ({ ...row.action })))
+    const actions = selectedRows.value.map(row => ({ ...row.action }))
+    const result = shiftMode.value ? await PlanApi.applyShift(shiftPlanId.value, String(previewToken.value), actions) : await RecoveryApi.apply(String(previewToken.value), actions)
     uni.showToast({ title: `已调整 ${result.moved ?? result.applied} 项${result.skipped ? `，跳过 ${result.skipped} 项` : ''}`, icon: 'none' })
+    if (shiftMode.value) { setTimeout(() => uni.navigateBack(), 500); return }
     await load()
   } catch (error: any) { const stale = error?.code === 409 && error?.raw?.stale; uni.showModal({ title: stale ? '预览已失效' : '应用失败', content: error?.message || (stale ? '正在刷新预览，请重新选择' : '请调整后重试'), showCancel: false }); if (stale) await load() }
   finally { applying.value = false }
 }
+onLoad((options: any) => { mode.value = options?.mode || 'recovery'; shiftPlanId.value = Number(options?.plan_id || 0); shiftDays.value = Number(options?.days || 0) })
 onShow(load)
 </script>
 

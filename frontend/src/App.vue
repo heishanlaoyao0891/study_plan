@@ -4,8 +4,13 @@ import { isLoggedIn } from "@/api/request";
 import { AuthApi, StudyTaskApi } from "@/api";
 import { unicodeLength } from "@/utils/text";
 import { routeForUser } from "@/utils/auth-routing";
+import { getBanState } from "@/utils/ban-state";
 
 onLaunch(() => {
+	if (getBanState()) {
+		uni.reLaunch({ url: "/pages/banned/banned" });
+		return;
+	}
   // 已登录 → 停留在 tab 首页；未登录 → 跳转登录页
   if (!isLoggedIn()) {
     // 这里用 reLaunch 而非 redirectTo/switchTab，因为它不在 tabBar 中

@@ -40,6 +40,7 @@ const maxAIGenerateBodyBytes = 64 << 10
 const maxAICommitBodyBytes = 256 << 10
 const planningRequestBudget = 12 * time.Second
 const planningWorkBudget = 11500 * time.Millisecond
+const planningEnrichmentBudget = 8 * time.Second
 const commitRaceAttempts = 5
 
 var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
@@ -111,7 +112,7 @@ func GeneratePlan(c *gin.Context) {
 			} else if !canUse {
 				usedToday = count
 				enrichmentStatus, enrichmentReason = "quota_limited", "daily_enrichment_limit_reached"
-			} else if raw, generateErr := provider.GenerateContext(services.WithAIQuota(workContext, uid, cfg.Provider, cfg.DailyGenerationLimit, &usedToday), services.BuildPlanningPrompt(ctx, preview), 2048); generateErr != nil {
+			} else if raw, generateErr := generatePlanEnrichment(workContext, provider, uid, cfg.Provider, cfg.DailyGenerationLimit, &usedToday, services.BuildPlanningPrompt(ctx, preview)); generateErr != nil {
 				enrichmentStatus, enrichmentReason = classifyEnrichmentError(generateErr)
 			} else if enriched, parseErr := services.ParsePlanPreviewJSON(raw); parseErr != nil {
 				enrichmentStatus, enrichmentReason = "invalid_output", "invalid_provider_output"
@@ -145,6 +146,12 @@ func GeneratePlan(c *gin.Context) {
 		"phase_timings_ms":  gin.H{"context": contextDuration.Milliseconds(), "local_planning": localDuration.Milliseconds(), "enrichment": time.Since(enrichmentStarted).Milliseconds(), "total": time.Since(started).Milliseconds()},
 	}
 	api.OK(c, data)
+}
+
+func generatePlanEnrichment(parent context.Context, provider services.AIProvider, uid uint, providerName string, limit int, used *int64, prompt string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, planningEnrichmentBudget)
+	defer cancel()
+	return provider.GenerateContext(services.WithAIQuota(ctx, uid, providerName, limit, used), prompt, 1024)
 }
 
 func classifyEnrichmentError(err error) (string, string) {
