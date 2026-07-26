@@ -9,7 +9,9 @@ Thumbs.db
 *.swo
 
 # Codex
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 
 # Logs
 *.log
