@@ -481,12 +481,18 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		successRate = float64(ready) / float64(terminal)
 		fallbackRate = float64(fallback) / float64(terminal)
 	}
+	var providerAttempts, successfulGenerations int64
+	db.DB.Model(&models.AIGenerationUsage{}).Where("created_at >= ? AND status = ?", from, "attempt").Count(&providerAttempts)
+	db.DB.Model(&models.AIGenerationUsage{}).Where("created_at >= ? AND status = ?", from, "success").Count(&successfulGenerations)
+	var promptPatterns []models.AIPromptPattern
+	db.DB.Where("count > 0").Order("count DESC").Limit(10).Find(&promptPatterns)
 	api.OK(c, gin.H{
 		"window_days": 30, "queue_depth": queueDepth, "status_counts": statusCounts,
 		"success_rate": successRate, "fallback_rate": fallbackRate,
 		"p50_latency_ms": planningLatencyPercentile(latencies, 0.50), "p95_latency_ms": planningLatencyPercentile(latencies, 0.95),
 		"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
 		"fallback_reasons": fallbackReasons, "provider_models": providerModels,
+		"provider_attempts": providerAttempts, "successful_generations": successfulGenerations, "prompt_playbook_patterns": promptPatterns,
 	})
 }
 

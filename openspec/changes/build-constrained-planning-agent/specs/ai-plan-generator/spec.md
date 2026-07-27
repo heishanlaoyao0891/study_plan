@@ -17,9 +17,9 @@ The system SHALL use a backend planning Agent to return a valid local baseline p
 - **WHEN** the user commits the valid local preview while model decomposition is still queued or running
 - **THEN** the system creates the local plan and prevents a later model result from replacing the committed plan
 
-#### Scenario: Generate without model decomposition
-- **WHEN** decomposition is disabled, unavailable, quota-limited, invalid, or times out
-- **THEN** the local preview remains usable and the job exposes a truthful terminal fallback status
+#### Scenario: Decomposition is temporarily unsuccessful
+- **WHEN** the provider times out or returns truncated, invalid, or unschedulable output
+- **THEN** the local preview remains separately usable and the AI job reports a retryable state without claiming AI success
 
 ### Requirement: AI asks for user availability before generating
 The system SHALL validate desired plan duration, daily capacity, available time ranges, start date, skip dates, and current schedule occupancy before creating the local baseline or model job.
@@ -40,7 +40,7 @@ The system SHALL provide only safe aggregate learning history to local pacing an
 - **THEN** the local baseline reduces density and the model brief requests smaller tasks, review cadence, and buffer capacity
 
 ### Requirement: AI usage is controlled
-The system SHALL meter external model job attempts independently of local planning and SHALL bound concurrent and daily model usage per user.
+The system SHALL meter external provider attempts independently from the user's daily successful-generation allowance and SHALL bound concurrency and operational attempts.
 
 #### Scenario: Model quota is exhausted
 - **WHEN** a user has no remaining decomposition quota
@@ -50,16 +50,57 @@ The system SHALL meter external model job attempts independently of local planni
 - **WHEN** equivalent requests are submitted while a matching non-terminal job exists
 - **THEN** the system reuses or rejects the duplicate job without consuming unbounded additional provider attempts
 
-### Requirement: AI generation has fallback behavior
-The system SHALL keep the local baseline available throughout the asynchronous model lifecycle and SHALL never require model success to create a valid plan.
+#### Scenario: AI generation fails before publication
+- **WHEN** provider, parsing, validation, repair, or scheduling fails
+- **THEN** the user's daily successful-generation count is unchanged
+
+#### Scenario: Valid AI preview is published
+- **WHEN** a job atomically publishes its first valid `ai_decomposed` preview
+- **THEN** the user's daily successful-generation count increases exactly once even if the job is replayed
+
+### Requirement: AI generation has truthful retry behavior
+The system SHALL keep the local baseline separately available while continuing recoverable AI work until valid output is produced or the job is explicitly cancelled or expires.
 
 #### Scenario: Model exceeds the background deadline
 - **WHEN** decomposition does not complete within the configured 5-minute or 10-minute model budget
-- **THEN** the provider request is cancelled, the job becomes `fallback`, and the local baseline remains available
+- **THEN** the attempt is cancelled, the job enters retry wait with bounded backoff, and the local baseline remains available without being reported as AI-generated
 
 #### Scenario: Backend restarts during decomposition
 - **WHEN** a claimed job loses its worker lease during a process restart
-- **THEN** the system returns the job to the queue at most once or completes it as fallback without creating duplicate preview versions
+- **THEN** the system resumes from its latest checkpoint without creating duplicate preview versions or quota charges
+
+### Requirement: Agent repairs model output iteratively
+The system SHALL normalize safe deviations and precisely re-prompt repairable invalid output instead of rejecting the complete generation after one response.
+
+#### Scenario: Provider truncates output
+- **WHEN** `finish_reason=length` or incomplete JSON indicates truncation
+- **THEN** the Agent retries the affected batch with a sufficient token budget or a smaller batch
+
+#### Scenario: Output has repairable ordering or field deviations
+- **WHEN** task order resets per stage, IDs are unsafe, difficulty uses a supported alias, or unknown fields are present
+- **THEN** the Agent normalizes those deviations and validates the normalized result
+
+#### Scenario: Output violates schema
+- **WHEN** required content, prerequisite references, JSON shape, or effort constraints remain invalid
+- **THEN** the next request identifies the exact violations and requests only the necessary corrected output
+
+### Requirement: Long plans use checkpointed bounded batches
+The system SHALL support plans from 1 through 30 days without requiring one oversized model response.
+
+#### Scenario: Generate a 30-day plan
+- **WHEN** the requested plan spans 30 days
+- **THEN** the Agent creates a compact outline, expands it in bounded batches, persists accepted checkpoints, and combines them before final validation and scheduling
+
+#### Scenario: Worker restarts mid-expansion
+- **WHEN** the process restarts after one or more batches were accepted
+- **THEN** processing resumes from the latest valid checkpoint rather than regenerating completed batches
+
+### Requirement: Prompt Playbook learns recurring output defects
+The system SHALL record versioned bounded error-pattern statistics and use active preventive guidance in later prompts without storing private prompt content.
+
+#### Scenario: A defect recurs
+- **WHEN** truncation, malformed JSON, order reset, capacity overflow, or another classified defect crosses its activation threshold
+- **THEN** subsequent prompts include the corresponding concise preventive rule and metrics expose the pattern count
 
 ## ADDED Requirements
 

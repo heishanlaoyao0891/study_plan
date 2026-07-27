@@ -84,3 +84,16 @@
 - [x] Add provider transport reuse, redirect, DNS rebinding, and configuration-refresh tests.
 - [x] Run backend tests, frontend type checks, H5, mini-program, and admin builds after implementation.
 - [x] Strictly validate the revised OpenSpec change before implementation handoff and again before archive.
+
+## 8. Durable AI Generation Completion
+
+- [x] Add durable outline, batch-expansion, validation, repair, scheduling, publishing, and retry-wait phases with persisted checkpoints and restart resume.
+- [x] Normalize safe blueprint deviations including opaque IDs, stage-local task ordering, supported difficulty aliases, unknown fields, and effort bounds.
+- [x] Detect provider truncation and malformed JSON and retry failed batches with precise diagnostics, adjusted token allowance, or smaller batches.
+- [x] Constrain total blueprint effort to requested capacity and support complete plans through 30 days.
+- [x] Prevent invalid provider output or local fallback from being published or reported as `ai_decomposed` success.
+- [x] Separate provider-attempt accounting from user quota and charge exactly once after successful AI preview publication.
+- [x] Add a versioned Prompt Playbook/error-pattern registry and include active preventive guidance in future prompts and admin metrics.
+- [x] Update frontend job states so recoverable failures continue polling through retry wait and page exit does not cancel server work.
+- [x] Add regression coverage for truncation, targeted repair, normalization, capacity, 30-day batching, checkpoint resume, truthful provenance, and successful-publication quota.
+- [x] Run backend, frontend, admin, strict OpenSpec validation, update the living project scan, and push the completed change.

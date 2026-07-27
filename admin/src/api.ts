@@ -88,6 +88,9 @@ export interface AIPlanningMetrics {
   total_tokens: number
   fallback_reasons: Record<string, number>
   provider_models: Record<string, number>
+  provider_attempts: number
+  successful_generations: number
+  prompt_playbook_patterns: Array<{ pattern_key: string; version: number; count: number; guidance: string }>
 }
 
 export interface SubscriptionConfig {

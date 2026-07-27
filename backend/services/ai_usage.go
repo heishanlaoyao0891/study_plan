@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"gorm.io/gorm"
 	"study_plan_backend/db"
 	"study_plan_backend/models"
 )
@@ -41,7 +42,7 @@ func CanUseAIGenerationContext(ctx context.Context, userID uint, limit int) (boo
 	}
 	var count int64
 	start, end := ShanghaiDayRange(time.Now())
-	if err := db.DB.WithContext(ctx).Model(&models.AIGenerationUsage{}).Where("user_id = ? AND created_at >= ? AND created_at < ?", userID, start, end).Count(&count).Error; err != nil {
+	if err := db.DB.WithContext(ctx).Model(&models.AIGenerationUsage{}).Where("user_id = ? AND status = ? AND created_at >= ? AND created_at < ?", userID, "success", start, end).Count(&count).Error; err != nil {
 		return false, 0, err
 	}
 	return count < int64(limit), count, nil
@@ -58,23 +59,43 @@ func ReserveAIProviderAttempt(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	start, end := ShanghaiDayRange(time.Now())
 	now := time.Now()
-	result := db.DB.WithContext(ctx).Exec(`INSERT INTO ai_generation_usage (user_id, provider, status, message, created_at)
-		SELECT ?, ?, 'attempt', 'external provider attempt', ?
-		WHERE (SELECT COUNT(*) FROM ai_generation_usage WHERE user_id = ? AND created_at >= ? AND created_at < ?) < ?`, quota.UserID, quota.Provider, now, quota.UserID, start, end, quota.Limit)
+	result := db.DB.WithContext(ctx).Create(&models.AIGenerationUsage{UserID: quota.UserID, Provider: quota.Provider, Status: "attempt", Message: "external provider attempt", CreatedAt: now})
 	if result.Error != nil {
 		return result.Error
 	}
-	var count int64
 	if _, current, err := CanUseAIGenerationContext(ctx, quota.UserID, quota.Limit); err == nil {
-		count = current
 		if quota.Used != nil {
-			*quota.Used = count
+			*quota.Used = current
 		}
 	}
-	if result.RowsAffected != 1 {
-		return ErrAIQuotaExceeded
-	}
 	return nil
+}
+
+func RecordSuccessfulAIGeneration(ctx context.Context, database *gorm.DB, userID uint, provider, referenceID string, limit int) error {
+	if limit <= 0 {
+		limit = 5
+	}
+	start, end := ShanghaiDayRange(time.Now())
+	usage := models.AIGenerationUsage{UserID: userID, Provider: provider, Status: "success", ReferenceID: referenceID, Message: "valid ai_decomposed preview published", CreatedAt: time.Now()}
+	result := database.WithContext(ctx).Exec(`INSERT INTO ai_generation_usage (user_id, provider, status, reference_id, message, created_at)
+		SELECT ?, ?, 'success', ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM ai_generation_usage WHERE user_id = ? AND status = 'success' AND reference_id = ?)
+		AND (SELECT COUNT(*) FROM ai_generation_usage WHERE user_id = ? AND status = 'success' AND created_at >= ? AND created_at < ?) < ?`,
+		usage.UserID, usage.Provider, usage.ReferenceID, usage.Message, usage.CreatedAt,
+		usage.UserID, usage.ReferenceID, usage.UserID, start, end, limit)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var existing int64
+	if err := database.WithContext(ctx).Model(&models.AIGenerationUsage{}).Where("user_id = ? AND status = 'success' AND reference_id = ?", userID, referenceID).Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+	return ErrAIQuotaExceeded
 }

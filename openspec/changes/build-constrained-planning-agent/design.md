@@ -49,11 +49,25 @@ Each job is user-scoped and stores request identity, status, current phase, prov
 
 `queued -> decomposing -> scheduling -> ready`
 
-Terminal alternatives are `fallback`, `cancelled`, and `expired`.
+Terminal alternatives are `cancelled` and `expired`; provider or validation problems remain retryable unless an operator or user explicitly terminates the job.
 
 An in-process worker claims queued jobs transactionally. A process restart returns abandoned running jobs to `queued` once when their lease expires. Jobs and preview versions expire after a bounded retention window.
 
 The job-status response never exposes raw provider errors, credentials, prompts containing private records, or other users' data.
+
+### Decomposition is a durable multi-pass Agent loop
+
+The worker first asks for a compact outline whose total estimated effort fits `days * hours_per_day * 60`. It then expands stages in bounded batches, persists each accepted checkpoint, combines the batches, normalizes harmless deviations, validates the complete blueprint, schedules it, and publishes it.
+
+Normalization may regenerate opaque task IDs, convert stage-local order values to one global order, clamp supported difficulty aliases and effort bounds, and discard unknown fields. It must not invent missing learning content or hide a capacity violation.
+
+Truncation, invalid JSON, schema violations, bad prerequisite references, capacity overflow, and other repairable defects produce precise diagnostic repair prompts containing only the failed portion and the applicable contract. `finish_reason=length` and incomplete JSON are explicit truncation signals. A bounded number of attempts runs in one worker lease; exhausted cycles enter `retry_wait` with backoff and resume from checkpoints instead of becoming a successful local fallback.
+
+The Prompt Playbook stores versioned, bounded error-pattern counters and repair guidance. Prompt construction includes active preventive rules for recurring patterns without retaining private prompt or response content.
+
+### User quota counts successful publication, not attempts
+
+Provider attempts are recorded independently for cost, rate limiting, and diagnostics. The user's daily generation count is incremented atomically only when a valid scheduled preview with source `ai_decomposed` is published. Timeouts, HTTP failures, truncation, invalid output, repair attempts, restart recovery, and scheduling failures do not consume that allowance. Duplicate publication and job replay cannot charge twice.
 
 ### Preview versions prevent late-result overwrite
 

@@ -64,6 +64,7 @@ func AutoMigrate() error {
 		&models.NotificationDeliveryLog{},
 		&models.NotificationSubscription{},
 		&models.AIGenerationUsage{},
+		&models.AIPromptPattern{},
 		&models.OpsContent{},
 		&models.FeedbackReport{},
 		&models.AccountEvent{},
@@ -108,6 +109,9 @@ func AutoMigrate() error {
 		return err
 	}
 	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_ai_plan_jobs_claim ON ai_plan_generation_jobs (status, lease_expires_at, created_at)").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_usage_success_reference ON ai_generation_usage (user_id, reference_id) WHERE status = 'success' AND reference_id <> ''").Error; err != nil {
 		return err
 	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {

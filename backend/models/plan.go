@@ -83,7 +83,10 @@ type AIPlanGenerationJob struct {
 	RequestHash      string     `gorm:"size:64;not null" json:"-"`
 	IdempotencyKey   string     `gorm:"size:64;not null;default:''" json:"-"`
 	Status           string     `gorm:"size:16;not null;index;check:chk_ai_plan_job_status,status IN ('pending','running','succeeded','failed')" json:"status"`
+	Phase            string     `gorm:"size:32;not null;default:'queued'" json:"phase"`
 	AttemptCount     int        `gorm:"not null;default:0" json:"attempt_count"`
+	CheckpointJSON   string     `gorm:"type:text;not null;default:'{}'" json:"-"`
+	NextAttemptAt    *time.Time `gorm:"index" json:"next_attempt_at,omitempty"`
 	LeaseOwner       string     `gorm:"size:64;not null;default:''" json:"-"`
 	LeaseExpiresAt   *time.Time `gorm:"index" json:"-"`
 	ResultPlanID     *uint      `gorm:"index" json:"result_plan_id,omitempty"`
@@ -96,6 +99,7 @@ type AIPlanGenerationJob struct {
 	EnrichmentReason string     `gorm:"size:64;not null;default:''" json:"enrichment_reason,omitempty"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	ExpiresAt        time.Time  `gorm:"index" json:"expires_at"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }

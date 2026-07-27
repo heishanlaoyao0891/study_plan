@@ -120,30 +120,33 @@ func TestAIPlanJobClaimsAreAtomicAndRecoverExpiredLease(t *testing.T) {
 	}
 }
 
-func TestAIPlanJobWorkerPersistsFallbackPlanAndSurvivesRestart(t *testing.T) {
+func TestAIPlanJobWorkerDoesNotPublishFallbackAsAISuccess(t *testing.T) {
 	setupTestDB(t)
 	job := models.AIPlanGenerationJob{UserID: 41, RequestJSON: mustAIPlanJobPayload(t, 41, "Study Go"), RequestHash: "hash", Status: models.AIPlanJobStatusPending}
 	if err := db.DB.Create(&job).Error; err != nil {
 		t.Fatal(err)
 	}
 	worker := StartAIPlanJobWorker(db.DB)
-	waitForAIPlanJobStatus(t, job.ID, models.AIPlanJobStatusSucceeded)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = db.DB.First(&job, job.ID).Error
+		if job.AttemptCount > 0 && job.Status == models.AIPlanJobStatusPending && job.Phase == "retry_wait" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := worker.Shutdown(shutdownContext); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DB.First(&job, job.ID).Error; err != nil || job.ResultPlanID == nil || job.GenerationSource != "local" || job.EnrichmentStatus != "disabled" {
-		t.Fatalf("worker did not persist truthful fallback result: job=%+v err=%v", job, err)
+	if err := db.DB.First(&job, job.ID).Error; err != nil || job.ResultPlanID != nil || job.GenerationSource != "" || job.Status != models.AIPlanJobStatusPending {
+		t.Fatalf("worker falsely published fallback result: job=%+v err=%v", job, err)
 	}
-	var plan models.Plan
-	var taskCount int64
-	if err := db.DB.First(&plan, *job.ResultPlanID).Error; err != nil {
-		t.Fatal(err)
-	}
-	db.DB.Model(&models.DailyTask{}).Where("plan_id = ?", plan.ID).Count(&taskCount)
-	if !plan.AIGenerated || plan.UserID != job.UserID || taskCount != 1 {
-		t.Fatalf("generated plan was incomplete: plan=%+v task_count=%d", plan, taskCount)
+	var planCount int64
+	db.DB.Model(&models.Plan{}).Where("user_id = ?", job.UserID).Count(&planCount)
+	if planCount != 0 {
+		t.Fatalf("fallback created %d plans", planCount)
 	}
 }
 
@@ -181,19 +184,21 @@ func TestAIPlanJobFailureIsAtomicAndRetryExhaustionIsTerminal(t *testing.T) {
 	}
 
 	expired := time.Now().Add(-time.Minute)
-	if err := db.DB.Model(&models.AIPlanGenerationJob{}).Where("id = ?", job.ID).Updates(map[string]any{"status": models.AIPlanJobStatusRunning, "attempt_count": aiPlanJobMaxAttempts, "lease_owner": "dead", "lease_expires_at": expired}).Error; err != nil {
+	if err := db.DB.Model(&models.AIPlanGenerationJob{}).Where("id = ?", job.ID).Updates(map[string]any{"status": models.AIPlanJobStatusRunning, "lease_owner": "dead", "lease_expires_at": expired, "expires_at": expired}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := claimAIPlanJob(db.DB, "next", time.Now()); err != nil || ok {
 		t.Fatalf("exhausted job was reclaimed: ok=%v err=%v", ok, err)
 	}
-	if err := db.DB.First(&job, job.ID).Error; err != nil || job.Status != models.AIPlanJobStatusFailed || job.ErrorCode != "attempts_exhausted" || strings.Contains(job.ErrorMessage, "forced") {
-		t.Fatalf("retry exhaustion did not expose a safe terminal failure: job=%+v err=%v", job, err)
+	if err := db.DB.First(&job, job.ID).Error; err != nil || job.Status != models.AIPlanJobStatusFailed || job.ErrorCode != "generation_expired" || strings.Contains(job.ErrorMessage, "forced") {
+		t.Fatalf("expired retry lifecycle did not expose a safe terminal failure: job=%+v err=%v", job, err)
 	}
 }
 
 func TestAIPlanJobReportsOverloadConfirmationAndCanRetry(t *testing.T) {
 	setupTestDB(t)
+	restoreAI := useValidAIPlanJobProvider(t)
+	defer restoreAI()
 	for index := 0; index < maxActivePlans; index++ {
 		if err := db.DB.Create(&models.Plan{UserID: 61, Title: fmt.Sprintf("Existing %d", index), Status: models.PlanStatusActive, WeeklyTargetHours: 1}).Error; err != nil {
 			t.Fatal(err)
@@ -237,6 +242,8 @@ func TestAIPlanJobReportsOverloadConfirmationAndCanRetry(t *testing.T) {
 
 func TestAIPlanJobExplainsWhenRequestedScheduleHasNoCapacity(t *testing.T) {
 	setupTestDB(t)
+	restoreAI := useValidAIPlanJobProvider(t)
+	defer restoreAI()
 	start, err := time.Parse("2006-01-02", "2026-08-01")
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +268,23 @@ func TestAIPlanJobExplainsWhenRequestedScheduleHasNoCapacity(t *testing.T) {
 	if job.Status != models.AIPlanJobStatusFailed || job.ErrorCode != "no_available_schedule" || !strings.Contains(job.ErrorMessage, "空闲时段") {
 		t.Fatalf("no-capacity failure was not actionable: %+v", job)
 	}
+}
+
+func useValidAIPlanJobProvider(t *testing.T) func() {
+	t.Helper()
+	originalProvider, originalValidation := currentAIProvider, validateAIConfigContext
+	blueprint := services.PlanningBlueprint{
+		Title: "AI plan", Summary: "AI decomposed plan", Rationale: "practice",
+		Stages: []services.PlanningBlueprintStage{{ID: "stage", Name: "Foundation", Objective: "Build foundations", Order: 1}},
+		Tasks:  []services.PlanningBlueprintTask{{ID: "task", StageID: "stage", Title: "Practice", Objective: "Complete a concrete practice exercise", Description: "Practice and verify", EffortMinutes: 60, Difficulty: "medium", Order: 1}},
+	}
+	raw, _ := json.Marshal(blueprint)
+	currentAIProvider = func(context.Context) (models.AIConfig, services.AIProvider, error) {
+		cfg := models.AIConfig{Provider: services.AIProviderSiliconFlow, ModelName: "test", BaseURL: services.SiliconFlowBaseURL, Enabled: true, DailyGenerationLimit: 15, BackgroundJobTimeoutSeconds: 300}
+		return cfg, planningTestProvider{generate: func(context.Context, string, int) (string, error) { return string(raw), nil }}, nil
+	}
+	validateAIConfigContext = func(context.Context, models.AIConfig, bool) error { return nil }
+	return func() { currentAIProvider, validateAIConfigContext = originalProvider, originalValidation }
 }
 
 func performAIPlanJobRequest(router http.Handler, method, path, body string) *httptest.ResponseRecorder {

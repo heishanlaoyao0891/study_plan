@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -30,6 +31,17 @@ type AIProviderTelemetry struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+}
+
+type AIOutputTruncatedError struct{ FinishReason string }
+
+func (e *AIOutputTruncatedError) Error() string {
+	return "provider output was truncated (finish_reason=" + e.FinishReason + ")"
+}
+
+func IsAIOutputTruncated(err error) bool {
+	var target *AIOutputTruncatedError
+	return errors.As(err, &target)
 }
 
 type aiProviderTelemetryKey struct{}
@@ -229,6 +241,7 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 				Message struct {
 					Content json.RawMessage `json:"content"`
 				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage struct {
 				PromptTokens     int `json:"prompt_tokens"`
@@ -247,6 +260,9 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 			telemetry.PromptTokens = decoded.Usage.PromptTokens
 			telemetry.CompletionTokens = decoded.Usage.CompletionTokens
 			telemetry.TotalTokens = decoded.Usage.TotalTokens
+		}
+		if strings.EqualFold(strings.TrimSpace(decoded.Choices[0].FinishReason), "length") {
+			return content, &AIOutputTruncatedError{FinishReason: decoded.Choices[0].FinishReason}
 		}
 		return content, nil
 	}

@@ -10,6 +10,8 @@
       <div><strong>{{ metrics.p50_latency_ms }} ms</strong><span>p50 延迟</span></div>
       <div><strong>{{ metrics.p95_latency_ms }} ms</strong><span>p95 延迟</span></div>
       <div><strong>{{ metrics.total_tokens }}</strong><span>Token 总量</span></div>
+      <div><strong>{{ metrics.provider_attempts || 0 }}</strong><span>服务商尝试</span></div>
+      <div><strong>{{ metrics.successful_generations || 0 }}</strong><span>成功生成计次</span></div>
     </section>
     <form class="panel wide-panel" @submit.prevent="save">
       <label class="check-row"><input v-model="form.enabled" type="checkbox" /> 启用模型任务拆解</label>
@@ -24,7 +26,7 @@
       <div class="config-summary">
         <span>当前模式：{{ modeLabel }}</span>
         <span>密钥存储：{{ keyStorageLabel }}</span>
-        <span>AI 不可用时：明确返回规则回退模式</span>
+        <span>AI 暂不可用时：后台保留任务并自动修复重试</span>
       </div>
       <div class="button-row">
         <button class="primary small-button">保存配置</button>

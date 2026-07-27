@@ -28,6 +28,7 @@
         </view>
       </view>
       <view class="status-meta" v-if="job.status === 'running'">正在执行第 {{ Math.max(job.attempt_count, 1) }} 次处理，请稍候。</view>
+      <view class="status-meta" v-if="job.status === 'pending' && job.phase === 'retry_wait'">AI 返回暂未通过校验，后台 Agent 正在等待下一轮自动修复；失败尝试不会消耗今日生成次数。</view>
       <view class="status-meta" v-if="job.status === 'succeeded' && job.generation_source">{{ generationSummary }}</view>
       <view class="job-error" v-if="job.status === 'failed'">{{ job.error_message || '未能生成有效计划，请检查目标和可用时间后重试。' }}</view>
       <button class="confirm-overload" v-if="needsOverloadConfirmation" :loading="isSubmitting" :disabled="isSubmitting" @click="confirmOverload">确认负荷并继续生成</button>
@@ -82,13 +83,13 @@ const submitButtonText = computed(() => {
   return job.value ? '重新生成计划' : '生成智能计划'
 })
 const statusTitle = computed(() => ({
-  pending: '计划已进入队列',
+  pending: job.value?.phase === 'retry_wait' ? '后台 Agent 将继续修复' : '计划已进入队列',
   running: '正在生成计划',
   failed: '计划生成失败',
   succeeded: '计划已生成',
 }[job.value?.status || 'pending']))
 const statusNote = computed(() => ({
-  pending: '后台即将开始处理，可以放心离开此页面。',
+  pending: job.value?.phase === 'retry_wait' ? '无需重新提交或停留在页面，任务会从已保存状态继续。' : '后台即将开始处理，可以放心离开此页面。',
   running: '系统正在校验日程并生成任务，可以放心离开此页面。',
   failed: '本次任务已经结束，你可以调整条件后重新提交。',
   succeeded: '计划和任务已自动保存，可以直接查看和编辑。',

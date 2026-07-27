@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,86 @@ func TestPlanningBlueprintPacksShortTasksOnSameDateAndRespectsOccupancy(t *testi
 	warnings := PlanningLoadWarnings(3, 55, 2, 3, 56)
 	if len(warnings) != 2 {
 		t.Fatalf("workload engine did not report both limits: %+v", warnings)
+	}
+}
+
+func TestBlueprintNormalizationRepairsStageLocalOrderAndAliases(t *testing.T) {
+	blueprint := PlanningBlueprint{
+		Title: "Go", Summary: "plan",
+		Stages: []PlanningBlueprintStage{{ID: "A", Name: "A", Objective: "learn A", Order: 1}, {ID: "B", Name: "B", Objective: "learn B", Order: 1}},
+		Tasks: []PlanningBlueprintTask{
+			{ID: "One", StageID: "A", Title: "one", Objective: "finish one exercise", EffortMinutes: 5, Difficulty: "简单", Order: 1},
+			{ID: "Two", StageID: "B", Title: "two", Objective: "finish two exercises", EffortMinutes: 60, Difficulty: "advanced", Order: 1, PrerequisiteIDs: []string{"One"}},
+		},
+	}
+	normalized, warnings := NormalizePlanningBlueprint(blueprint)
+	if err := ValidatePlanningBlueprintForInput(normalized, PlanGenerationInput{Days: 2, HoursPerDay: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Tasks[1].Order != 2 || normalized.Tasks[1].PrerequisiteIDs[0] != "task_1" || normalized.Tasks[0].Difficulty != "easy" || normalized.Tasks[1].Difficulty != "hard" || len(warnings) == 0 {
+		t.Fatalf("normalization incomplete: %+v warnings=%v", normalized, warnings)
+	}
+}
+
+func TestBlueprintRepairRetriesTruncationAndSupportsThirtyDays(t *testing.T) {
+	attempts := 0
+	provider := workerTestProvider{generate: func(context.Context, string, int) (string, error) {
+		attempts++
+		if attempts == 1 {
+			return `{"title":"cut"`, &AIOutputTruncatedError{FinishReason: "length"}
+		}
+		blueprint := validBlueprint()
+		blueprint.Tasks[0].EffortMinutes = 60
+		blueprint.Tasks[1].EffortMinutes = 60
+		raw, _ := json.Marshal(blueprint)
+		return string(raw), nil
+	}}
+	planningContext := PlanningContext{Input: PlanGenerationInput{Goal: "learn Go", Days: 30, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}}
+	blueprint, err := GeneratePlanningBlueprintWithRepair(context.Background(), provider, planningContext, 3)
+	if err != nil || attempts != 4 || ValidatePlanningBlueprintForInput(blueprint, planningContext.Input) != nil {
+		t.Fatalf("repair did not recover truncated long-plan output: attempts=%d blueprint=%+v err=%v", attempts, blueprint, err)
+	}
+	if PlanningBlueprintTokenAllowance(planningContext.Input) != 8192 {
+		t.Fatalf("30-day allowance should reach safe maximum, got %d", PlanningBlueprintTokenAllowance(planningContext.Input))
+	}
+}
+
+func TestBlueprintCapacityOverflowRequiresRepair(t *testing.T) {
+	blueprint := validBlueprint()
+	blueprint.Tasks[0].EffortMinutes = 60
+	blueprint.Tasks[1].EffortMinutes = 60
+	if err := ValidatePlanningBlueprintForInput(blueprint, PlanGenerationInput{Days: 1, HoursPerDay: 1}); err == nil || !strings.Contains(err.Error(), "capacity") {
+		t.Fatalf("capacity overflow was accepted: %v", err)
+	}
+}
+
+func TestBlueprintBatchCheckpointResumesAfterFailure(t *testing.T) {
+	planningContext := PlanningContext{Input: PlanGenerationInput{Goal: "learn Go", Days: 30, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}}
+	blueprintJSON, _ := json.Marshal(validBlueprint())
+	calls := 0
+	provider := workerTestProvider{generate: func(context.Context, string, int) (string, error) {
+		calls++
+		if calls == 3 {
+			return "", context.DeadlineExceeded
+		}
+		return string(blueprintJSON), nil
+	}}
+	var checkpoint PlanningBlueprintCheckpoint
+	_, err := GeneratePlanningBlueprintWithCheckpoint(context.Background(), provider, planningContext, 2, nil, func(value PlanningBlueprintCheckpoint) error {
+		checkpoint = value
+		return nil
+	})
+	if err == nil || checkpoint.CompletedDays != 20 {
+		t.Fatalf("expected durable 20-day checkpoint, checkpoint=%+v err=%v", checkpoint, err)
+	}
+	resumeCalls := 0
+	resumeProvider := workerTestProvider{generate: func(context.Context, string, int) (string, error) {
+		resumeCalls++
+		return string(blueprintJSON), nil
+	}}
+	result, err := GeneratePlanningBlueprintWithCheckpoint(context.Background(), resumeProvider, planningContext, 2, &checkpoint, nil)
+	if err != nil || resumeCalls != 1 || len(result.Tasks) != 6 {
+		t.Fatalf("checkpoint resume regenerated completed batches: calls=%d tasks=%d err=%v", resumeCalls, len(result.Tasks), err)
 	}
 }
 

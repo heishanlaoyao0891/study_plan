@@ -9,7 +9,11 @@ The product needs AI to participate in curriculum and task decomposition without
 - Return a valid local baseline preview immediately and create a persistent asynchronous planning job when model decomposition is enabled.
 - Ask the model for a compact learning blueprint containing stages, variable task count, objectives, difficulty, estimated effort, ordering, and prerequisite hints rather than a fully scheduled plan.
 - Let the backend planning Agent convert the blueprint into concrete dates and time slots, repair capacity or occupancy conflicts, recompute totals, and perform final validation.
-- Keep the local baseline available while the job is queued or running, and preserve it as the fallback when the model times out, fails, exceeds quota, or returns invalid output.
+- Keep the local baseline available as a separately identified preview, but never publish or report it as a successful AI result when decomposition fails.
+- Replace one-shot decomposition with a durable Agent loop that outlines, expands in bounded batches, normalizes safe deviations, validates, issues precise repair prompts, checkpoints progress, and resumes after restart.
+- Support plans up to 30 days by constraining total effort to requested capacity and avoiding one oversized JSON response.
+- Charge the user's daily AI generation allowance exactly once, only after a valid `ai_decomposed` preview is published; record provider attempts separately for operations and cost control.
+- Accumulate bounded failure signatures and proven repair guidance in a versioned Prompt Playbook so recurring truncation and schema defects are prevented proactively.
 - Add job status, progress phase, preview ID, preview version, expiry, source, phase timings, and bounded failure metadata.
 - Prevent a late AI result from silently overwriting a preview the user has already edited; expose the newer version for explicit review instead.
 - Separate the short interactive response budget from a configurable background model budget. Default the model job budget to 5 minutes and allow administrators to select a 5-minute or 10-minute tier.
@@ -34,7 +38,7 @@ The product needs AI to participate in curriculum and task decomposition without
 - The backend may split an oversized blueprint task into sequenced parts when it cannot fit within the user's daily capacity, and reports that repair in warnings.
 - AI results create a new preview version. They auto-replace the displayed baseline only when the user has not edited or committed an older version.
 - Users may accept the local baseline without waiting for AI, continue waiting, or explicitly review an AI version that arrives later.
-- Local planning remains available when model decomposition is disabled, unavailable, quota-limited, invalid, or too slow.
+- Local planning remains available when model decomposition is disabled or unavailable, but an AI job remains truthful (`retrying`/failed) until a valid AI preview is published or explicitly cancelled.
 
 ## Non-Goals
 

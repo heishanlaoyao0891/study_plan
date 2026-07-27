@@ -37,3 +37,7 @@ The system SHALL expose bounded operational metrics for local planning and exter
 #### Scenario: Inspect a failed job
 - **WHEN** an administrator reviews recent failed or fallback jobs
 - **THEN** the system shows bounded phase and reason metadata without exposing prompts, credentials, or private learning records
+
+#### Scenario: Review Agent repair health
+- **WHEN** an administrator reviews AI operations
+- **THEN** the system distinguishes provider attempts from successful user generations and reports retry states, truncation, schema repairs, checkpoint resumes, and active Prompt Playbook patterns

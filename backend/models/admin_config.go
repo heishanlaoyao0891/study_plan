@@ -91,15 +91,27 @@ type NotificationSubscription struct {
 func (NotificationSubscription) TableName() string { return "notification_subscriptions" }
 
 type AIGenerationUsage struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index;not null" json:"user_id"`
-	Provider  string    `gorm:"size:32" json:"provider"`
-	Status    string    `gorm:"size:32;index;not null" json:"status"`
-	Message   string    `gorm:"size:512" json:"message,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	UserID      uint      `gorm:"index;not null" json:"user_id"`
+	Provider    string    `gorm:"size:32" json:"provider"`
+	Status      string    `gorm:"size:32;index;not null" json:"status"`
+	ReferenceID string    `gorm:"size:64;index;not null;default:''" json:"reference_id,omitempty"`
+	Message     string    `gorm:"size:512" json:"message,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func (AIGenerationUsage) TableName() string { return "ai_generation_usage" }
+
+type AIPromptPattern struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	PatternKey string    `gorm:"uniqueIndex;size:64;not null" json:"pattern_key"`
+	Version    int       `gorm:"not null;default:1" json:"version"`
+	Count      int64     `gorm:"not null;default:0" json:"count"`
+	Guidance   string    `gorm:"size:512;not null" json:"guidance"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (AIPromptPattern) TableName() string { return "ai_prompt_patterns" }
 
 type OpsContent struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`

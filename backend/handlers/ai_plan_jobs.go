@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	aiPlanJobMaxAttempts       = 3
+	aiPlanJobMaxAttempts       = 15 // compatibility/observability threshold; retry lifetime is governed by expiry
 	aiPlanJobLease             = 30 * time.Second
 	aiPlanJobScanPeriod        = 2 * time.Second
 	aiPlanJobDefaultWorkBudget = 5 * time.Minute
@@ -51,6 +52,8 @@ type aiPlanJobView struct {
 	ID               uint       `json:"id"`
 	Status           string     `json:"status"`
 	AttemptCount     int        `json:"attempt_count"`
+	Phase            string     `json:"phase"`
+	NextAttemptAt    *time.Time `json:"next_attempt_at,omitempty"`
 	ResultPlanID     *uint      `json:"result_plan_id,omitempty"`
 	ErrorCode        string     `json:"error_code,omitempty"`
 	ErrorMessage     string     `json:"error_message,omitempty"`
@@ -96,7 +99,7 @@ func SubmitAIPlanJob(c *gin.Context) {
 		return
 	}
 	digest := sha256.Sum256(payload)
-	job := models.AIPlanGenerationJob{UserID: uid, RequestJSON: string(payload), RequestHash: hex.EncodeToString(digest[:]), IdempotencyKey: key, Status: models.AIPlanJobStatusPending}
+	job := models.AIPlanGenerationJob{UserID: uid, RequestJSON: string(payload), RequestHash: hex.EncodeToString(digest[:]), IdempotencyKey: key, Status: models.AIPlanJobStatusPending, Phase: "queued", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	job, conflict, err := createOrReuseAIPlanJob(db.DB, job)
 	if err != nil {
 		api.Fail(c, http.StatusInternalServerError, "submit plan generation failed")
@@ -174,7 +177,7 @@ func GetAIPlanJob(c *gin.Context) {
 }
 
 func aiPlanJobViewFromModel(job models.AIPlanGenerationJob) aiPlanJobView {
-	return aiPlanJobView{ID: job.ID, Status: job.Status, AttemptCount: job.AttemptCount, ResultPlanID: job.ResultPlanID, ErrorCode: job.ErrorCode, ErrorMessage: job.ErrorMessage, GenerationSource: job.GenerationSource, Provider: job.Provider, ModelName: job.ModelName, EnrichmentStatus: job.EnrichmentStatus, EnrichmentReason: job.EnrichmentReason, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt}
+	return aiPlanJobView{ID: job.ID, Status: job.Status, Phase: job.Phase, AttemptCount: job.AttemptCount, NextAttemptAt: job.NextAttemptAt, ResultPlanID: job.ResultPlanID, ErrorCode: job.ErrorCode, ErrorMessage: job.ErrorMessage, GenerationSource: job.GenerationSource, Provider: job.Provider, ModelName: job.ModelName, EnrichmentStatus: job.EnrichmentStatus, EnrichmentReason: job.EnrichmentReason, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt}
 }
 
 type AIPlanJobWorker struct {
@@ -226,13 +229,12 @@ func (worker *AIPlanJobWorker) runAvailable(ctx context.Context) {
 }
 
 func claimAIPlanJob(database *gorm.DB, owner string, now time.Time) (models.AIPlanGenerationJob, bool, error) {
-	if err := database.Model(&models.AIPlanGenerationJob{}).
-		Where("status = ? AND attempt_count >= ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)", models.AIPlanJobStatusRunning, aiPlanJobMaxAttempts, now).
-		Updates(map[string]any{"status": models.AIPlanJobStatusFailed, "error_code": "attempts_exhausted", "error_message": "计划生成未能完成，请重新提交。", "lease_owner": "", "lease_expires_at": nil, "completed_at": now}).Error; err != nil {
+	if err := database.Model(&models.AIPlanGenerationJob{}).Where("status IN ? AND expires_at > ? AND expires_at <= ?", []string{models.AIPlanJobStatusPending, models.AIPlanJobStatusRunning}, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), now).
+		Updates(map[string]any{"status": models.AIPlanJobStatusFailed, "phase": "expired", "error_code": "generation_expired", "error_message": "AI 服务在保留时间内持续不可用，请重新提交。", "lease_owner": "", "lease_expires_at": nil, "completed_at": now}).Error; err != nil {
 		return models.AIPlanGenerationJob{}, false, err
 	}
 	var candidate models.AIPlanGenerationJob
-	err := database.Where("(status = ? OR (status = ? AND lease_expires_at <= ?)) AND attempt_count < ?", models.AIPlanJobStatusPending, models.AIPlanJobStatusRunning, now, aiPlanJobMaxAttempts).Order("created_at ASC, id ASC").First(&candidate).Error
+	err := database.Where("(status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND lease_expires_at <= ?)", models.AIPlanJobStatusPending, now, models.AIPlanJobStatusRunning, now).Order("created_at ASC, id ASC").First(&candidate).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return models.AIPlanGenerationJob{}, false, nil
 	}
@@ -240,7 +242,7 @@ func claimAIPlanJob(database *gorm.DB, owner string, now time.Time) (models.AIPl
 		return models.AIPlanGenerationJob{}, false, err
 	}
 	expires := now.Add(aiPlanJobLease)
-	claim := database.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND (status = ? OR (status = ? AND lease_expires_at <= ?)) AND attempt_count < ?", candidate.ID, models.AIPlanJobStatusPending, models.AIPlanJobStatusRunning, now, aiPlanJobMaxAttempts).Updates(map[string]any{"status": models.AIPlanJobStatusRunning, "attempt_count": gorm.Expr("attempt_count + 1"), "lease_owner": owner, "lease_expires_at": expires, "started_at": now, "error_code": "", "error_message": ""})
+	claim := database.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND ((status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR (status = ? AND lease_expires_at <= ?))", candidate.ID, models.AIPlanJobStatusPending, now, models.AIPlanJobStatusRunning, now).Updates(map[string]any{"status": models.AIPlanJobStatusRunning, "phase": "decomposing", "attempt_count": gorm.Expr("attempt_count + 1"), "lease_owner": owner, "lease_expires_at": expires, "next_attempt_at": nil, "started_at": gorm.Expr("COALESCE(started_at, ?)", now), "error_code": "", "error_message": ""})
 	if claim.Error != nil || claim.RowsAffected != 1 {
 		return models.AIPlanGenerationJob{}, false, claim.Error
 	}
@@ -260,8 +262,30 @@ func (worker *AIPlanJobWorker) process(parent context.Context, job models.AIPlan
 	err := json.Unmarshal([]byte(job.RequestJSON), &request)
 	if err == nil {
 		request.Input.UserID = job.UserID
+		var checkpoint services.PlanningBlueprintCheckpoint
+		_ = json.Unmarshal([]byte(job.CheckpointJSON), &checkpoint)
+		saveCheckpoint := func(value services.PlanningBlueprintCheckpoint) error {
+			payload, marshalErr := json.Marshal(value)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			result := worker.db.WithContext(ctx).Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, worker.owner).Updates(map[string]any{"phase": "expanding", "checkpoint_json": string(payload)})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errAIPlanJobLeaseLost
+			}
+			return nil
+		}
 		var result planningPipelineResult
-		result, err = runPlanningPipeline(ctx, request.Input)
+		result, err = runPlanningPipelineWithCheckpoint(ctx, request.Input, &checkpoint, saveCheckpoint)
+		if err == nil {
+			phaseUpdate := worker.db.WithContext(ctx).Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, worker.owner).Update("phase", "publishing")
+			if phaseUpdate.Error != nil || phaseUpdate.RowsAffected != 1 {
+				err = errAIPlanJobLeaseLost
+			}
+		}
 		if err == nil {
 			err = persistAIPlanJobResult(worker.db.WithContext(ctx), job, request, result, time.Now())
 		}
@@ -306,6 +330,9 @@ func (worker *AIPlanJobWorker) renewLease(ctx context.Context, cancel context.Ca
 }
 
 func persistAIPlanJobResult(database *gorm.DB, job models.AIPlanGenerationJob, request aiPlanJobRequest, result planningPipelineResult, now time.Time) error {
+	if result.Source != "ai_decomposed" || result.EnrichmentStatus != "success" {
+		return errors.New("refusing to publish a non-AI planning result as job success")
+	}
 	preview := result.Preview
 	weeklyTarget := recomputeWeeklyTarget(preview)
 	first, last := preview.Tasks[0], preview.Tasks[len(preview.Tasks)-1]
@@ -319,6 +346,9 @@ func persistAIPlanJobResult(database *gorm.DB, job models.AIPlanGenerationJob, r
 			return errAIPlanJobLeaseLost
 		}
 		if _, err := checkOverloadWithDB(tx, job.UserID, weeklyTarget, request.ConfirmOverload); err != nil {
+			return err
+		}
+		if err := services.RecordSuccessfulAIGeneration(context.Background(), tx, job.UserID, result.Provider, fmt.Sprintf("ai-plan-job-%d", job.ID), result.DailyLimit); err != nil {
 			return err
 		}
 		tasks := make([]models.DailyTask, 0, len(preview.Tasks))
@@ -337,7 +367,7 @@ func persistAIPlanJobResult(database *gorm.DB, job models.AIPlanGenerationJob, r
 		if err := tx.Create(&tasks).Error; err != nil {
 			return err
 		}
-		update := tx.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, job.LeaseOwner).Updates(map[string]any{"status": models.AIPlanJobStatusSucceeded, "result_plan_id": plan.ID, "generation_source": result.Source, "provider": result.Provider, "model_name": result.Model, "enrichment_status": result.EnrichmentStatus, "enrichment_reason": result.EnrichmentReason, "lease_owner": "", "lease_expires_at": nil, "completed_at": now})
+		update := tx.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, job.LeaseOwner).Updates(map[string]any{"status": models.AIPlanJobStatusSucceeded, "phase": "published", "result_plan_id": plan.ID, "generation_source": result.Source, "provider": result.Provider, "model_name": result.Model, "enrichment_status": result.EnrichmentStatus, "enrichment_reason": result.EnrichmentReason, "lease_owner": "", "lease_expires_at": nil, "completed_at": now})
 		if update.Error != nil {
 			return update.Error
 		}
@@ -350,17 +380,27 @@ func persistAIPlanJobResult(database *gorm.DB, job models.AIPlanGenerationJob, r
 
 func (worker *AIPlanJobWorker) recordFailure(job models.AIPlanGenerationJob, processingErr error) {
 	now := time.Now()
-	status := models.AIPlanJobStatusPending
-	updates := map[string]any{"status": status, "lease_owner": "", "lease_expires_at": nil, "error_code": "", "error_message": ""}
+	pattern := services.ClassifyBlueprintFailure(processingErr)
+	services.RecordPromptPattern(context.Background(), pattern)
+	exponent := job.AttemptCount
+	if exponent > 6 {
+		exponent = 6
+	}
+	delay := time.Duration(1<<exponent) * time.Second
+	if delay > 5*time.Minute {
+		delay = 5 * time.Minute
+	}
+	next := now.Add(delay)
+	updates := map[string]any{"status": models.AIPlanJobStatusPending, "phase": "retry_wait", "lease_owner": "", "lease_expires_at": nil, "next_attempt_at": next, "error_code": "retrying", "error_message": "AI 返回暂未通过校验，后台会自动继续修复并重试。"}
 	errorCode, errorMessage, terminal := classifyAIPlanJobFailure(processingErr)
-	if terminal || job.AttemptCount >= aiPlanJobMaxAttempts {
+	if terminal {
 		updates["status"] = models.AIPlanJobStatusFailed
 		if errorCode == "" {
 			errorCode, errorMessage = "generation_failed", "计划生成服务暂时未能完成处理，请稍后重试。"
 		}
 		updates["error_code"] = errorCode
 		updates["error_message"] = errorMessage
-		updates["completed_at"] = now
+		updates["completed_at"], updates["phase"] = now, "failed"
 	}
 	worker.db.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, worker.owner).Updates(updates)
 }

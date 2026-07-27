@@ -1,14 +1,16 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const maxBlueprintStages = 12
+const maxBlueprintStages = 24
 const maxBlueprintTasks = 120
 const maxGeneratedPreviewTasks = 120
 
@@ -94,6 +96,78 @@ func ValidatePlanningBlueprint(blueprint PlanningBlueprint) error {
 	return nil
 }
 
+func NormalizePlanningBlueprint(blueprint PlanningBlueprint) (PlanningBlueprint, []string) {
+	warnings := []string{}
+	stageIDMap := make(map[string]string, len(blueprint.Stages))
+	for index := range blueprint.Stages {
+		oldID := blueprint.Stages[index].ID
+		newID := "stage_" + strconv.Itoa(index+1)
+		stageIDMap[oldID] = newID
+		blueprint.Stages[index].ID = newID
+		blueprint.Stages[index].Order = index + 1
+		blueprint.Stages[index].Name = strings.TrimSpace(blueprint.Stages[index].Name)
+		blueprint.Stages[index].Objective = strings.TrimSpace(blueprint.Stages[index].Objective)
+	}
+	taskIDMap := make(map[string]string, len(blueprint.Tasks))
+	for index := range blueprint.Tasks {
+		oldID := blueprint.Tasks[index].ID
+		taskIDMap[oldID] = "task_" + strconv.Itoa(index+1)
+	}
+	for index := range blueprint.Tasks {
+		task := &blueprint.Tasks[index]
+		oldStageID := task.StageID
+		task.ID = taskIDMap[task.ID]
+		if mapped := stageIDMap[oldStageID]; mapped != "" {
+			task.StageID = mapped
+		}
+		task.Order = index + 1
+		task.Title = strings.TrimSpace(task.Title)
+		task.Objective = strings.TrimSpace(task.Objective)
+		task.Description = strings.TrimSpace(task.Description)
+		if task.EffortMinutes < 15 {
+			task.EffortMinutes = 15
+			warnings = append(warnings, "effort_clamped")
+		} else if task.EffortMinutes > 720 {
+			task.EffortMinutes = 720
+			warnings = append(warnings, "effort_clamped")
+		}
+		switch strings.ToLower(strings.TrimSpace(task.Difficulty)) {
+		case "easy", "简单", "beginner", "basic":
+			task.Difficulty = "easy"
+		case "hard", "困难", "advanced", "difficult":
+			task.Difficulty = "hard"
+		default:
+			task.Difficulty = "medium"
+		}
+		prerequisites := make([]string, 0, len(task.PrerequisiteIDs))
+		for _, prerequisite := range task.PrerequisiteIDs {
+			if mapped := taskIDMap[prerequisite]; mapped != "" {
+				prerequisites = append(prerequisites, mapped)
+			}
+		}
+		task.PrerequisiteIDs = prerequisites
+	}
+	return blueprint, warnings
+}
+
+func ValidatePlanningBlueprintForInput(blueprint PlanningBlueprint, input PlanGenerationInput) error {
+	if err := ValidatePlanningBlueprint(blueprint); err != nil {
+		return err
+	}
+	capacity := input.Days * input.HoursPerDay * 60
+	if capacity <= 0 {
+		return fmt.Errorf("invalid requested plan capacity")
+	}
+	total := 0
+	for _, task := range blueprint.Tasks {
+		total += task.EffortMinutes
+	}
+	if total > capacity {
+		return fmt.Errorf("blueprint effort %d exceeds requested capacity %d minutes", total, capacity)
+	}
+	return nil
+}
+
 func BuildPlanningBlueprintPrompt(ctx PlanningContext) string {
 	brief, _ := json.Marshal(struct {
 		Contract           string             `json:"contract"`
@@ -104,8 +178,9 @@ func BuildPlanningBlueprintPrompt(ctx PlanningContext) string {
 		LearningProfile    LearningProfile    `json:"learning_profile"`
 		ActivePlanLoad     ActivePlanLoad     `json:"active_plan_load"`
 		RecentTaskOutcomes RecentTaskOutcomes `json:"recent_task_outcomes"`
-	}{"planning_blueprint_v1", ctx.Input.Goal, ctx.Input.Days, ctx.Input.HoursPerDay, ctx.Input.Refinement, ctx.LearningProfile, ctx.ActivePlanLoad, ctx.RecentTaskOutcomes})
-	return "请作为学习任务拆解专家输出简体中文 JSON 蓝图。你负责学习阶段、任务数量、目标、描述、难度、工作量、顺序和前置关系；不要输出日期、时间、数据库 ID 或用户隐私。任务必须可执行、目标不能只是重复标题。\nNORMALIZED_DECOMPOSITION_BRIEF:\n" + string(brief)
+		CapacityMinutes    int                `json:"capacity_minutes"`
+	}{"planning_blueprint_v1", ctx.Input.Goal, ctx.Input.Days, ctx.Input.HoursPerDay, ctx.Input.Refinement, ctx.LearningProfile, ctx.ActivePlanLoad, ctx.RecentTaskOutcomes, ctx.Input.Days * ctx.Input.HoursPerDay * 60})
+	return "请作为学习任务拆解专家输出简体中文 JSON 蓝图。你负责学习阶段、任务数量、目标、描述、难度、工作量、顺序和前置关系；不要输出日期、时间、数据库 ID 或用户隐私。任务必须可执行、目标不能只是重复标题。所有任务 effort_minutes 总和不得超过 capacity_minutes。每个批次最多 8 个阶段。stage.order 和 task.order 都必须从 1 开始全局连续递增，不能在新阶段重置。尽量使用 30-90 分钟的任务，30 天计划也必须输出完整且精炼的内容。仅输出一个完整 JSON 对象。" + ActivePromptPlaybookGuidance(context.Background()) + "\nNORMALIZED_DECOMPOSITION_BRIEF:\n" + string(brief)
 }
 
 func PlanningBlueprintTokenAllowance(input PlanGenerationInput) int {
@@ -116,11 +191,142 @@ func PlanningBlueprintTokenAllowance(input PlanGenerationInput) int {
 	if estimatedTasks > 60 {
 		estimatedTasks = 60
 	}
-	allowance := 512 + estimatedTasks*96
+	allowance := 1024 + estimatedTasks*160
 	if allowance > 8192 {
 		return 8192
 	}
 	return allowance
+}
+
+type PlanningBlueprintCheckpoint struct {
+	Version       int               `json:"version"`
+	CompletedDays int               `json:"completed_days"`
+	Blueprint     PlanningBlueprint `json:"blueprint"`
+}
+
+func GeneratePlanningBlueprintWithRepair(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts int) (PlanningBlueprint, error) {
+	return GeneratePlanningBlueprintWithCheckpoint(ctx, provider, planningContext, maxAttempts, nil, nil)
+}
+
+func GeneratePlanningBlueprintWithCheckpoint(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts int, checkpoint *PlanningBlueprintCheckpoint, save func(PlanningBlueprintCheckpoint) error) (PlanningBlueprint, error) {
+	if planningContext.Input.Days <= 10 {
+		return generatePlanningBlueprintBatchWithRepair(ctx, provider, planningContext, maxAttempts)
+	}
+	completedDays := 0
+	combined := PlanningBlueprint{}
+	if checkpoint != nil && checkpoint.Version == 1 && checkpoint.CompletedDays > 0 && checkpoint.CompletedDays <= planningContext.Input.Days {
+		completedDays = checkpoint.CompletedDays
+		combined = checkpoint.Blueprint
+	}
+	if completedDays == planningContext.Input.Days {
+		combined, _ = NormalizePlanningBlueprint(combined)
+		if err := ValidatePlanningBlueprintForInput(combined, planningContext.Input); err != nil {
+			return PlanningBlueprint{}, fmt.Errorf("validate completed blueprint checkpoint: %w", err)
+		}
+		return combined, nil
+	}
+	remaining := planningContext.Input.Days - completedDays
+	batchIndex := completedDays / 10
+	for remaining > 0 {
+		batchIndex++
+		batchDays := minInt(remaining, 10)
+		batchContext := planningContext
+		batchContext.Input.Days = batchDays
+		batchContext.Input.Refinement = strings.TrimSpace(planningContext.Input.Refinement + fmt.Sprintf("\n这是完整 %d 天计划的第 %d 个连续批次；保持与前序批次递进，当前批次覆盖 %d 个学习日。", planningContext.Input.Days, batchIndex, batchDays))
+		batch, err := generatePlanningBlueprintBatchWithRepair(ctx, provider, batchContext, maxAttempts)
+		if err != nil {
+			return PlanningBlueprint{}, fmt.Errorf("expand blueprint batch %d: %w", batchIndex, err)
+		}
+		if combined.Title == "" {
+			combined.Title, combined.Summary, combined.Rationale = batch.Title, batch.Summary, batch.Rationale
+		}
+		stageMap := map[string]string{}
+		for index := range batch.Stages {
+			oldID := batch.Stages[index].ID
+			batch.Stages[index].ID = fmt.Sprintf("b%d_%s", batchIndex, oldID)
+			stageMap[oldID] = batch.Stages[index].ID
+		}
+		taskMap := map[string]string{}
+		for index := range batch.Tasks {
+			oldID := batch.Tasks[index].ID
+			batch.Tasks[index].ID = fmt.Sprintf("b%d_%s", batchIndex, oldID)
+			taskMap[oldID] = batch.Tasks[index].ID
+		}
+		for index := range batch.Tasks {
+			batch.Tasks[index].StageID = stageMap[batch.Tasks[index].StageID]
+			for prerequisiteIndex, prerequisite := range batch.Tasks[index].PrerequisiteIDs {
+				batch.Tasks[index].PrerequisiteIDs[prerequisiteIndex] = taskMap[prerequisite]
+			}
+		}
+		combined.Stages = append(combined.Stages, batch.Stages...)
+		combined.Tasks = append(combined.Tasks, batch.Tasks...)
+		remaining -= batchDays
+		completedDays += batchDays
+		if save != nil {
+			checkpointBlueprint, _ := NormalizePlanningBlueprint(combined)
+			if err := save(PlanningBlueprintCheckpoint{Version: 1, CompletedDays: completedDays, Blueprint: checkpointBlueprint}); err != nil {
+				return PlanningBlueprint{}, fmt.Errorf("persist blueprint checkpoint: %w", err)
+			}
+		}
+	}
+	combined, _ = NormalizePlanningBlueprint(combined)
+	if err := ValidatePlanningBlueprintForInput(combined, planningContext.Input); err != nil {
+		return PlanningBlueprint{}, fmt.Errorf("combine blueprint batches: %w", err)
+	}
+	return combined, nil
+}
+
+func generatePlanningBlueprintBatchWithRepair(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts int) (PlanningBlueprint, error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	if maxAttempts > 6 {
+		maxAttempts = 6
+	}
+	prompt := BuildPlanningBlueprintPrompt(planningContext)
+	tokens := PlanningBlueprintTokenAllowance(planningContext.Input)
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		raw, err := provider.GenerateContext(ctx, prompt, tokens)
+		if err != nil {
+			lastErr = err
+			if !IsAIOutputTruncated(err) {
+				return PlanningBlueprint{}, err
+			}
+		} else {
+			blueprint, parseErr := ParsePlanningBlueprintJSON(raw)
+			if parseErr == nil {
+				blueprint, _ = NormalizePlanningBlueprint(blueprint)
+				if validateErr := ValidatePlanningBlueprintForInput(blueprint, planningContext.Input); validateErr == nil {
+					return blueprint, nil
+				} else {
+					lastErr = validateErr
+				}
+			} else {
+				lastErr = fmt.Errorf("invalid JSON: %w", parseErr)
+			}
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		RecordPromptPattern(context.Background(), ClassifyBlueprintFailure(lastErr))
+		if tokens < 8192 {
+			tokens = minInt(8192, tokens+1536)
+		}
+		prompt = BuildPlanningBlueprintPrompt(planningContext) + "\nREPAIR_REQUIRED: 上一次输出未通过校验：" + boundedBlueprintDiagnostic(lastErr) + "。请重新输出完整 JSON；只修复该问题，不要解释，不要使用 Markdown。"
+	}
+	return PlanningBlueprint{}, fmt.Errorf("provider did not produce a valid planning blueprint after %d attempts: %w", maxAttempts, lastErr)
+}
+
+func boundedBlueprintDiagnostic(err error) string {
+	if err == nil {
+		return "unknown output error"
+	}
+	message := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", " ")
+	if len(message) > 240 {
+		message = message[:240]
+	}
+	return message
 }
 
 func SchedulePlanningBlueprint(ctx PlanningContext, blueprint PlanningBlueprint) (PlanPreview, []string, error) {

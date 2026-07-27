@@ -288,8 +288,10 @@ func TestProvider429RetriesConsumeQuotaPerAttempt(t *testing.T) {
 		t.Fatal("expected provider 429 failure")
 	}
 	_, count, err := CanUseAIGeneration(4, 2)
-	if err != nil || attempts != 2 || count != 2 {
-		t.Fatalf("each 429 attempt must consume quota: attempts=%d count=%d err=%v", attempts, count, err)
+	var attemptRows int64
+	db.DB.Model(&models.AIGenerationUsage{}).Where("status = ?", "attempt").Count(&attemptRows)
+	if err != nil || attempts != 2 || count != 0 || attemptRows != 2 {
+		t.Fatalf("429 attempts must be tracked without consuming successful-generation quota: attempts=%d usage=%d successes=%d err=%v", attempts, attemptRows, count, err)
 	}
 }
 

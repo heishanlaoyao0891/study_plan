@@ -361,6 +361,8 @@ export interface AIPlanJob {
   id: number
   status: AIPlanJobStatus
   attempt_count: number
+  phase?: 'queued' | 'decomposing' | 'validating' | 'repairing' | 'scheduling' | 'publishing' | 'retry_wait' | 'published' | 'failed' | 'expired'
+  next_attempt_at?: string
   result_plan_id?: number
   error_code?: string
   error_message?: string

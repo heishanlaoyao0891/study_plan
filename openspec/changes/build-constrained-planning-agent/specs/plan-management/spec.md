@@ -46,3 +46,7 @@ The system SHALL distinguish manual, local Agent, and AI-decomposed plans withou
 #### Scenario: Local baseline is committed while AI runs
 - **WHEN** the user commits before model decomposition completes
 - **THEN** the stored plan source remains `local` even if the job later produces an AI version
+
+#### Scenario: AI decomposition has not produced valid output
+- **WHEN** the current provider attempt times out or returns invalid output
+- **THEN** no plan or preview is marked `ai_decomposed` and the AI job remains retryable
