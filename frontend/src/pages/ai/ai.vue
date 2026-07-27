@@ -13,7 +13,7 @@
         <view class="field"><text>可用结束时间</text><picker mode="time" :disabled="hasActiveJob" :value="availableEnd" @change="availableEnd = $event.detail.value"><view class="picker-value">{{ availableEnd }}</view></picker></view>
       </view>
       <view class="field"><text>追加说明（可选）</text><textarea v-model="additionalInstructions" :disabled="hasActiveJob" maxlength="2000" placeholder="例如：周末少一点，多安排实践练习和阶段复盘" /></view>
-      <button class="primary" :disabled="isSubmitting || isRestoring || hasActiveJob" :loading="isSubmitting" @click="submit">
+      <button class="primary" :disabled="isSubmitting || isRestoring || hasActiveJob" :loading="isSubmitting" @click="submit(false)">
         {{ submitButtonText }}
       </button>
       <view class="error-panel" v-if="requestError">{{ requestError }}</view>
@@ -30,6 +30,7 @@
       <view class="status-meta" v-if="job.status === 'running'">正在执行第 {{ Math.max(job.attempt_count, 1) }} 次处理，请稍候。</view>
       <view class="status-meta" v-if="job.status === 'succeeded' && job.generation_source">{{ job.generation_source === 'local_enriched' ? 'AI 已优化计划内容' : '已使用本地规划规则完成' }}</view>
       <view class="job-error" v-if="job.status === 'failed'">{{ job.error_message || '未能生成有效计划，请检查目标和可用时间后重试。' }}</view>
+      <button class="confirm-overload" v-if="needsOverloadConfirmation" :loading="isSubmitting" :disabled="isSubmitting" @click="confirmOverload">确认负荷并继续生成</button>
       <button class="result-link" v-if="job.status === 'succeeded' && job.result_plan_id" @click="openResult">查看并编辑计划</button>
     </view>
   </view>
@@ -51,6 +52,7 @@ const requestError = ref('')
 const isSubmitting = ref(false)
 const isRestoring = ref(false)
 const hasActiveJob = computed(() => job.value?.status === 'pending' || job.value?.status === 'running')
+const needsOverloadConfirmation = computed(() => job.value?.status === 'failed' && job.value.error_code === 'overload_confirmation_required')
 const submitButtonText = computed(() => {
   if (isRestoring.value) return '正在恢复生成状态…'
   if (isSubmitting.value) return '正在提交…'
@@ -75,7 +77,7 @@ let visible = false
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let pollSequence = 0
 
-async function submit() {
+async function submit(confirmOverload: boolean) {
   if (isSubmitting.value || isRestoring.value || hasActiveJob.value) return
   requestError.value = ''
   if (!goal.value.trim()) return void uni.showToast({ title: '请输入学习目标', icon: 'none' })
@@ -90,6 +92,7 @@ async function submit() {
       available_time_slot: `${availableStart.value}-${availableEnd.value}`,
       additional_instructions: additionalInstructions.value.trim() || undefined,
       idempotency_key: createSubmissionKey(),
+      confirm_overload: confirmOverload,
     })
     uni.showToast({ title: '已提交后台生成', icon: 'success' })
     schedulePoll()
@@ -98,6 +101,17 @@ async function submit() {
   } finally {
     isSubmitting.value = false
   }
+}
+
+async function confirmOverload() {
+  const confirmed = await new Promise<boolean>((resolve) => uni.showModal({
+    title: '计划负荷提醒',
+    content: '当前活动计划较多或每周学习负荷较高，仍要生成并创建这个计划吗？',
+    confirmText: '继续生成',
+    success: result => resolve(result.confirm),
+    fail: () => resolve(false),
+  }))
+  if (confirmed) await submit(true)
 }
 
 async function restoreCurrentJob() {
@@ -188,5 +202,7 @@ onUnload(stopPolling)
 .status-note, .status-meta { margin-top: 8rpx; color: #687389; font-size: 24rpx; line-height: 1.5; }
 .status-meta { margin-top: 22rpx; padding: 16rpx; border-radius: 10rpx; background: #f4f7fc; }
 .job-error, .error-panel { margin-top: 18rpx; padding: 18rpx; border-radius: 12rpx; background: #fff1f3; color: #b4455b; font-size: 23rpx; line-height: 1.55; }
-.result-link { margin-top: 24rpx; border-radius: 12rpx; background: #eaf2ff; color: #2264d1; }
+.confirm-overload, .result-link { margin-top: 24rpx; border-radius: 12rpx; }
+.confirm-overload { background: #fff3df; color: #9a5a10; }
+.result-link { background: #eaf2ff; color: #2264d1; }
 </style>

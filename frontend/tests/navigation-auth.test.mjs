@@ -56,6 +56,9 @@ test('AI client uses durable jobs without preview or commit state', async () => 
 
   assert.match(api, /\/api\/ai\/plan-jobs/)
   assert.match(ai, /additional_instructions/)
+  assert.match(ai, /overload_confirmation_required/)
+  assert.match(ai, /job\.error_message/)
+  assert.match(ai, /confirm_overload: confirmOverload/)
   assert.match(ai, /onHide\(stopPolling\)/)
   assert.match(plans, /currentPlanJob/)
   assert.doesNotMatch(combined, /ai_plan_pending_commit|PlanningPreview|commitPlan\(|regeneratePlan\(/)

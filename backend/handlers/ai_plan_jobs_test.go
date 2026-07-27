@@ -180,6 +180,77 @@ func TestAIPlanJobFailureIsAtomicAndRetryExhaustionIsTerminal(t *testing.T) {
 	}
 }
 
+func TestAIPlanJobReportsOverloadConfirmationAndCanRetry(t *testing.T) {
+	setupTestDB(t)
+	for index := 0; index < maxActivePlans; index++ {
+		if err := db.DB.Create(&models.Plan{UserID: 61, Title: fmt.Sprintf("Existing %d", index), Status: models.PlanStatusActive, WeeklyTargetHours: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := models.AIPlanGenerationJob{UserID: 61, RequestJSON: mustAIPlanJobPayload(t, 61, "Study Go"), RequestHash: "overload", Status: models.AIPlanJobStatusPending}
+	if err := db.DB.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := claimAIPlanJob(db.DB, "overload-worker", time.Now())
+	if err != nil || !ok {
+		t.Fatalf("claim failed: ok=%v err=%v", ok, err)
+	}
+	worker := &AIPlanJobWorker{db: db.DB, owner: "overload-worker"}
+	worker.process(context.Background(), claimed)
+	if err := db.DB.First(&job, job.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != models.AIPlanJobStatusFailed || job.ErrorCode != "overload_confirmation_required" {
+		t.Fatalf("overload did not request explicit confirmation: %+v", job)
+	}
+
+	retryRequest := aiPlanJobRequest{Input: services.PlanGenerationInput{UserID: 61, Goal: "Study Go", Days: 1, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}, ConfirmOverload: true}
+	payload, err := json.Marshal(retryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry := models.AIPlanGenerationJob{UserID: 61, RequestJSON: string(payload), RequestHash: "confirmed", Status: models.AIPlanJobStatusPending}
+	if err := db.DB.Create(&retry).Error; err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err = claimAIPlanJob(db.DB, "confirmed-worker", time.Now())
+	if err != nil || !ok {
+		t.Fatalf("confirmed claim failed: ok=%v err=%v", ok, err)
+	}
+	(&AIPlanJobWorker{db: db.DB, owner: "confirmed-worker"}).process(context.Background(), claimed)
+	if err := db.DB.First(&retry, retry.ID).Error; err != nil || retry.Status != models.AIPlanJobStatusSucceeded || retry.ResultPlanID == nil {
+		t.Fatalf("confirmed overload retry did not create a plan: job=%+v err=%v", retry, err)
+	}
+}
+
+func TestAIPlanJobExplainsWhenRequestedScheduleHasNoCapacity(t *testing.T) {
+	setupTestDB(t)
+	start, err := time.Parse("2006-01-02", "2026-08-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for offset := 0; offset < 120; offset++ {
+		if err := db.DB.Create(&models.DailyTask{UserID: 71, Date: start.AddDate(0, 0, offset).Format("2006-01-02"), Title: "Occupied", Objective: "Keep the requested slot occupied", PlannedStart: "20:00", PlannedEnd: "21:00", EstimatedMinutes: 60, Status: models.TaskStatusPending}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := models.AIPlanGenerationJob{UserID: 71, RequestJSON: mustAIPlanJobPayload(t, 71, "Study Go"), RequestHash: "no-capacity", Status: models.AIPlanJobStatusPending}
+	if err := db.DB.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := claimAIPlanJob(db.DB, "capacity-worker", time.Now())
+	if err != nil || !ok {
+		t.Fatalf("claim failed: ok=%v err=%v", ok, err)
+	}
+	(&AIPlanJobWorker{db: db.DB, owner: "capacity-worker"}).process(context.Background(), claimed)
+	if err := db.DB.First(&job, job.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != models.AIPlanJobStatusFailed || job.ErrorCode != "no_available_schedule" || !strings.Contains(job.ErrorMessage, "空闲时段") {
+		t.Fatalf("no-capacity failure was not actionable: %+v", job)
+	}
+}
+
 func performAIPlanJobRequest(router http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))

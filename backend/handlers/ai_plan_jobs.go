@@ -340,19 +340,38 @@ func (worker *AIPlanJobWorker) recordFailure(job models.AIPlanGenerationJob, pro
 	now := time.Now()
 	status := models.AIPlanJobStatusPending
 	updates := map[string]any{"status": status, "lease_owner": "", "lease_expires_at": nil, "error_code": "", "error_message": ""}
-	if job.AttemptCount >= aiPlanJobMaxAttempts || isTerminalAIPlanJobError(processingErr) {
+	errorCode, errorMessage, terminal := classifyAIPlanJobFailure(processingErr)
+	if terminal || job.AttemptCount >= aiPlanJobMaxAttempts {
 		updates["status"] = models.AIPlanJobStatusFailed
-		updates["error_code"] = "generation_failed"
-		updates["error_message"] = "计划生成未能完成，请检查可用时间后重试。"
+		if errorCode == "" {
+			errorCode, errorMessage = "generation_failed", "计划生成服务暂时未能完成处理，请稍后重试。"
+		}
+		updates["error_code"] = errorCode
+		updates["error_message"] = errorMessage
 		updates["completed_at"] = now
 	}
 	worker.db.Model(&models.AIPlanGenerationJob{}).Where("id = ? AND status = ? AND lease_owner = ?", job.ID, models.AIPlanJobStatusRunning, worker.owner).Updates(updates)
 }
 
-func isTerminalAIPlanJobError(err error) bool {
+func classifyAIPlanJobFailure(err error) (string, string, bool) {
+	if err == nil {
+		return "", "", false
+	}
+	if strings.Contains(err.Error(), "confirm_overload required") {
+		return "overload_confirmation_required", "当前活动计划较多或每周学习负荷较高，请确认后继续生成。", true
+	}
 	var scheduleErr *scheduleConflictError
 	var dateErr *taskDateConflictError
-	return errors.As(err, &scheduleErr) || errors.As(err, &dateErr) || strings.Contains(err.Error(), "overload detected") || strings.Contains(err.Error(), "could not allocate")
+	if errors.As(err, &scheduleErr) || errors.As(err, &dateErr) {
+		return "schedule_conflict", "当前任务日程与生成计划冲突，请调整可用时段后重试。", true
+	}
+	if strings.Contains(err.Error(), "could not allocate") {
+		return "no_available_schedule", "未来可安排日期内没有足够的空闲时段，请扩大或更换可用时间后重试。", true
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "generation_timeout", "计划生成处理超时，请稍后重试。", false
+	}
+	return "", "", false
 }
 
 func newAIPlanWorkerID() string {
