@@ -39,6 +39,7 @@ func AutoMigrate() error {
 		&models.PasswordResetCode{},
 		&models.Plan{},
 		&models.AIPlanCommit{},
+		&models.AIPlanGenerationJob{},
 		&models.PlanMember{},
 		&models.PlanScheduleOverride{},
 		&models.StudyGroup{},
@@ -98,6 +99,15 @@ func AutoMigrate() error {
 		return err
 	}
 	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_daily_tasks_user_date_schedule ON daily_tasks (user_id, date, planned_start, planned_end)").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_plan_jobs_user_key ON ai_plan_generation_jobs (user_id, idempotency_key) WHERE idempotency_key <> ''").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_plan_jobs_active_user ON ai_plan_generation_jobs (user_id) WHERE status IN ('pending', 'running')").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_ai_plan_jobs_claim ON ai_plan_generation_jobs (status, lease_expires_at, created_at)").Error; err != nil {
 		return err
 	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {

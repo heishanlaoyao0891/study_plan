@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="project-scan-last-updated" content="2026-07-26" />
+  <meta name="project-scan-last-updated" content="2026-07-27" />
   <title>studyPlan 持续项目扫描报告</title>
   <style>
     :root { --bg:#0b1020; --panel:#121a2f; --panel2:#18233d; --text:#e8edf8; --muted:#9eabc3; --line:#2a3858; --blue:#73a7ff; --green:#61d7a3; --yellow:#ffd166; --red:#ff7a90; --violet:#b89cff; }
@@ -55,12 +55,12 @@
 </head>
 <body><main>
   <h1>studyPlan 持续项目扫描报告</h1>
-  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-26</div>
+  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-27</div>
 
   <section class="grid metrics">
     <div class="metric"><b>354</b><span>当前项目文件（跟踪 + 新增）</span></div>
-    <div class="metric"><b>22</b><span>OpenSpec changes</span></div>
-    <div class="metric"><b>10 / 12</b><span>未归档 / 已归档</span></div>
+    <div class="metric"><b>24</b><span>OpenSpec changes</span></div>
+    <div class="metric"><b>11 / 13</b><span>未归档 / 已归档</span></div>
     <div class="metric"><b>317 / 343</b><span>未归档任务已完成</span></div>
     <div class="metric"><b>159</b><span>Go 测试函数</span></div>
     <div class="metric"><b>13</b><span>主规格能力模块</span></div>
@@ -81,6 +81,7 @@
   <table>
     <thead><tr><th>日期</th><th>范围</th><th>更新摘要</th><th>验证</th></tr></thead>
     <tbody>
+      <tr><td>2026-07-27</td><td>归档导航、认证与异步计划优化</td><td>归档 <code>refine-navigation-auth-and-ai-planning</code>（31/31）；管理台侧栏固定 240px；H5 登录改为单主操作；小程序启动自动认证；账号/设置入口迁至统计页；产品 AI 流程改为持久化 job 直接创建计划，并与远端 constrained planning Agent 服务合并。</td><td><code>go test ./...</code>、4 项前端契约测试、前端 type-check、H5、微信小程序、管理端 build、相关 OpenSpec strict validate 和浏览器 DOM 几何检查通过。</td></tr>
       <tr><td>2026-07-26</td><td>完成 constrained planning Agent</td><td>按功能完整度收敛 change 至 64 项并全部完成：抽取共享排程/负荷规则，支持同日多短任务；Provider 按安全 origin/credential 复用连接并保留 dial-time DNS rebinding 防护；记录延迟、Token、状态和失败指标；新增 Preview 服务端 add/remove/split/reorder 派生版本；用户端补齐开始日期、跳过日期和结构调整控件；管理端展示队列、成功/回退率、p50/p95、Token 与失败原因。</td><td><code>go test ./...</code>、<code>go vet ./...</code>、前端 type-check、H5、微信小程序、管理端 build、OpenSpec strict validate 和 diff check 全部通过。change 64/64，可提交推送。</td></tr>
       <tr><td>2026-07-26</td><td>实施 constrained planning Agent（第一阶段）</td><td>新增持久化 Planning Job 与不可变 preview version、活动请求去重、用户隔离状态/取消接口、claim/lease/restart recovery/expiry；交互请求立即返回本地基线，后台默认 60 秒生成紧凑 AI 蓝图，后端拆分超大任务、排程校验并原子发布 <code>ai_decomposed</code> version 2；provenance 与提交绑定 preview ID/version/fingerprint/expiry；用户端增加轮询、进度、未编辑自动切换和已编辑版本审阅；管理端暴露 1–5 秒交互目标和 15–120 秒后台预算。</td><td>OpenSpec strict validate、<code>go test ./...</code>、<code>go vet ./...</code>、前端/管理端 type-check、H5、微信小程序和管理端 build 全部通过。change 当前 51/68，17 项待实施。</td></tr>
       <tr><td>2026-07-26</td><td>重构 constrained planning change</td><td>将同步 8 秒语义润色方案改为异步 AI 任务拆解：立即返回本地基线，后台默认 60 秒生成可变任务蓝图，后端负责排程与版本控制。更新 proposal、design、3 份 specs 和 tasks。</td><td>文档一致性与 diff 检查通过；OpenSpec CLI 未安装，strict validate 待执行。该 change 当前 23/68，45 项待实施。</td></tr>
@@ -96,7 +97,7 @@
       <h3 class="ok">健康信号</h3>
       <ul>
         <li>后端 <code>go test ./...</code>、<code>go vet ./...</code>、OpenSpec strict validate、前端/管理端 type-check 与三类生产构建全部通过。</li>
-        <li>12 个已归档 change 共 334 项任务，全部勾选完成；归档 delta 中的 Requirement 名称都能在当前主规格找到。</li>
+        <li>13 个已归档 change 均已完成任务；本次归档 delta 已同步到当前主规格。</li>
         <li>生产配置对 JWT、WeChat、AI 密钥加密 secret 有启动校验；密码使用 bcrypt；关键并发规则有数据库唯一索引。</li>
         <li>代码已经覆盖 H5/微信统一账号、封禁体验、AI 计划、反馈、通知、学习组、计时与打卡等较完整产品面。</li>
       </ul>
@@ -107,7 +108,7 @@
         <li><b>change 堆叠冲突：</b>10 个 Requirement 名称被多个未归档 change 同时修改，AI 主 Requirement 同时被 4 个 change 修改。</li>
         <li><b>归档滞后：</b>4 个 change 已 100% 完成仍留在 active；这会让后续 delta 的基线和归档顺序变得含糊。</li>
         <li><b>检查清单漂移：</b>部分 tasks 仍未勾选，但对应测试已经存在，例如 interval-union 测试。</li>
-        <li><b>前端验证缺口：</b>UniApp 与管理端没有自动化测试文件；关键 check-in 页面 541 行，API 聚合文件 719 行、60 个导出。</li>
+        <li><b>前端验证缺口：</b>UniApp 已新增 4 项导航/认证/AI 契约测试，但管理端仍缺少常规组件测试；关键 check-in 页面和 API 聚合文件仍偏大。</li>
         <li><b>验证入口失效：</b><code>scripts/verify.ps1</code> 默认验证已归档的旧 change 名，且当前环境没有 OpenSpec CLI。</li>
         <li><b>AI Agent 后续演进：</b>当前功能 change 已完成；更广泛的 provider 重试策略重构和非关键故障注入矩阵已明确移出本 change，可在独立质量 change 中处理。</li>
       </ul>
@@ -136,7 +137,7 @@
     <div class="card"><h3>部署</h3><p>Docker Compose：backend、frontend、admin、MinIO。SQLite 为主存储，可选 MySQL 归档同步。</p></div>
   </section>
 
-  <h2>未归档 changes（10）</h2>
+  <h2>未归档 changes（11）</h2>
   <table>
     <thead><tr><th>Change</th><th>完成度</th><th>Delta</th><th>判断</th></tr></thead>
     <tbody>
@@ -149,6 +150,7 @@
       <tr><td>improve-learning-economy-and-insights</td><td>32/32<div class="bar"><i style="width:100%"></i></div></td><td>6 / 7</td><td><span class="pill good">完成</span> 已补充运行时加固与跨平台图表升级，可进入严格校验与归档。</td></tr>
       <tr><td>improve-plan-schedule-and-reminder-settings</td><td>16/16<div class="bar"><i style="width:100%"></i></div></td><td>2 / 3</td><td><span class="pill good">完成</span> 建议在 refine change 之前归档。</td></tr>
       <tr><td>productionize-siliconflow-ai-planning</td><td>19/19<div class="bar"><i style="width:100%"></i></div></td><td>2 / 4</td><td><span class="pill good">完成</span> 应作为 constrained planner 的前置基线归档。</td></tr>
+      <tr><td>productionize-deepseek-ai-planning</td><td>0/0<div class="bar"><i style="width:0%"></i></div></td><td>空目录</td><td><span class="pill high">无产物</span> 既有空 change，导致全量 OpenSpec validate 失败，应清理或重建。</td></tr>
       <tr><td>refine-checkin-schedule-and-active-task-rules</td><td>69/89<div class="bar"><i style="width:78%"></i></div></td><td>5 / 21</td><td><span class="pill high">测试债集中</span> 20 项未完成，多数是边界、并发、UI 与迁移验证。</td></tr>
     </tbody>
   </table>
@@ -180,11 +182,12 @@
     </tbody>
   </table>
 
-  <h2>已归档 changes（12）</h2>
-  <p class="note"><b>整体判断：</b>归档区健康度较好。12 个 change 的任务全部完成，147 个归档 delta Requirement 名称均能映射到当前 13 个主规格模块；说明历史规格同步至少在名称层面完整。</p>
+  <h2>已归档 changes（13）</h2>
+  <p class="note"><b>整体判断：</b>归档区健康度较好。本次新增归档 change 已完成 31/31 项任务并同步 4 个主规格能力。</p>
   <table>
     <thead><tr><th>日期 / Change</th><th>任务</th><th>规格数 / Requirements</th><th>备注</th></tr></thead>
     <tbody>
+      <tr><td>2026-07-27-refine-navigation-auth-and-ai-planning</td><td>31/31</td><td>4 / 12</td><td>管理台导航、H5/小程序认证、个人入口归位和异步 AI 直接创建计划。</td></tr>
       <tr><td>2026-07-20-study-checkin-miniapp</td><td>68/68</td><td>9 / 68</td><td>项目初始全域规格，体量最大。</td></tr>
       <tr><td>2026-07-23-admin-web-console</td><td>34/34</td><td>1 / 11</td><td>管理面从小程序拆出。</td></tr>
       <tr><td>2026-07-23-anti-abuse-and-slack-balance</td><td>14/14</td><td>1 / 4</td><td>防刷与躺平余额。</td></tr>
@@ -215,9 +218,9 @@
       <tr><td>Go tests</td><td class="ok">通过</td><td>159 个测试函数；覆盖 Job 生命周期、同日任务排程、蓝图拆分、60 秒 deadline、派生 Preview 并发版本、连接复用、DNS rebinding、Token 和管理指标。历史 coverage 数值未在本轮重算。</td></tr>
       <tr><td>Go vet</td><td class="ok">通过</td><td>无输出。</td></tr>
       <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>前端与管理端 type-check、H5 build、微信小程序 build、管理端 Vite build 全部通过；仅有 Sass legacy API、UniApp 更新提示与管理端大 chunk 警告。</td></tr>
-      <tr><td>Frontend tests</td><td class="bad">0</td><td>没有 <code>*.test.*</code> 或 <code>*.spec.*</code> 文件。</td></tr>
+      <tr><td>Frontend tests</td><td class="ok">4 项通过</td><td>覆盖个人入口迁移、H5 操作层级、小程序自动认证和 AI durable-job 客户端契约。</td></tr>
       <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td>OpenSpec 1.6.0 已安装；<code>build-constrained-planning-agent</code> strict validate 无 issue。</td></tr>
-      <tr><td>Git</td><td class="warn">有实施中改动</td><td>保留既有 AGENTS/OpenSpec/report 改动，并新增本轮后端、前端和管理端实现；尚未提交。</td></tr>
+      <tr><td>Git</td><td class="warn">rebase 验证中</td><td>本次归档提交正在与远端 constrained planning Agent 提交整合，测试已通过，待完成推送。</td></tr>
     </tbody>
   </table>
 

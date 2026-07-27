@@ -17,27 +17,21 @@
         </view>
       </view>
 
-      <view class="panel auth-panel">
+      <view class="panel auth-panel h5-auth-panel">
         <!-- #ifdef H5 -->
         <view class="auth-heading">
           <view class="section-title">{{ h5Title }}</view>
           <view class="section-copy">{{ h5Copy }}</view>
         </view>
 
-        <view class="tabs">
-          <view class="tab" :class="{ active: h5Mode === 'login' }" @click="switchH5Mode('login')">登录</view>
-          <view class="tab" :class="{ active: h5Mode === 'register' }" @click="switchH5Mode('register')">注册</view>
-          <view class="tab" :class="{ active: h5Mode === 'reset' }" @click="switchH5Mode('reset')">重置密码</view>
-        </view>
-
-        <view class="form">
-          <view class="field">
-            <text class="field-label">用户名</text>
-            <input v-model="h5Form.username" class="field-input" maxlength="24" placeholder="4-24 位字母、数字或下划线" @input="clearError" />
-          </view>
+        <view class="form h5-form">
           <view v-if="h5Mode === 'register'" class="field">
             <text class="field-label">邀请码</text>
             <input v-model="h5Form.invite_code" class="field-input" maxlength="64" placeholder="请输入管理员提供的邀请码" @input="clearError" />
+          </view>
+          <view class="field">
+            <text class="field-label">用户名</text>
+            <input v-model="h5Form.username" class="field-input" maxlength="24" placeholder="4-24 位字母、数字或下划线" @input="clearError" />
           </view>
           <view v-if="h5Mode === 'reset'" class="field">
             <text class="field-label">管理员重置码</text>
@@ -48,26 +42,38 @@
             <input v-model="h5Form.nickname" class="field-input" maxlength="20" placeholder="2-20 个字符" @input="clearError" />
           </view>
           <view class="field">
-            <text class="field-label">密码</text>
+            <view class="field-label-row">
+              <text class="field-label">{{ h5Mode === 'reset' ? '新密码' : '密码' }}</text>
+              <button v-if="h5Mode === 'login'" class="inline-link forgot-link" type="button" @click="switchH5Mode('reset')">忘记密码？</button>
+            </view>
             <input v-model="h5Form.password" class="field-input" password maxlength="72" :placeholder="h5Mode === 'login' ? '请输入密码' : '至少 8 位字符'" @input="clearError" />
           </view>
           <view v-if="errMsg" class="error">{{ errMsg }}</view>
           <button class="primary-btn" :loading="submitting" :disabled="submitting" @click="submitH5">{{ h5SubmitText }}</button>
+          <view v-if="h5Mode === 'login'" class="auth-switch">还没有账号？<button class="inline-link register-link" type="button" @click="switchH5Mode('register')">使用邀请码注册</button></view>
+          <button v-else class="return-login" type="button" @click="switchH5Mode('login')">{{ h5Mode === 'register' ? '已有账号？返回登录' : '返回登录' }}</button>
         </view>
         <!-- #endif -->
 
         <!-- #ifdef MP-WEIXIN -->
-        <view v-if="wechatStep === 'login'" class="wechat-entry">
+        <view v-if="miniProgramAuth.status === 'loading' || miniProgramAuth.status === 'idle'" class="wechat-entry">
           <view class="auth-heading">
-            <view class="section-title">微信快捷登录</view>
-            <view class="section-copy">轻轻一点，回到你的学习花园</view>
+            <view class="section-title">正在进入学习花园</view>
+            <view class="section-copy">正在安全验证微信身份，请稍候</view>
           </view>
-          <view class="wechat-orb">微</view>
-          <button class="primary-btn wechat-btn" :loading="submitting" :disabled="submitting" @click="onWechatLogin">微信登录</button>
-          <view class="privacy-note">登录即表示你同意相关服务与隐私规则</view>
+          <view class="wechat-orb auth-loading">微</view>
         </view>
 
-        <view v-else class="registration-form">
+        <view v-else-if="miniProgramAuth.status === 'exchange-error'" class="wechat-entry">
+          <view class="auth-heading">
+            <view class="section-title">暂时无法登录</view>
+            <view class="section-copy">微信身份验证没有完成，可以重新尝试</view>
+          </view>
+          <view class="error">{{ miniProgramAuth.error }}</view>
+          <button class="primary-btn wechat-btn" @click="retryWechatLogin">重试</button>
+        </view>
+
+        <view v-else-if="miniProgramAuth.status === 'setup-required'" class="registration-form">
           <view class="auth-heading">
             <view class="section-title">第一次见面</view>
             <view class="section-copy">{{ wechatMode === 'register' ? '用邀请码创建账号，下次微信登录会直接回到这里' : '绑定你已经在 H5 创建的账号' }}</view>
@@ -94,7 +100,10 @@
           </view>
           <view v-if="errMsg" class="error">{{ errMsg }}</view>
           <button class="primary-btn" :loading="submitting" :disabled="submitting" @click="submitWechatAccount">{{ wechatMode === 'register' ? '注册并开始学习' : '绑定并开始学习' }}</button>
-          <button class="text-btn" @click="cancelWechatRegistration">换一个微信账号</button>
+        </view>
+
+        <view v-else-if="miniProgramAuth.status === 'banned'" class="wechat-entry">
+          <view class="section-copy">账号访问已暂停，正在前往状态页面</view>
         </view>
         <!-- #endif -->
 
@@ -121,11 +130,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { computed, reactive, ref, watch } from 'vue'
 import { AuthApi, type LoginResp, type RegistrationReq, type WechatLoginResp } from '@/api'
 import { getApiBase, setApiBase, setToken } from '@/api/request'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
 import { routeForUser } from '@/utils/auth-routing'
+import { clearMiniProgramSetup, miniProgramAuth, resetMiniProgramAuth, startMiniProgramAuth } from '@/utils/mp-auth'
 
 type H5Mode = 'login' | 'register' | 'reset'
 
@@ -138,14 +149,19 @@ const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
 const h5Mode = ref<H5Mode>('login')
 const resetCode = ref('')
 const h5Form = reactive<RegistrationReq>({ invite_code: '', username: '', nickname: '', password: '' })
-const wechatStep = ref<'login' | 'register'>('login')
-const registrationToken = ref('')
 const wechatMode = ref<'register' | 'link'>('register')
 const wechatForm = reactive<RegistrationReq>({ invite_code: '', username: '', nickname: '', password: '' })
 
 const h5Title = computed(() => ({ login: '欢迎回来', register: '种下第一颗种子', reset: '重置密码' })[h5Mode.value])
 const h5Copy = computed(() => ({ login: '用用户名和密码继续今天的学习', register: '凭邀请码创建你的专属学习花园', reset: '使用管理员提供的一次性重置码' })[h5Mode.value])
-const h5SubmitText = computed(() => ({ login: '进入学习花园', register: '注册并开始学习', reset: '确认重置密码' })[h5Mode.value])
+const h5SubmitText = computed(() => ({ login: '登录', register: '注册并开始学习', reset: '重置密码' })[h5Mode.value])
+
+onLoad(() => {
+  // #ifdef MP-WEIXIN
+  if (miniProgramAuth.status === 'authenticated') resetMiniProgramAuth()
+  if (miniProgramAuth.status === 'idle') startMiniProgramAuth()
+  // #endif
+})
 
 function clearError() {
   errMsg.value = ''
@@ -211,24 +227,12 @@ function handleWechatResult(resp: WechatLoginResp) {
     afterLogin(resp)
     return
   }
-  registrationToken.value = resp.registration_token
-  wechatStep.value = 'register'
+  miniProgramAuth.registrationToken = resp.registration_token
+  miniProgramAuth.status = 'setup-required'
 }
 
-async function onWechatLogin() {
-  clearError()
-  submitting.value = true
-  try {
-    // #ifdef MP-WEIXIN
-    const loginRes: any = await new Promise((resolve, reject) => uni.login({ provider: 'weixin', success: resolve, fail: reject }))
-    if (!loginRes?.code) throw new Error('未能获取微信登录凭证，请重试')
-    handleWechatResult(await AuthApi.login(loginRes.code))
-    // #endif
-  } catch (error: any) {
-    errMsg.value = error?.message || '微信登录失败'
-  } finally {
-    submitting.value = false
-  }
+function retryWechatLogin() {
+  startMiniProgramAuth()
 }
 
 async function submitWechatRegistration() {
@@ -241,7 +245,7 @@ async function submitWechatRegistration() {
   submitting.value = true
   try {
     afterLogin(await AuthApi.wechatRegister({
-      registration_token: registrationToken.value,
+      registration_token: miniProgramAuth.registrationToken,
       invite_code: wechatForm.invite_code.trim(),
       username: wechatForm.username.trim(),
       nickname: normalizeDisplayText(wechatForm.nickname),
@@ -273,7 +277,7 @@ async function submitWechatAccount() {
   submitting.value = true
   try {
     afterLogin(await AuthApi.wechatLink({
-      registration_token: registrationToken.value,
+       registration_token: miniProgramAuth.registrationToken,
       username: wechatForm.username.trim(),
       password: wechatForm.password,
     }))
@@ -284,18 +288,19 @@ async function submitWechatAccount() {
   }
 }
 
-function cancelWechatRegistration() {
-  wechatStep.value = 'login'
-  registrationToken.value = ''
-  clearError()
-}
-
 function afterLogin(resp: LoginResp) {
   setToken(resp.token)
+  clearMiniProgramSetup()
   uni.showToast({ title: '登录成功', icon: 'success' })
   const url = routeForUser(resp.user, resp.nickname_required)
   setTimeout(() => uni.reLaunch({ url }), 300)
 }
+
+watch(() => miniProgramAuth.status, (status) => {
+  if (status === 'setup-required' && miniProgramAuth.launchInvitation && !wechatForm.invite_code) {
+    wechatForm.invite_code = miniProgramAuth.launchInvitation
+  }
+}, { immediate: true })
 
 function saveApiBase() {
   setApiBase(apiBase.value.trim())
@@ -359,6 +364,19 @@ button::after { border: 0; }
 .ghost-btn { background: #f5eff2; color: #6c5963; }
 .dark-btn { background: #392f38; color: #fff; }
 
+/* #ifdef H5 */
+.h5-auth-panel { border-radius: 18rpx; box-shadow: 0 12rpx 32rpx rgba(76,52,64,.1); }
+.h5-form .field-label-row { display: flex; min-height: 34rpx; align-items: center; justify-content: space-between; gap: 20rpx; margin-bottom: 10rpx; }
+.h5-form .field-label-row .field-label { margin-bottom: 0; }
+.inline-link, .return-login { min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 23rpx; line-height: 1.5; }
+.inline-link { display: inline; margin: 0; color: #8b7d85; }
+.forgot-link { flex: none; }
+.auth-switch { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6rpx; margin-top: 24rpx; color: #827780; font-size: 23rpx; line-height: 1.6; text-align: center; }
+.register-link { color: #e95f85; font-weight: 700; }
+.return-login { margin: 22rpx auto 0; color: #8b7d85; }
+.h5-form .primary-btn { height: 86rpx; line-height: 86rpx; border-radius: 14rpx; box-shadow: 0 8rpx 18rpx rgba(255,122,162,.18); }
+/* #endif */
+
 @media (min-width: 800px) {
   .page { display: flex; align-items: center; padding: 48px; }
   .shell { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(390px, .9fr); align-items: center; gap: 72px; }
@@ -367,6 +385,11 @@ button::after { border: 0; }
   .hero-title { font-size: 58px; }
   .hero-copy { font-size: 18px; }
   .auth-panel { padding: 36px; border-radius: 28px; }
+  /* #ifdef H5 */
+  .shell { grid-template-columns: minmax(0, 1fr) 420px; }
+  .h5-auth-panel { width: 420px; padding: 34px; border-radius: 10px; }
+  .h5-auth-panel .field-input, .h5-auth-panel .primary-btn { height: 44px; line-height: 44px; }
+  /* #endif */
   .dev { grid-column: 2; margin-top: -48px; }
 }
 </style>

@@ -3,11 +3,11 @@
 ## MODIFIED Requirements
 
 ### Requirement: User can login with WeChat
-The system SHALL authenticate a linked account immediately and SHALL require invitation registration before a new WeChat identity can access study features.
+The system SHALL automatically exchange a WeChat code during mini-program startup, SHALL authenticate a linked account without a login landing action, and SHALL require conditional account setup before a new WeChat identity can access study features.
 
 #### Scenario: Linked returning account
-- **WHEN** an OpenID is linked to a complete account
-- **THEN** the system returns an application JWT without requesting account fields again
+- **WHEN** mini-program startup resolves an OpenID linked to a complete account
+- **THEN** the system returns an application JWT and enters the application without requesting account fields or displaying a login action
 
 #### Scenario: New WeChat identity
 - **WHEN** an OpenID is not linked to an account

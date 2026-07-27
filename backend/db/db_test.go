@@ -248,3 +248,24 @@ func TestAutoMigrateAllowsAIConfigWithoutKeyAndSecret(t *testing.T) {
 		t.Fatalf("config without an API key should migrate without a secret: %v", err)
 	}
 }
+
+func TestAutoMigrateGuardsAIPlanJobStatusIdempotencyAndOneActiveJob(t *testing.T) {
+	openMigrationTestDB(t)
+	config.App = &config.Config{}
+	if err := AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	first := models.AIPlanGenerationJob{UserID: 9, RequestJSON: `{}`, RequestHash: "one", IdempotencyKey: "job_key_12345678", Status: models.AIPlanJobStatusPending}
+	if err := DB.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&models.AIPlanGenerationJob{UserID: 9, RequestJSON: `{}`, RequestHash: "two", Status: models.AIPlanJobStatusRunning}).Error; err == nil {
+		t.Fatal("expected one-active-job index to reject a second active job")
+	}
+	if err := DB.Create(&models.AIPlanGenerationJob{UserID: 9, RequestJSON: `{}`, RequestHash: "three", IdempotencyKey: first.IdempotencyKey, Status: models.AIPlanJobStatusFailed}).Error; err == nil {
+		t.Fatal("expected owner/idempotency index to reject key reuse")
+	}
+	if err := DB.Create(&models.AIPlanGenerationJob{UserID: 10, RequestJSON: `{}`, RequestHash: "bad", Status: "unknown"}).Error; err == nil {
+		t.Fatal("expected status constraint to reject an unknown status")
+	}
+}

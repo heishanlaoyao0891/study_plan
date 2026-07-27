@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,7 +33,7 @@ func main() {
 	}
 	services.StartArchiveSync()
 	services.StartNotificationScheduler(db.DB)
-	services.StartPlanningJobWorker(db.DB)
+	aiPlanWorker := handlers.StartAIPlanJobWorker(db.DB)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -98,13 +99,10 @@ func main() {
 		bound.GET("/groups/current/leaderboard", handlers.GroupLeaderboard)
 
 		// AI 计划
-		bound.POST("/ai/generate-plan", handlers.GeneratePlan)
-		bound.POST("/ai/regenerate", handlers.RegeneratePlan)
-		bound.GET("/ai/jobs/:id", handlers.GetPlanningJob)
-		bound.DELETE("/ai/jobs/:id", handlers.CancelPlanningJob)
-		bound.POST("/ai/previews/:id/versions/:version/mutate", handlers.MutatePlanningPreview)
-		bound.POST("/ai/commit-plan", handlers.CommitAIPlan)
 		bound.PUT("/ai/plan/:id/edit", handlers.EditAIPlan)
+		bound.POST("/ai/plan-jobs", handlers.SubmitAIPlanJob)
+		bound.GET("/ai/plan-jobs/current", handlers.GetCurrentAIPlanJob)
+		bound.GET("/ai/plan-jobs/:id", handlers.GetAIPlanJob)
 
 		// 打卡
 		bound.GET("/checkins", handlers.ListCheckins)
@@ -218,14 +216,17 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	fmt.Println("\nshutting down...")
-	_ = srv.Close()
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	_ = srv.Shutdown(shutdownContext)
+	_ = aiPlanWorker.Shutdown(shutdownContext)
 }
 
 func cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Authorization,Content-Type")
+		c.Header("Access-Control-Allow-Headers", "Authorization,Content-Type,Idempotency-Key")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

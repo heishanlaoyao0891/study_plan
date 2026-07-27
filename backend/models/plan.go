@@ -68,3 +68,36 @@ type AIPlanCommit struct {
 }
 
 func (AIPlanCommit) TableName() string { return "ai_plan_commits" }
+
+const (
+	AIPlanJobStatusPending   = "pending"
+	AIPlanJobStatusRunning   = "running"
+	AIPlanJobStatusSucceeded = "succeeded"
+	AIPlanJobStatusFailed    = "failed"
+)
+
+type AIPlanGenerationJob struct {
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	UserID           uint       `gorm:"not null;index" json:"-"`
+	RequestJSON      string     `gorm:"type:text;not null" json:"-"`
+	RequestHash      string     `gorm:"size:64;not null" json:"-"`
+	IdempotencyKey   string     `gorm:"size:64;not null;default:''" json:"-"`
+	Status           string     `gorm:"size:16;not null;index;check:chk_ai_plan_job_status,status IN ('pending','running','succeeded','failed')" json:"status"`
+	AttemptCount     int        `gorm:"not null;default:0" json:"attempt_count"`
+	LeaseOwner       string     `gorm:"size:64;not null;default:''" json:"-"`
+	LeaseExpiresAt   *time.Time `gorm:"index" json:"-"`
+	ResultPlanID     *uint      `gorm:"index" json:"result_plan_id,omitempty"`
+	ErrorCode        string     `gorm:"size:48;not null;default:''" json:"error_code,omitempty"`
+	ErrorMessage     string     `gorm:"size:256;not null;default:''" json:"error_message,omitempty"`
+	GenerationSource string     `gorm:"size:32;not null;default:''" json:"generation_source,omitempty"`
+	Provider         string     `gorm:"size:32;not null;default:''" json:"provider,omitempty"`
+	ModelName        string     `gorm:"size:128;not null;default:''" json:"model,omitempty"`
+	EnrichmentStatus string     `gorm:"size:32;not null;default:''" json:"enrichment_status,omitempty"`
+	EnrichmentReason string     `gorm:"size:64;not null;default:''" json:"enrichment_reason,omitempty"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+func (AIPlanGenerationJob) TableName() string { return "ai_plan_generation_jobs" }

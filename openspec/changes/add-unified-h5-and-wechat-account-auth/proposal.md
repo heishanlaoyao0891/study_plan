@@ -10,7 +10,7 @@ The product currently authenticates only through WeChat, which prevents users fr
 - Let a user who registered on H5 link that existing account to WeChat with its username and password without consuming another invitation.
 - Treat the application account as the shared user identity and allow one optional WeChat OpenID on it.
 - Return a short-lived registration token instead of an application JWT when a WeChat OpenID has no account.
-- Let returning WeChat users whose OpenID is linked to a complete account login directly without repeated input.
+- Automatically authenticate mini-program launches and let returning users whose OpenID is linked to a complete account enter directly without a login landing action or repeated input.
 - Remove phone, email, SMS, and verification-provider dependencies from this release.
 
 ## Capabilities
@@ -32,5 +32,5 @@ The product currently authenticates only through WeChat, which prevents users fr
 - Usernames contain 4-24 letters, digits, or underscores and are unique case-insensitively.
 - H5 registration uses invitation code, username, nickname, and password; normal login uses username and password.
 - Mini-program first use requires the same four fields and binds the resulting account to the current OpenID.
-- A returning linked OpenID logs in immediately.
+- Mini-program startup exchanges the WeChat code automatically; a returning linked OpenID enters immediately, while only unresolved identities see account setup.
 - Invitations are single-use, expire after seven days, support single or bulk generation, expose use status, and can be disabled.
