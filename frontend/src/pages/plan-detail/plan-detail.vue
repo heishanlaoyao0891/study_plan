@@ -78,7 +78,7 @@ function openInvite() { query.value = ''; results.value = []; inviting.value = t
 function search() { if (searchTimer) clearTimeout(searchTimer); results.value = []; if (query.value.trim().length < 2) return; searchTimer = setTimeout(async () => { searching.value = true; try { results.value = await UserApi.search(query.value.trim()) } finally { searching.value = false } }, 300) }
 async function sendInvite(user: UserSearchResult) { try { await PlanApi.invite(planId.value, user.invite_target_id); inviting.value = false; uni.showToast({ title: '邀请已发送', icon: 'success' }) } catch (error: any) { uni.showToast({ title: error?.message || '邀请失败', icon: 'none' }) } }
 function openTask(task: TimerTask) { uni.navigateTo({ url: `/pages/task/task?id=${task.id}` }) }
-function generationSource(value: Plan) { if (value.generation_source === 'local_enriched') return 'AI 增强'; if (value.generation_source === 'local') return '本地智能规划'; return value.ai_generated ? '历史 AI 生成' : '手动创建' }
+function generationSource(value: Plan) { if (value.generation_source === 'ai_decomposed') return 'AI 任务拆解'; if (value.generation_source === 'local_enriched') return 'AI 增强'; if (value.generation_source === 'local') return '本地智能规划'; return value.ai_generated ? '历史 AI 生成' : '手动创建' }
 function statusText(status: string) { return status === 'paused' ? '已暂停' : status === 'archived' ? '已归档' : '进行中' }
 function taskStatus(status: string) { return status === 'completed' ? '已完成' : status === 'in_progress' ? '学习中' : '待执行' }
 function weekdaySummary(selected: number[] = []) { return selected.length === 7 ? '每天' : selected.length ? `周${selected.map(value => weekdays.find(day => day.value === value)?.label).join('、')}` : '按指定日期' }

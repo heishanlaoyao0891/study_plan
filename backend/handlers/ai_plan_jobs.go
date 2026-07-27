@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	aiPlanJobMaxAttempts = 3
-	aiPlanJobLease       = 30 * time.Second
-	aiPlanJobScanPeriod  = 2 * time.Second
-	aiPlanJobWorkBudget  = 20 * time.Second
+	aiPlanJobMaxAttempts       = 3
+	aiPlanJobLease             = 30 * time.Second
+	aiPlanJobScanPeriod        = 2 * time.Second
+	aiPlanJobDefaultWorkBudget = 5 * time.Minute
 )
 
 type submitAIPlanJobReq struct {
@@ -251,7 +251,7 @@ func claimAIPlanJob(database *gorm.DB, owner string, now time.Time) (models.AIPl
 }
 
 func (worker *AIPlanJobWorker) process(parent context.Context, job models.AIPlanGenerationJob) {
-	ctx, cancel := context.WithTimeout(parent, aiPlanJobWorkBudget)
+	ctx, cancel := context.WithTimeout(parent, currentAIPlanJobWorkBudget(parent))
 	defer cancel()
 	leaseDone := make(chan struct{})
 	go worker.renewLease(ctx, cancel, job.ID, leaseDone)
@@ -271,6 +271,18 @@ func (worker *AIPlanJobWorker) process(parent context.Context, job models.AIPlan
 	if err != nil && !errors.Is(err, errAIPlanJobLeaseLost) {
 		worker.recordFailure(job, err)
 	}
+}
+
+func currentAIPlanJobWorkBudget(ctx context.Context) time.Duration {
+	cfg, _, err := currentAIProvider(ctx)
+	if err != nil || cfg.BackgroundJobTimeoutSeconds <= 0 {
+		return aiPlanJobDefaultWorkBudget
+	}
+	seconds := cfg.BackgroundJobTimeoutSeconds
+	if seconds != 300 && seconds != 600 {
+		seconds = 300
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 var errAIPlanJobLeaseLost = errors.New("ai plan job lease lost")

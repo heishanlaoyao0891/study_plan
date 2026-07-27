@@ -26,7 +26,7 @@ func planningJobsTestDB(t *testing.T) *gorm.DB {
 }
 
 func queuedPlanningJob(id string, now time.Time) models.PlanningJob {
-	return models.PlanningJob{ID: id, UserID: 1, RequestFingerprint: id, Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: id, BaselinePreviewVersion: 1, RequestJSON: `{}`, MaxAttempts: 2, BackgroundBudgetSeconds: 60, ExpiresAt: now.Add(time.Hour)}
+	return models.PlanningJob{ID: id, UserID: 1, RequestFingerprint: id, Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: id, BaselinePreviewVersion: 1, RequestJSON: `{}`, MaxAttempts: 2, BackgroundBudgetSeconds: 300, ExpiresAt: now.Add(time.Hour)}
 }
 
 func TestPlanningJobClaimLeaseRecoveryAndAttemptBound(t *testing.T) {

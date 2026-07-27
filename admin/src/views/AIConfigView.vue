@@ -16,9 +16,9 @@
       <label class="field"><span>服务商</span><select v-model="form.provider" @change="applyPreset"><option value="siliconflow">SiliconFlow（推荐）</option><option value="openai_compatible">OpenAI 兼容服务</option><option value="mock">规则回退（不调用 AI）</option></select></label>
       <label class="field"><span>模型名称</span><input v-model.trim="form.model_name" /></label>
       <label class="field"><span>Base URL</span><input v-model.trim="form.base_url" /></label>
-      <label class="field"><span>请求超时（秒）</span><input v-model.number="form.request_timeout_seconds" type="number" min="1" /></label>
+      <label class="field"><span>连接测试超时（秒）</span><input v-model.number="form.request_timeout_seconds" type="number" min="1" max="120" /></label>
       <label class="field"><span>交互基线目标（秒）</span><input v-model.number="form.interactive_target_seconds" type="number" min="1" max="5" /></label>
-      <label class="field"><span>后台拆解预算（秒）</span><input v-model.number="form.background_job_timeout_seconds" type="number" min="15" max="120" /></label>
+      <label class="field"><span>后台 Agent 预算</span><select v-model.number="form.background_job_timeout_seconds"><option :value="300">5 分钟</option><option :value="600">10 分钟</option></select></label>
       <label class="field"><span>每日生成上限</span><input v-model.number="form.daily_generation_limit" type="number" min="1" max="100" /></label>
       <label class="field"><span>API Key</span><input v-model="apiKey" :placeholder="form.api_key_masked || '留空则保留当前密钥'" type="password" /></label>
       <div class="config-summary">
@@ -43,7 +43,7 @@ const error = ref('')
 const status = ref('')
 const apiKey = ref('')
 const metrics = ref<AIPlanningMetrics | null>(null)
-const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, interactive_target_seconds: 2, background_job_timeout_seconds: 60, daily_generation_limit: 5, enabled: true })
+const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, interactive_target_seconds: 2, background_job_timeout_seconds: 300, daily_generation_limit: 5, enabled: true })
 const modeLabel = computed(() => ({ ai: 'AI 生成', fallback: '规则回退', disabled: '已停用' }[form.effective_mode || (form.enabled ? (form.provider === 'mock' ? 'fallback' : 'ai') : 'disabled')]))
 const keyStorageLabel = computed(() => ({ encrypted: '已加密', plaintext: '明文，需重新保存密钥', missing: '未配置' }[form.key_storage || 'missing']))
 

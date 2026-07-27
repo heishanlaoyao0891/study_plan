@@ -128,6 +128,39 @@ func TestGeneratePlanReturnsLocalPreviewWhenDecompositionCannotQueue(t *testing.
 	}
 }
 
+func TestPlanningPipelineUsesModelTaskDecomposition(t *testing.T) {
+	setupTestDB(t)
+	originalCurrent, originalQuota, originalValidate := currentAIProvider, canUseAIGeneration, validateAIConfigContext
+	t.Cleanup(func() {
+		currentAIProvider, canUseAIGeneration, validateAIConfigContext = originalCurrent, originalQuota, originalValidate
+	})
+	currentAIProvider = validPlanningTestProvider(func(_ context.Context, prompt string, _ int) (string, error) {
+		if !strings.Contains(prompt, `"refinement":"周末减少理论学习，增加两个可运行的并发练习"`) {
+			return "", errors.New("additional instructions missing from model prompt")
+		}
+		return `{"title":"Go 实战计划","summary":"通过两个模型拆解任务完成练习","rationale":"先理解再实践","stages":[{"id":"stage_1","name":"基础","objective":"建立 Go 基础","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"理解并发模型","objective":"解释 goroutine 与 channel 的协作方式","description":"阅读示例并总结","effort_minutes":30,"difficulty":"medium","order":1},{"id":"task_2","stage_id":"stage_1","title":"实现并发练习","objective":"完成一个使用 channel 的并发程序","description":"编码并运行测试","effort_minutes":30,"difficulty":"hard","order":2,"prerequisite_ids":["task_1"]}]}`, nil
+	})
+	canUseAIGeneration = func(context.Context, uint, int) (bool, int64, error) { return true, 0, nil }
+	validateAIConfigContext = func(context.Context, models.AIConfig, bool) error { return nil }
+
+	result, err := runPlanningPipeline(context.Background(), services.PlanGenerationInput{UserID: 42, Goal: "Study Go", Days: 1, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00", Refinement: "周末减少理论学习，增加两个可运行的并发练习"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Source != "ai_decomposed" || result.EnrichmentStatus != "success" || len(result.Preview.Tasks) != 2 || result.Preview.Tasks[0].Title != "理解并发模型" || result.Preview.Tasks[1].Title != "实现并发练习" {
+		t.Fatalf("model decomposition was not used: %+v", result)
+	}
+}
+
+func TestPlanningJobProviderUsesAgentBudgetForHTTPTimeout(t *testing.T) {
+	cfg := models.AIConfig{Provider: services.AIProviderSiliconFlow, RequestTimeoutSeconds: 30, BackgroundJobTimeoutSeconds: 600}
+	provider := planningJobProvider(services.NewAIProvider(cfg), cfg)
+	actual, ok := provider.(*services.OpenAICompatibleProvider)
+	if !ok || actual.Config.RequestTimeoutSeconds != 600 {
+		t.Fatalf("provider did not use 10-minute Agent budget: %#v", provider)
+	}
+}
+
 func TestGeneratePlanPersistsBaselineQueuesAndDeduplicates(t *testing.T) {
 	setupTestDB(t)
 	originalCurrent, originalQuota := currentAIProvider, canUseAIGeneration

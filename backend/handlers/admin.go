@@ -443,6 +443,36 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		completionTokens += int64(job.CompletionTokens)
 		totalTokens += int64(job.TotalTokens)
 	}
+	var currentJobs []models.AIPlanGenerationJob
+	if err := db.DB.Where("created_at >= ?", from).Find(&currentJobs).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query current ai planning metrics failed")
+		return
+	}
+	for _, job := range currentJobs {
+		switch job.Status {
+		case models.AIPlanJobStatusPending, models.AIPlanJobStatusRunning:
+			queueDepth++
+		case models.AIPlanJobStatusSucceeded:
+			if (job.GenerationSource == "local_enriched" || job.GenerationSource == "ai_decomposed") && job.EnrichmentStatus == "success" {
+				statusCounts[models.PlanningJobStatusReady]++
+			} else {
+				statusCounts[models.PlanningJobStatusFallback]++
+				reason := job.EnrichmentReason
+				if reason == "" {
+					reason = "local_fallback"
+				}
+				fallbackReasons[reason]++
+			}
+		case models.AIPlanJobStatusFailed:
+			statusCounts[models.AIPlanJobStatusFailed]++
+			if job.ErrorCode != "" {
+				fallbackReasons[job.ErrorCode]++
+			}
+		}
+		if job.Provider != "" || job.ModelName != "" {
+			providerModels[job.Provider+"/"+job.ModelName]++
+		}
+	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	ready, fallback := statusCounts[models.PlanningJobStatusReady], statusCounts[models.PlanningJobStatusFallback]
 	terminal := ready + fallback
@@ -655,13 +685,13 @@ func firstAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 60, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 300, DailyGenerationLimit: 5, Enabled: true}
 		err = db.DB.Create(&cfg).Error
 	} else if err == nil {
 		original := cfg
 		services.NormalizeAIConfig(&cfg)
-		if cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName {
-			err = db.DB.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error
+		if cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName || cfg.BackgroundJobTimeoutSeconds != original.BackgroundJobTimeoutSeconds {
+			err = db.DB.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName, "background_job_timeout_seconds": cfg.BackgroundJobTimeoutSeconds}).Error
 		}
 	}
 	return cfg, err

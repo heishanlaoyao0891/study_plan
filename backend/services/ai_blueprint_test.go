@@ -94,7 +94,7 @@ func TestPlanningWorkerUsesBackgroundDeadlineAndPublishesVersion(t *testing.T) {
 	originalCurrent, originalNew := currentPlanningProvider, newPlanningProvider
 	t.Cleanup(func() { currentPlanningProvider, newPlanningProvider = originalCurrent, originalNew })
 	currentPlanningProvider = func(context.Context) (models.AIConfig, AIProvider, error) {
-		return models.AIConfig{Provider: AIProviderSiliconFlow, ModelName: "test", Enabled: true, DailyGenerationLimit: 5, BackgroundJobTimeoutSeconds: 60}, nil, nil
+		return models.AIConfig{Provider: AIProviderSiliconFlow, ModelName: "test", Enabled: true, DailyGenerationLimit: 5, BackgroundJobTimeoutSeconds: 300}, nil, nil
 	}
 	blueprintJSON, _ := json.Marshal(validBlueprint())
 	newPlanningProvider = func(models.AIConfig) AIProvider {
@@ -114,7 +114,7 @@ func TestPlanningWorkerUsesBackgroundDeadlineAndPublishesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	requestJSON, _ := json.Marshal(PlanGenerationInput{Goal: "学习 Go 并发", Days: 7, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"})
-	job := models.PlanningJob{ID: "55555555555555555555555555555555", UserID: 9, RequestFingerprint: "fingerprint", Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: version.PreviewID, BaselinePreviewVersion: 1, RequestJSON: string(requestJSON), MaxAttempts: 2, BackgroundBudgetSeconds: 60, ExpiresAt: now.Add(time.Hour)}
+	job := models.PlanningJob{ID: "55555555555555555555555555555555", UserID: 9, RequestFingerprint: "fingerprint", Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: version.PreviewID, BaselinePreviewVersion: 1, RequestJSON: string(requestJSON), MaxAttempts: 2, BackgroundBudgetSeconds: 300, ExpiresAt: now.Add(time.Hour)}
 	if err := database.Create(&job).Error; err != nil {
 		t.Fatal(err)
 	}

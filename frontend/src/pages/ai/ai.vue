@@ -28,7 +28,7 @@
         </view>
       </view>
       <view class="status-meta" v-if="job.status === 'running'">正在执行第 {{ Math.max(job.attempt_count, 1) }} 次处理，请稍候。</view>
-      <view class="status-meta" v-if="job.status === 'succeeded' && job.generation_source">{{ job.generation_source === 'local_enriched' ? 'AI 已优化计划内容' : '已使用本地规划规则完成' }}</view>
+      <view class="status-meta" v-if="job.status === 'succeeded' && job.generation_source">{{ generationSummary }}</view>
       <view class="job-error" v-if="job.status === 'failed'">{{ job.error_message || '未能生成有效计划，请检查目标和可用时间后重试。' }}</view>
       <button class="confirm-overload" v-if="needsOverloadConfirmation" :loading="isSubmitting" :disabled="isSubmitting" @click="confirmOverload">确认负荷并继续生成</button>
       <button class="result-link" v-if="job.status === 'succeeded' && job.result_plan_id" @click="openResult">查看并编辑计划</button>
@@ -53,6 +53,27 @@ const isSubmitting = ref(false)
 const isRestoring = ref(false)
 const hasActiveJob = computed(() => job.value?.status === 'pending' || job.value?.status === 'running')
 const needsOverloadConfirmation = computed(() => job.value?.status === 'failed' && job.value.error_code === 'overload_confirmation_required')
+const generationSummary = computed(() => {
+  if (!job.value) return ''
+  if ((job.value.generation_source === 'local_enriched' || job.value.generation_source === 'ai_decomposed') && job.value.enrichment_status === 'success') {
+    const model = [job.value.provider, job.value.model].filter(Boolean).join(' / ')
+    return model ? `AI 调用成功：${model}` : 'AI 调用成功并优化了计划内容'
+  }
+  const reasons: Record<string, string> = {
+    provider_disabled: 'AI 未启用',
+    provider_configuration_unavailable: 'AI 配置不可用',
+    invalid_provider_configuration: 'AI 配置校验失败',
+    daily_enrichment_limit_reached: '今日 AI 调用额度已用完',
+    provider_quota_limited: 'AI 服务额度不足',
+    quota_check_failed: 'AI 额度检查失败',
+    provider_request_failed: 'AI 服务请求失败',
+    enrichment_deadline_exceeded: 'AI 服务响应超时',
+    request_cancelled: 'AI 请求已取消',
+    invalid_provider_output: 'AI 返回内容未通过校验',
+  }
+  const reason = reasons[job.value.enrichment_reason || ''] || 'AI 未产生可用结果'
+  return `本次未使用 AI 结果，已按本地规则生成：${reason}`
+})
 const submitButtonText = computed(() => {
   if (isRestoring.value) return '正在恢复生成状态…'
   if (isSubmitting.value) return '正在提交…'

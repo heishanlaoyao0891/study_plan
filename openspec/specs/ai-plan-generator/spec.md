@@ -10,12 +10,12 @@ The system SHALL accept a natural-language learning goal and planning constraint
 - **WHEN** an authenticated user submits a valid goal, availability, start date, skip dates, and optional additional instructions
 - **THEN** the system persists a generation job and promptly returns its identifier and current status without waiting for model completion
 
-#### Scenario: Generate an enriched plan
-- **WHEN** a worker produces a valid local candidate and model enrichment succeeds within its execution budget
-- **THEN** the system revalidates and persists the plan with source `local_enriched`
+#### Scenario: Generate a model-decomposed plan
+- **WHEN** a worker produces a valid local fallback candidate and model task decomposition succeeds within its execution budget
+- **THEN** the backend schedules and revalidates the model-defined stages, task count, objectives, effort, and order, then persists the plan with source `ai_decomposed`
 
-#### Scenario: Generate without model enrichment
-- **WHEN** enrichment is disabled, unavailable, quota-limited, invalid, or times out but local planning succeeds
+#### Scenario: Generate without model decomposition
+- **WHEN** model decomposition is disabled, unavailable, quota-limited, invalid, or times out but local planning succeeds
 - **THEN** the system persists the valid local plan with source `local` and records truthful generation metadata
 
 #### Scenario: Generation completes
@@ -148,7 +148,11 @@ The system SHALL accept optional free-form `追加说明` as user planning prefe
 
 #### Scenario: User provides detailed preferences
 - **WHEN** a user submits additional instructions such as reduced weekend work or an emphasis on practical exercises
-- **THEN** the planning Agent includes those preferences in bounded content generation where they do not conflict with authoritative constraints
+- **THEN** the planning Agent sends those preferences to the model as part of the decomposition brief and applies them where they do not conflict with authoritative constraints
+
+#### Scenario: Model decomposition runs asynchronously
+- **WHEN** a durable generation job invokes the configured model
+- **THEN** the Agent uses the configured 5-minute or 10-minute background budget independently of the interactive request and connection-test timeout
 
 #### Scenario: Additional instructions contradict constraints
 - **WHEN** additional instructions request unavailable, conflicting, unauthorized, or otherwise invalid behavior

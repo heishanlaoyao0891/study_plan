@@ -54,7 +54,7 @@ The system SHALL meter external model job attempts independently of local planni
 The system SHALL keep the local baseline available throughout the asynchronous model lifecycle and SHALL never require model success to create a valid plan.
 
 #### Scenario: Model exceeds the background deadline
-- **WHEN** decomposition does not complete within the configured 15-120 second model budget
+- **WHEN** decomposition does not complete within the configured 5-minute or 10-minute model budget
 - **THEN** the provider request is cancelled, the job becomes `fallback`, and the local baseline remains available
 
 #### Scenario: Backend restarts during decomposition

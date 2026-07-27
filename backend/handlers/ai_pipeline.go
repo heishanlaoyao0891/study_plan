@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"study_plan_backend/db"
+	"study_plan_backend/models"
 	"study_plan_backend/services"
 )
 
@@ -51,15 +52,23 @@ func runPlanningPipeline(workContext context.Context, input services.PlanGenerat
 	} else if !canUse {
 		result.UsedToday = count
 		result.EnrichmentStatus, result.EnrichmentReason = "quota_limited", "daily_enrichment_limit_reached"
-	} else if raw, generateErr := generatePlanEnrichment(workContext, provider, input.UserID, cfg.Provider, cfg.DailyGenerationLimit, &result.UsedToday, services.BuildPlanningPrompt(planningContext, preview)); generateErr != nil {
+	} else if raw, generateErr := planningJobProvider(provider, cfg).GenerateContext(services.WithAIQuota(workContext, input.UserID, cfg.Provider, cfg.DailyGenerationLimit, &result.UsedToday), services.BuildPlanningBlueprintPrompt(planningContext), services.PlanningBlueprintTokenAllowance(input)); generateErr != nil {
 		result.EnrichmentStatus, result.EnrichmentReason = classifyEnrichmentError(generateErr)
-	} else if enriched, parseErr := services.ParsePlanPreviewJSON(raw); parseErr != nil {
+	} else if blueprint, parseErr := services.ParsePlanningBlueprintJSON(raw); parseErr != nil || services.ValidatePlanningBlueprint(blueprint) != nil {
 		result.EnrichmentStatus, result.EnrichmentReason = "invalid_output", "invalid_provider_output"
-	} else if merged, mergeErr := services.MergePlanEnrichment(preview, enriched); mergeErr != nil || services.ValidatePlanPreview(merged, planningContext.Input) != nil || validateAIPreviewSchedule(db.DB.WithContext(workContext), input.UserID, merged) != nil {
+	} else if decomposed, _, scheduleErr := services.SchedulePlanningBlueprint(planningContext, blueprint); scheduleErr != nil || services.ValidatePlanPreview(decomposed, planningContext.Input) != nil || validateAIPreviewSchedule(db.DB.WithContext(workContext), input.UserID, decomposed) != nil {
 		result.EnrichmentStatus, result.EnrichmentReason = "invalid_output", "invalid_provider_output"
 	} else {
-		result.Preview = merged
-		result.Source, result.EnrichmentStatus, result.EnrichmentReason = "local_enriched", "success", ""
+		result.Preview = decomposed
+		result.Source, result.EnrichmentStatus, result.EnrichmentReason = "ai_decomposed", "success", ""
 	}
 	return result, nil
+}
+
+func planningJobProvider(provider services.AIProvider, cfg models.AIConfig) services.AIProvider {
+	if _, ok := provider.(*services.OpenAICompatibleProvider); !ok {
+		return provider
+	}
+	cfg.RequestTimeoutSeconds = cfg.BackgroundJobTimeoutSeconds
+	return services.NewAIProvider(cfg)
 }

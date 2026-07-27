@@ -147,6 +147,18 @@ func TestAIPlanJobWorkerPersistsFallbackPlanAndSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestAIPlanJobWorkerUsesConfiguredBackgroundBudget(t *testing.T) {
+	setupTestDB(t)
+	original := currentAIProvider
+	t.Cleanup(func() { currentAIProvider = original })
+	currentAIProvider = func(context.Context) (models.AIConfig, services.AIProvider, error) {
+		return models.AIConfig{BackgroundJobTimeoutSeconds: 600}, planningTestProvider{}, nil
+	}
+	if budget := currentAIPlanJobWorkBudget(context.Background()); budget != 10*time.Minute {
+		t.Fatalf("configured background budget was ignored: %s", budget)
+	}
+}
+
 func TestAIPlanJobFailureIsAtomicAndRetryExhaustionIsTerminal(t *testing.T) {
 	setupTestDB(t)
 	if err := db.DB.Exec(`CREATE TRIGGER fail_ai_job_tasks BEFORE INSERT ON daily_tasks BEGIN SELECT RAISE(ABORT, 'forced task failure'); END`).Error; err != nil {

@@ -144,16 +144,10 @@ func findActivePlanningBaseline(ctx context.Context, database *gorm.DB, userID u
 }
 
 func boundedBackgroundBudget(value int) int {
-	if value == 0 {
-		return 60
+	if value == 600 {
+		return 600
 	}
-	if value < 15 {
-		return 15
-	}
-	if value > 120 {
-		return 120
-	}
-	return value
+	return 300
 }
 
 func randomPlanningID() (string, error) {

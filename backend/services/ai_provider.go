@@ -47,6 +47,7 @@ const (
 	legacyDeepSeekBaseURL       = "https://api.deepseek.com"
 	legacyDeepSeekModel         = "deepseek-chat"
 	maxProviderResponseBytes    = 1 << 20
+	defaultBackgroundJobSeconds = 300
 )
 
 var (
@@ -80,7 +81,9 @@ func NormalizeAIConfig(cfg *models.AIConfig) {
 		cfg.InteractiveTargetSeconds = 2
 	}
 	if cfg.BackgroundJobTimeoutSeconds == 0 {
-		cfg.BackgroundJobTimeoutSeconds = 60
+		cfg.BackgroundJobTimeoutSeconds = defaultBackgroundJobSeconds
+	} else if cfg.BackgroundJobTimeoutSeconds != 300 && cfg.BackgroundJobTimeoutSeconds != 600 {
+		cfg.BackgroundJobTimeoutSeconds = defaultBackgroundJobSeconds
 	}
 	legacyDeepSeek := strings.EqualFold(strings.TrimSpace(cfg.Provider), "deepseek")
 	if !legacyDeepSeek {
@@ -513,10 +516,10 @@ func ValidateAIConfigContext(ctx context.Context, cfg models.AIConfig, requireEn
 	}
 	backgroundBudget := cfg.BackgroundJobTimeoutSeconds
 	if backgroundBudget == 0 {
-		backgroundBudget = 60
+		backgroundBudget = defaultBackgroundJobSeconds
 	}
-	if backgroundBudget < 15 || backgroundBudget > 120 {
-		return fmt.Errorf("background_job_timeout_seconds must be between 15 and 120")
+	if backgroundBudget != 300 && backgroundBudget != 600 {
+		return fmt.Errorf("background_job_timeout_seconds must be 300 or 600")
 	}
 	if cfg.DailyGenerationLimit < 1 || cfg.DailyGenerationLimit > 100 {
 		return fmt.Errorf("daily_generation_limit must be between 1 and 100")
@@ -568,7 +571,7 @@ func loadAIConfigContext(ctx context.Context) (models.AIConfig, error) {
 	database := db.DB.WithContext(ctx)
 	err := database.Order("id ASC").First(&cfg).Error
 	if err != nil {
-		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 60, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: defaultBackgroundJobSeconds, DailyGenerationLimit: 5, Enabled: true}
 		if createErr := database.Create(&cfg).Error; createErr != nil {
 			return cfg, createErr
 		}
@@ -576,8 +579,8 @@ func loadAIConfigContext(ctx context.Context) (models.AIConfig, error) {
 	}
 	original := cfg
 	NormalizeAIConfig(&cfg)
-	if err == nil && (cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName) {
-		if updateErr := database.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName}).Error; updateErr != nil {
+	if err == nil && (cfg.Provider != original.Provider || cfg.BaseURL != original.BaseURL || cfg.ModelName != original.ModelName || cfg.BackgroundJobTimeoutSeconds != original.BackgroundJobTimeoutSeconds) {
+		if updateErr := database.Model(&cfg).Updates(map[string]interface{}{"provider": cfg.Provider, "base_url": cfg.BaseURL, "model_name": cfg.ModelName, "background_job_timeout_seconds": cfg.BackgroundJobTimeoutSeconds}).Error; updateErr != nil {
 			return cfg, updateErr
 		}
 	}

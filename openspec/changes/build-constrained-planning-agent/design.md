@@ -67,7 +67,7 @@ Commit requires preview ID, version, provenance, and idempotency key. The backen
 
 ### Model timeout is a background operational control
 
-The model job deadline defaults to 60 seconds and is configurable from 15 to 120 seconds. This budget includes provider validation, connection establishment, request execution, response reading, and bounded transient retry.
+The model job deadline defaults to 5 minutes and is configurable as a 5-minute or 10-minute tier. This budget includes provider validation, connection establishment, request execution, response reading, and bounded transient retry.
 
 Interactive response budget and background model budget are stored and reported separately. Changing the background budget affects new jobs and does not extend an already running job.
 

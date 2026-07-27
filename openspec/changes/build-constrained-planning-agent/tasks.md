@@ -6,7 +6,7 @@
 - [x] Validate goal length, plan duration, dates, skip dates, availability, desired hours, and refinements.
 - [x] Separate local planning availability from external model quota.
 - [x] Add persistent preview ID, version, expiry, context fingerprint, and planning job metadata to generation responses.
-- [x] Separate the 1-5 second interactive baseline target from the 15-120 second background model budget.
+- [x] Separate the 1-5 second interactive baseline target from the 5-minute or 10-minute background model budget.
 - [x] Add authenticated job-status polling with typed queued, decomposing, scheduling, ready, fallback, cancelled, and expired states.
 
 ## 2. Deterministic Planning and Scheduling Core
@@ -35,7 +35,7 @@
 - [x] Define a bounded structured blueprint schema for plan metadata, stages, variable task count, effort, difficulty, order, and prerequisite hints.
 - [x] Replace the complete scheduled-plan prompt with a compact normalized decomposition brief.
 - [x] Calculate a bounded output token allowance from plan scope instead of using a fixed 1024-token limit.
-- [x] Run decomposition in the background worker with a default 60-second deadline configurable from 15 to 120 seconds.
+- [x] Run decomposition in the background worker with a default 5-minute deadline configurable as a 5-minute or 10-minute tier.
 - [x] Reuse safe provider transports and idle connections per validated provider origin.
 - [x] Remove redundant per-attempt DNS validation while retaining configuration-time and dial-time public-address enforcement.
 - [x] Validate blueprint schema, task bounds, prerequisite references, and privacy before scheduling.
@@ -79,7 +79,7 @@
 - [x] Add existing provenance substitution, concurrent idempotency, overload, and recomputation tests.
 - [x] Add blueprint tests proving AI can vary stages and task count while invalid schemas are rejected.
 - [x] Add scheduling tests for variable task counts, multiple tasks per day, oversized splits, prerequisites, occupancy, and workload repair.
-- [x] Add a real deadline regression test proving the configured 60-second background budget is not truncated by the interactive request context.
+- [x] Add a deadline regression test proving the configured multi-minute background budget is not truncated by the interactive request context.
 - [x] Add derived preview tests for add, remove, split, reorder, committed/expired rejection, and concurrent version creation.
 - [x] Add provider transport reuse, redirect, DNS rebinding, and configuration-refresh tests.
 - [x] Run backend tests, frontend type checks, H5, mini-program, and admin builds after implementation.

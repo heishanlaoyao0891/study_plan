@@ -201,6 +201,28 @@ func TestValidateAIConfigRejectsUnsafeOrUnknownConfiguration(t *testing.T) {
 	}
 }
 
+func TestNormalizeAIConfigUsesFiveOrTenMinuteBackgroundBudget(t *testing.T) {
+	for _, test := range []struct {
+		configured int
+		want       int
+	}{
+		{configured: 0, want: 300},
+		{configured: 60, want: 300},
+		{configured: 300, want: 300},
+		{configured: 600, want: 600},
+	} {
+		cfg := models.AIConfig{Provider: AIProviderMock, BackgroundJobTimeoutSeconds: test.configured}
+		NormalizeAIConfig(&cfg)
+		if cfg.BackgroundJobTimeoutSeconds != test.want {
+			t.Fatalf("background budget %d normalized to %d, want %d", test.configured, cfg.BackgroundJobTimeoutSeconds, test.want)
+		}
+	}
+	invalid := models.AIConfig{Provider: AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 301, DailyGenerationLimit: 5, Enabled: true}
+	if err := ValidateAIConfig(invalid, false); err == nil {
+		t.Fatal("expected unsupported background budget to fail validation")
+	}
+}
+
 func TestValidateAIConfigRejectsPrivateLiteralAndResolvedDestinations(t *testing.T) {
 	config.App = &config.Config{}
 	base := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "model", RequestTimeoutSeconds: 30, DailyGenerationLimit: 5, Enabled: true, APIKeyCiphertext: "key"}

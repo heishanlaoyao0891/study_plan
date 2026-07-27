@@ -56,6 +56,14 @@ func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
 	if err := db.DB.Create(&jobs).Error; err != nil {
 		t.Fatal(err)
 	}
+	currentJobs := []models.AIPlanGenerationJob{
+		{UserID: 1, RequestJSON: `{}`, RequestHash: "current-queued", Status: models.AIPlanJobStatusRunning, CreatedAt: now},
+		{UserID: 1, RequestJSON: `{}`, RequestHash: "current-ai", Status: models.AIPlanJobStatusSucceeded, GenerationSource: "ai_decomposed", EnrichmentStatus: "success", Provider: "siliconflow", ModelName: "current-model", CreatedAt: now},
+		{UserID: 1, RequestJSON: `{}`, RequestHash: "current-fallback", Status: models.AIPlanJobStatusSucceeded, GenerationSource: "local", EnrichmentStatus: "provider_error", EnrichmentReason: "provider_request_failed", Provider: "siliconflow", ModelName: "current-model", CreatedAt: now},
+	}
+	if err := db.DB.Create(&currentJobs).Error; err != nil {
+		t.Fatal(err)
+	}
 	router := gin.New()
 	router.GET("/metrics", GetAIPlanningMetrics)
 	recorder := httptest.NewRecorder()
@@ -69,12 +77,13 @@ func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
 			P95          int64            `json:"p95_latency_ms"`
 			TotalTokens  int64            `json:"total_tokens"`
 			Reasons      map[string]int64 `json:"fallback_reasons"`
+			Providers    map[string]int64 `json:"provider_models"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Data.QueueDepth != 1 || response.Data.SuccessRate != 2.0/3.0 || response.Data.FallbackRate != 1.0/3.0 || response.Data.P50 != 200 || response.Data.P95 != 900 || response.Data.TotalTokens != 60 || response.Data.Reasons["invalid_blueprint"] != 1 {
+	if response.Data.QueueDepth != 2 || response.Data.SuccessRate != 3.0/5.0 || response.Data.FallbackRate != 2.0/5.0 || response.Data.P50 != 200 || response.Data.P95 != 900 || response.Data.TotalTokens != 60 || response.Data.Reasons["invalid_blueprint"] != 1 || response.Data.Reasons["provider_request_failed"] != 1 || response.Data.Providers["siliconflow/current-model"] != 2 {
 		t.Fatalf("unexpected planning metrics: %+v", response.Data)
 	}
 }

@@ -161,6 +161,10 @@ The system SHALL allow administrators to configure AI provider settings from the
 - **WHEN** admin sets provider, model name, base URL, timeout, daily limit, and enabled state
 - **THEN** system saves the AI configuration and uses it for future AI generation requests
 
+#### Scenario: Configure asynchronous Agent budget
+- **WHEN** admin selects the background planning Agent budget
+- **THEN** the system accepts a 5-minute or 10-minute tier and applies it independently of the short connection-test timeout
+
 #### Scenario: Update AI API key
 - **WHEN** admin updates the AI API key
 - **THEN** system stores the secret securely and does not return the full key in later API responses

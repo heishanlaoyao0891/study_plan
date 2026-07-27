@@ -78,7 +78,7 @@ export interface Plan {
   schedule_overrides?: ScheduleOverride[]
   public_to_group: boolean
   ai_generated: boolean
-  generation_source: '' | 'local' | 'local_enriched'
+  generation_source: '' | 'local' | 'local_enriched' | 'ai_decomposed'
   is_shared: boolean
   sort_order: number
   created_at: string
@@ -364,7 +364,7 @@ export interface AIPlanJob {
   result_plan_id?: number
   error_code?: string
   error_message?: string
-  generation_source?: 'local' | 'local_enriched'
+  generation_source?: 'local' | 'local_enriched' | 'ai_decomposed'
   provider?: string
   model?: string
   enrichment_status?: string

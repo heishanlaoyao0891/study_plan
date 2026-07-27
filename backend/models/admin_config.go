@@ -20,7 +20,7 @@ type AIConfig struct {
 	BaseURL                     string    `gorm:"size:512" json:"base_url"`
 	RequestTimeoutSeconds       int       `gorm:"default:30" json:"request_timeout_seconds"`
 	InteractiveTargetSeconds    int       `gorm:"default:2" json:"interactive_target_seconds"`
-	BackgroundJobTimeoutSeconds int       `gorm:"default:60" json:"background_job_timeout_seconds"`
+	BackgroundJobTimeoutSeconds int       `gorm:"default:300" json:"background_job_timeout_seconds"`
 	DailyGenerationLimit        int       `gorm:"default:5" json:"daily_generation_limit"`
 	Enabled                     bool      `gorm:"default:true" json:"enabled"`
 	APIKeyCiphertext            string    `gorm:"size:2048" json:"-"`

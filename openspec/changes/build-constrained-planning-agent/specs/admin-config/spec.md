@@ -15,7 +15,7 @@ The system SHALL describe provider configuration as optional asynchronous task d
 
 #### Scenario: Configure background model budget
 - **WHEN** an administrator changes the model job timeout
-- **THEN** the system accepts a value from 15 to 120 seconds, defaults to 60 seconds, and applies it only to newly started jobs
+- **THEN** the system accepts a 5-minute or 10-minute tier, defaults to 5 minutes, and applies it only to newly started jobs
 
 #### Scenario: Test provider configuration
 - **WHEN** an administrator runs the provider test

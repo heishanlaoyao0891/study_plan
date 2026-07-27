@@ -12,7 +12,7 @@ The product needs AI to participate in curriculum and task decomposition without
 - Keep the local baseline available while the job is queued or running, and preserve it as the fallback when the model times out, fails, exceeds quota, or returns invalid output.
 - Add job status, progress phase, preview ID, preview version, expiry, source, phase timings, and bounded failure metadata.
 - Prevent a late AI result from silently overwriting a preview the user has already edited; expose the newer version for explicit review instead.
-- Separate the short interactive response budget from a configurable background model budget. Default the model job budget to 60 seconds and allow administrators to configure 15-120 seconds.
+- Separate the short interactive response budget from a configurable background model budget. Default the model job budget to 5 minutes and allow administrators to select a 5-minute or 10-minute tier.
 - Size the model output budget from the requested plan scope and reuse safe provider transports without weakening public-origin enforcement.
 - Preserve the existing `/api/ai/*` routes with additive job metadata while introducing a status endpoint for polling.
 
@@ -29,7 +29,7 @@ The product needs AI to participate in curriculum and task decomposition without
 - AI owns semantic learning decomposition: stages, task intent, task count suggestions, objectives, descriptions, difficulty, estimated effort, ordering, and prerequisite hints.
 - The backend Agent owns account context, privacy boundaries, dates, time slots, workload limits, conflict repair, derived totals, final validation, and persistence.
 - The initial API response returns the local baseline promptly instead of holding a mobile request open for the full model call.
-- Background model decomposition defaults to a 60-second deadline and is configurable from 15 to 120 seconds.
+- Background model decomposition defaults to a 5-minute deadline and is configurable as a 5-minute or 10-minute tier.
 - The model returns a compact blueprint without persisted IDs or authoritative dates and times.
 - The backend may split an oversized blueprint task into sequenced parts when it cannot fit within the user's daily capacity, and reports that repair in warnings.
 - AI results create a new preview version. They auto-replace the displayed baseline only when the user has not edited or committed an older version.
