@@ -13,9 +13,10 @@
         <view class="field"><text>可用结束时间</text><picker mode="time" :disabled="hasActiveJob" :value="availableEnd" @change="availableEnd = $event.detail.value"><view class="picker-value">{{ availableEnd }}</view></picker></view>
       </view>
       <view class="field"><text>追加说明（可选）</text><textarea v-model="additionalInstructions" :disabled="hasActiveJob" maxlength="2000" placeholder="例如：周末少一点，多安排实践练习和阶段复盘" /></view>
-      <button class="primary" :disabled="isSubmitting || isRestoring || hasActiveJob" :loading="isSubmitting" @click="submit(false)">
+      <button class="primary" :disabled="isSubmitting || isRestoring || hasActiveJob" :loading="isSubmitting" @click="handlePrimaryAction">
         {{ submitButtonText }}
       </button>
+      <button class="secondary-generate" v-if="hasSavedPlan" :disabled="isSubmitting || isRestoring" @click="prepareNewPlan">生成另一个计划</button>
       <view class="error-panel" v-if="requestError">{{ requestError }}</view>
     </view>
 
@@ -53,6 +54,7 @@ const requestError = ref('')
 const isSubmitting = ref(false)
 const isRestoring = ref(false)
 const hasActiveJob = computed(() => job.value?.status === 'pending' || job.value?.status === 'running')
+const hasSavedPlan = computed(() => job.value?.status === 'succeeded' && !!job.value.result_plan_id)
 const needsOverloadConfirmation = computed(() => job.value?.status === 'failed' && job.value.error_code === 'overload_confirmation_required')
 const generationSummary = computed(() => {
   if (!job.value) return ''
@@ -80,7 +82,9 @@ const submitButtonText = computed(() => {
   if (isSubmitting.value) return '正在提交…'
   if (job.value?.status === 'pending') return '已提交，等待处理'
   if (job.value?.status === 'running') return '正在生成计划'
-  return job.value ? '重新生成计划' : '生成智能计划'
+  if (hasSavedPlan.value) return '查看已保存计划'
+  if (job.value?.status === 'failed') return '重新尝试生成'
+  return job.value ? '生成另一个计划' : '生成智能计划'
 })
 const statusTitle = computed(() => ({
   pending: job.value?.phase === 'retry_wait' ? '后台 Agent 将继续修复' : '计划已进入队列',
@@ -98,6 +102,17 @@ const statusNote = computed(() => ({
 let visible = false
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let pollSequence = 0
+
+function handlePrimaryAction() {
+  if (hasSavedPlan.value) return openResult()
+  return submit(false)
+}
+
+function prepareNewPlan() {
+  stopTimer()
+  requestError.value = ''
+  job.value = null
+}
 
 async function submit(confirmOverload: boolean) {
   if (isSubmitting.value || isRestoring.value || hasActiveJob.value) return
@@ -213,6 +228,7 @@ onUnload(stopPolling)
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx; }
 .primary { background: #2264d1; color: #fff; border-radius: 12rpx; }
 .primary[disabled] { opacity: .65; }
+.secondary-generate { margin-top: 16rpx; border: 1rpx solid #cddbf4; border-radius: 12rpx; background: #fff; color: #2264d1; }
 .status-card { margin-top: 22rpx; }
 .status-head { display: flex; align-items: center; gap: 18rpx; }
 .status-dot { width: 22rpx; height: 22rpx; flex: 0 0 auto; border-radius: 50%; background: #94a3b8; }

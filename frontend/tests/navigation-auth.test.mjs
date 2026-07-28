@@ -66,3 +66,15 @@ test('AI client uses durable jobs without preview or commit state', async () => 
   assert.match(plans, /currentPlanJob/)
   assert.doesNotMatch(combined, /ai_plan_pending_commit|PlanningPreview|commitPlan\(|regeneratePlan\(/)
 })
+
+test('AI page opens an already saved plan instead of presenting it as regeneration', async () => {
+  const ai = await source('pages/ai/ai.vue')
+
+  assert.match(ai, /const hasSavedPlan = computed\(/)
+  assert.match(ai, /job\.value\?\.status === 'succeeded'/)
+  assert.match(ai, /job\.value\.result_plan_id/)
+  assert.match(ai, /if \(hasSavedPlan\.value\) return openResult\(\)/)
+  assert.match(ai, /查看已保存计划/)
+  assert.match(ai, /生成另一个计划/)
+  assert.doesNotMatch(ai, /return job\.value \? '重新生成计划'/)
+})
