@@ -481,8 +481,11 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		successRate = float64(ready) / float64(terminal)
 		fallbackRate = float64(fallback) / float64(terminal)
 	}
-	var providerAttempts, successfulGenerations int64
-	db.DB.Model(&models.AIGenerationUsage{}).Where("created_at >= ? AND status = ?", from, "attempt").Count(&providerAttempts)
+	var providerAttempts, successfulResponses, failedResponses, truncatedResponses, successfulGenerations int64
+	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ?", from).Count(&providerAttempts)
+	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ? AND status = ?", from, "succeeded").Count(&successfulResponses)
+	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ? AND status = ?", from, "failed").Count(&failedResponses)
+	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ? AND status = ?", from, "truncated").Count(&truncatedResponses)
 	db.DB.Model(&models.AIGenerationUsage{}).Where("created_at >= ? AND status = ?", from, "success").Count(&successfulGenerations)
 	var promptPatterns []models.AIPromptPattern
 	db.DB.Where("count > 0").Order("count DESC").Limit(10).Find(&promptPatterns)
@@ -492,8 +495,62 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		"p50_latency_ms": planningLatencyPercentile(latencies, 0.50), "p95_latency_ms": planningLatencyPercentile(latencies, 0.95),
 		"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
 		"fallback_reasons": fallbackReasons, "provider_models": providerModels,
-		"provider_attempts": providerAttempts, "successful_generations": successfulGenerations, "prompt_playbook_patterns": promptPatterns,
+		"provider_attempts": providerAttempts, "successful_provider_responses": successfulResponses, "failed_provider_responses": failedResponses,
+		"truncated_provider_responses": truncatedResponses, "successful_generations": successfulGenerations, "prompt_playbook_patterns": promptPatterns,
 	})
+}
+
+func ListAIInvocations(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 50
+	}
+	if size > 100 {
+		size = 100
+	}
+	query := db.DB.Model(&models.AIInvocationLog{})
+	if value := strings.TrimSpace(c.Query("user_id")); value != "" {
+		userID, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			api.Fail(c, http.StatusBadRequest, "invalid user_id")
+			return
+		}
+		query = query.Where("user_id = ?", uint(userID))
+	}
+	if value := strings.TrimSpace(c.Query("job_id")); value != "" {
+		query = query.Where("job_id = ?", value)
+	}
+	if value := strings.TrimSpace(c.Query("status")); value != "" {
+		query = query.Where("status = ?", value)
+	}
+	if value := strings.TrimSpace(c.Query("provider")); value != "" {
+		query = query.Where("provider = ?", services.NormalizeAIProvider(value))
+	}
+	for parameter, operator := range map[string]string{"from": ">=", "to": "<="} {
+		if value := strings.TrimSpace(c.Query(parameter)); value != "" {
+			parsed, err := time.Parse(time.RFC3339, value)
+			if err != nil {
+				api.Fail(c, http.StatusBadRequest, "invalid "+parameter+" time")
+				return
+			}
+			query = query.Where("started_at "+operator+" ?", parsed)
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai invocation count failed")
+		return
+	}
+	var rows []models.AIInvocationLog
+	if err := query.Select("ai_invocation_logs.*, users.nickname AS user_nickname").Joins("LEFT JOIN users ON users.id = ai_invocation_logs.user_id").Order("ai_invocation_logs.started_at DESC, ai_invocation_logs.id DESC").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai invocations failed")
+		return
+	}
+	api.OK(c, gin.H{"items": rows, "total": total, "page": page, "size": size})
 }
 
 func planningLatencyPercentile(values []int64, percentile float64) int64 {

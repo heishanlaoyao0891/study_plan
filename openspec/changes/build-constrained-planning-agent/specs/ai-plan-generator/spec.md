@@ -102,6 +102,21 @@ The system SHALL record versioned bounded error-pattern statistics and use activ
 - **WHEN** truncation, malformed JSON, order reset, capacity overflow, or another classified defect crosses its activation threshold
 - **THEN** subsequent prompts include the corresponding concise preventive rule and metrics expose the pattern count
 
+### Requirement: Every provider request is auditable
+The system SHALL create and finish a durable invocation trace around every external provider HTTP attempt, including internal transport retries and Agent repair calls.
+
+#### Scenario: Provider call succeeds
+- **WHEN** an external model returns a completion
+- **THEN** the trace records success or truncation, response size, finish reason, latency, HTTP status, and available token usage linked to its user/job/batch/attempt context
+
+#### Scenario: Provider call fails
+- **WHEN** connection, timeout, cancellation, HTTP, decoding, or response validation fails
+- **THEN** the trace records a bounded normalized failure category and completion time without storing sensitive request or response content
+
+#### Scenario: Audit start cannot be persisted
+- **WHEN** the production audit ledger cannot create the attempt row before dispatch
+- **THEN** the provider request is not sent and the Agent treats the audit failure as retryable
+
 ## ADDED Requirements
 
 ### Requirement: AI decomposes the learning goal into a task blueprint

@@ -69,6 +69,14 @@ The Prompt Playbook stores versioned, bounded error-pattern counters and repair 
 
 Provider attempts are recorded independently for cost, rate limiting, and diagnostics. The user's daily generation count is incremented atomically only when a valid scheduled preview with source `ai_decomposed` is published. Timeouts, HTTP failures, truncation, invalid output, repair attempts, restart recovery, and scheduling failures do not consume that allowance. Duplicate publication and job replay cannot charge twice.
 
+### Every external model attempt has an immutable audit trace
+
+Before an external provider request is sent, the provider creates an invocation ledger row. The row links a generated trace ID to the user (when applicable), job type and job ID, Agent phase, batch index, repair attempt, provider retry number, provider/model, request fingerprint, prompt character count, requested token ceiling, and start time. Completion updates only result fields: success, failure, cancellation, timeout, or truncation; HTTP status; finish reason; bounded normalized error code/message; response size; token usage; end time; and duration.
+
+The ledger never stores API keys, authorization headers, raw prompts, raw model responses, private learning records, or unbounded provider error bodies. Request fingerprints support correlation without content disclosure. A production provider request must not proceed if its audit start record cannot be persisted; test environments without the migrated ledger may explicitly use a no-op audit store.
+
+Administrators can inspect recent invocation traces with bounded pagination and filters for user, job, status, provider, and time. Aggregate metrics distinguish Agent cycles, actual provider HTTP attempts, successful model responses, failed responses, and successfully published user plans.
+
 ### Preview versions prevent late-result overwrite
 
 The local baseline is preview version 1. A successful AI decomposition produces a new immutable version with `source=ai_decomposed`. Every version carries task identities, request/context fingerprint, creation time, and expiry.

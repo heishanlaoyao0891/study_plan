@@ -41,3 +41,18 @@ The system SHALL expose bounded operational metrics for local planning and exter
 #### Scenario: Review Agent repair health
 - **WHEN** an administrator reviews AI operations
 - **THEN** the system distinguishes provider attempts from successful user generations and reports retry states, truncation, schema repairs, checkpoint resumes, and active Prompt Playbook patterns
+
+### Requirement: Administrator inspects every AI invocation
+The system SHALL expose a paginated, filterable audit ledger containing one immutable trace for every external provider HTTP attempt.
+
+#### Scenario: Inspect successful and failed attempts
+- **WHEN** an administrator opens recent AI invocation traces
+- **THEN** each row identifies trace ID, user ID when applicable, job type/ID, Agent phase, batch and repair attempt, provider retry, provider/model, status, timing, HTTP/finish metadata, token usage, and bounded failure reason
+
+#### Scenario: Filter invocation history
+- **WHEN** an administrator filters by user, job, status, provider, or time range
+- **THEN** the system returns only matching traces with bounded pagination and newest attempts first
+
+#### Scenario: Protect sensitive AI content
+- **WHEN** invocation history is stored or displayed
+- **THEN** it contains request fingerprints and sizes but never API keys, authorization headers, raw prompts, raw responses, private learning records, or unbounded provider errors

@@ -186,6 +186,7 @@ func main() {
 		admin.GET("/suspicious-records", handlers.GetSuspiciousRecords)
 		admin.GET("/ai-config", handlers.GetAIConfig)
 		admin.GET("/ai-metrics", handlers.GetAIPlanningMetrics)
+		admin.GET("/ai-invocations", handlers.ListAIInvocations)
 		admin.PUT("/ai-config", handlers.UpdateAIConfig)
 		admin.POST("/ai-config/test", handlers.TestAIProvider)
 		admin.GET("/subscription-config", handlers.GetSubscriptionMessageConfig)

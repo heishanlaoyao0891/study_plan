@@ -398,3 +398,102 @@ func TestDisabledProviderDoesNotGenerate(t *testing.T) {
 		t.Fatalf("expected disabled provider rejection, got %v", err)
 	}
 }
+
+func TestProviderInvocationLedgerTracksRetriesSuccessAndRedactsContent(t *testing.T) {
+	setupAIUsageTestDB(t)
+	if err := db.DB.AutoMigrate(&models.AIInvocationLog{}); err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`))
+	}))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "audit-model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "secret-key"}
+	ctx := WithAIInvocationContext(context.Background(), AIInvocationContext{UserID: 42, JobType: "ai_plan_generation", JobID: "99", Phase: "repairing", BatchIndex: 2, AgentAttempt: 3})
+	if _, err := NewAIProvider(cfg).GenerateContext(ctx, "private prompt must never be stored", 256); err != nil {
+		t.Fatal(err)
+	}
+	var rows []models.AIInvocationLog
+	if err := db.DB.Order("id ASC").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Status != "failed" || rows[0].HTTPStatus != 500 || rows[1].Status != "succeeded" || rows[1].TotalTokens != 18 || rows[1].ProviderAttempt != 2 || rows[1].UserID != 42 || rows[1].BatchIndex != 2 || rows[1].AgentAttempt != 3 {
+		t.Fatalf("unexpected invocation ledger: %+v", rows)
+	}
+	serialized, _ := json.Marshal(rows)
+	if strings.Contains(string(serialized), "private prompt") || strings.Contains(string(serialized), "secret-key") {
+		t.Fatalf("invocation ledger leaked sensitive content: %s", serialized)
+	}
+}
+
+func TestProviderInvocationLedgerMarksTruncation(t *testing.T) {
+	setupAIUsageTestDB(t)
+	if err := db.DB.AutoMigrate(&models.AIInvocationLog{}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"partial\":"},"finish_reason":"length"}],"usage":{"completion_tokens":64,"total_tokens":70}}`))
+	}))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "audit-model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "key"}
+	if _, err := NewAIProvider(cfg).Generate("test", 64); !IsAIOutputTruncated(err) {
+		t.Fatalf("expected truncation, got %v", err)
+	}
+	var row models.AIInvocationLog
+	if err := db.DB.First(&row).Error; err != nil || row.Status != "truncated" || row.ErrorCode != "truncated" || row.FinishReason != "length" {
+		t.Fatalf("truncation trace missing: row=%+v err=%v", row, err)
+	}
+}
+
+func TestProviderDoesNotDispatchWhenInvocationAuditCannotStart(t *testing.T) {
+	setupAIUsageTestDB(t)
+	if err := db.DB.AutoMigrate(&models.AIInvocationLog{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Exec(`CREATE TRIGGER fail_ai_invocation_insert BEFORE INSERT ON ai_invocation_logs BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { attempts++; w.WriteHeader(http.StatusOK) }))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "audit-model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "key"}
+	_, err := NewAIProvider(cfg).Generate("test", 64)
+	if err == nil || !strings.Contains(err.Error(), "persist ai invocation start") || attempts != 0 {
+		t.Fatalf("provider dispatched without audit: attempts=%d err=%v", attempts, err)
+	}
+}
+
+func TestProviderInvocationLedgerRecordsTimeout(t *testing.T) {
+	setupAIUsageTestDB(t)
+	if err := db.DB.AutoMigrate(&models.AIInvocationLog{}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(200 * time.Millisecond):
+		}
+	}))
+	defer server.Close()
+	config.App = &config.Config{}
+	cfg := models.AIConfig{Provider: AIProviderOpenAICompatible, ModelName: "audit-model", BaseURL: usePublicTestServer(t, server), RequestTimeoutSeconds: 5, Enabled: true, APIKeyCiphertext: "key"}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	_, err := NewAIProvider(cfg).GenerateContext(ctx, "test", 64)
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	var row models.AIInvocationLog
+	if loadErr := db.DB.First(&row).Error; loadErr != nil || row.Status != "failed" || row.ErrorCode != "timeout" || row.FinishedAt == nil {
+		t.Fatalf("timeout trace missing: row=%+v err=%v", row, loadErr)
+	}
+}

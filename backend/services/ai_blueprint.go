@@ -210,7 +210,7 @@ func GeneratePlanningBlueprintWithRepair(ctx context.Context, provider AIProvide
 
 func GeneratePlanningBlueprintWithCheckpoint(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts int, checkpoint *PlanningBlueprintCheckpoint, save func(PlanningBlueprintCheckpoint) error) (PlanningBlueprint, error) {
 	if planningContext.Input.Days <= 10 {
-		return generatePlanningBlueprintBatchWithRepair(ctx, provider, planningContext, maxAttempts)
+		return generatePlanningBlueprintBatchWithRepair(ctx, provider, planningContext, maxAttempts, 1)
 	}
 	completedDays := 0
 	combined := PlanningBlueprint{}
@@ -233,7 +233,7 @@ func GeneratePlanningBlueprintWithCheckpoint(ctx context.Context, provider AIPro
 		batchContext := planningContext
 		batchContext.Input.Days = batchDays
 		batchContext.Input.Refinement = strings.TrimSpace(planningContext.Input.Refinement + fmt.Sprintf("\n这是完整 %d 天计划的第 %d 个连续批次；保持与前序批次递进，当前批次覆盖 %d 个学习日。", planningContext.Input.Days, batchIndex, batchDays))
-		batch, err := generatePlanningBlueprintBatchWithRepair(ctx, provider, batchContext, maxAttempts)
+		batch, err := generatePlanningBlueprintBatchWithRepair(ctx, provider, batchContext, maxAttempts, batchIndex)
 		if err != nil {
 			return PlanningBlueprint{}, fmt.Errorf("expand blueprint batch %d: %w", batchIndex, err)
 		}
@@ -276,7 +276,7 @@ func GeneratePlanningBlueprintWithCheckpoint(ctx context.Context, provider AIPro
 	return combined, nil
 }
 
-func generatePlanningBlueprintBatchWithRepair(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts int) (PlanningBlueprint, error) {
+func generatePlanningBlueprintBatchWithRepair(ctx context.Context, provider AIProvider, planningContext PlanningContext, maxAttempts, batchIndex int) (PlanningBlueprint, error) {
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
@@ -287,7 +287,12 @@ func generatePlanningBlueprintBatchWithRepair(ctx context.Context, provider AIPr
 	tokens := PlanningBlueprintTokenAllowance(planningContext.Input)
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		raw, err := provider.GenerateContext(ctx, prompt, tokens)
+		phase := "decomposing"
+		if attempt > 1 {
+			phase = "repairing"
+		}
+		attemptContext := WithAIInvocationStep(ctx, phase, batchIndex, attempt)
+		raw, err := provider.GenerateContext(attemptContext, prompt, tokens)
 		if err != nil {
 			lastErr = err
 			if !IsAIOutputTruncated(err) {

@@ -97,3 +97,12 @@
 - [x] Update frontend job states so recoverable failures continue polling through retry wait and page exit does not cancel server work.
 - [x] Add regression coverage for truncation, targeted repair, normalization, capacity, 30-day batching, checkpoint resume, truthful provenance, and successful-publication quota.
 - [x] Run backend, frontend, admin, strict OpenSpec validation, update the living project scan, and push the completed change.
+
+## 9. AI Invocation Audit Ledger
+
+- [x] Add the immutable invocation-log model, migration, indexes, retention-ready fields, and safe bounded error taxonomy.
+- [x] Propagate user/job/phase/batch/repair context through Agent calls and record every provider HTTP retry from start through completion.
+- [x] Store only fingerprints, sizes, timings, HTTP/finish metadata, and token usage; never raw prompts, responses, credentials, or private learning records.
+- [x] Add paginated/filterable admin APIs and an invocation-history table showing who succeeded, who failed, and why.
+- [x] Add regression tests for success, HTTP failure, timeout/truncation, internal retry, context linkage, redaction, and audit-write failure behavior.
+- [x] Run backend/frontend/admin validation, strict OpenSpec validation, update the living scan, commit, and push.

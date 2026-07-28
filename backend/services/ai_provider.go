@@ -160,7 +160,8 @@ type OpenAICompatibleProvider struct {
 
 func (p *OpenAICompatibleProvider) Test() error {
 	prompt := "Create exactly one connection-test task dated 2026-01-02 from 20:00 to 21:00."
-	raw, err := p.Generate(prompt, 768)
+	testContext := WithAIInvocationContext(context.Background(), AIInvocationContext{JobType: "provider_test", Phase: "testing", AgentAttempt: 1})
+	raw, err := p.GenerateContext(testContext, prompt, 768)
 	if err != nil {
 		return err
 	}
@@ -209,14 +210,27 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 		if key = strings.TrimSpace(key); key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
+		invocation, auditErr := BeginAIInvocation(ctx, p.Config, prompt, maxTokens, attempt+1)
+		if auditErr != nil {
+			return "", auditErr
+		}
 		if err := ReserveAIProviderAttempt(ctx); err != nil {
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", Error: err}); finishErr != nil {
+				return "", finishErr
+			}
 			return "", err
 		}
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
 			if ctx.Err() != nil {
-				return "", ctx.Err()
+				lastErr = ctx.Err()
+			}
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", Error: lastErr}); finishErr != nil {
+				return "", finishErr
+			}
+			if ctx.Err() != nil {
+				return "", lastErr
 			}
 			continue
 		}
@@ -224,13 +238,23 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 		resp.Body.Close()
 		if readErr != nil {
 			lastErr = readErr
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", HTTPStatus: resp.StatusCode, Error: readErr, ResponseChars: len(responseBody)}); finishErr != nil {
+				return "", finishErr
+			}
 			continue
 		}
 		if len(responseBody) > maxProviderResponseBytes {
-			return "", fmt.Errorf("provider response exceeds %d bytes", maxProviderResponseBytes)
+			lastErr = fmt.Errorf("provider response exceeds %d bytes", maxProviderResponseBytes)
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", HTTPStatus: resp.StatusCode, Error: lastErr, ResponseChars: len(responseBody)}); finishErr != nil {
+				return "", finishErr
+			}
+			return "", lastErr
 		}
 		if resp.StatusCode >= 400 {
 			lastErr = fmt.Errorf("provider returned http %d", resp.StatusCode)
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", HTTPStatus: resp.StatusCode, Error: lastErr, ResponseChars: len(responseBody)}); finishErr != nil {
+				return "", finishErr
+			}
 			if resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 				return "", lastErr
 			}
@@ -250,10 +274,17 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(responseBody, &decoded); err != nil || len(decoded.Choices) == 0 {
-			return "", fmt.Errorf("provider returned invalid completion")
+			lastErr = fmt.Errorf("provider returned invalid completion")
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", HTTPStatus: resp.StatusCode, Error: lastErr, ResponseChars: len(responseBody)}); finishErr != nil {
+				return "", finishErr
+			}
+			return "", lastErr
 		}
 		content, err := decodeCompletionContent(decoded.Choices[0].Message.Content)
 		if err != nil {
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "failed", HTTPStatus: resp.StatusCode, FinishReason: decoded.Choices[0].FinishReason, Error: err, ResponseChars: len(responseBody), PromptTokens: decoded.Usage.PromptTokens, CompletionTokens: decoded.Usage.CompletionTokens, TotalTokens: decoded.Usage.TotalTokens}); finishErr != nil {
+				return "", finishErr
+			}
 			return "", err
 		}
 		if telemetry, ok := ctx.Value(aiProviderTelemetryKey{}).(*AIProviderTelemetry); ok && telemetry != nil {
@@ -262,7 +293,14 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 			telemetry.TotalTokens = decoded.Usage.TotalTokens
 		}
 		if strings.EqualFold(strings.TrimSpace(decoded.Choices[0].FinishReason), "length") {
-			return content, &AIOutputTruncatedError{FinishReason: decoded.Choices[0].FinishReason}
+			truncatedErr := &AIOutputTruncatedError{FinishReason: decoded.Choices[0].FinishReason}
+			if finishErr := invocation.Finish(AIInvocationResult{Status: "truncated", HTTPStatus: resp.StatusCode, FinishReason: decoded.Choices[0].FinishReason, Error: truncatedErr, ResponseChars: len([]rune(content)), PromptTokens: decoded.Usage.PromptTokens, CompletionTokens: decoded.Usage.CompletionTokens, TotalTokens: decoded.Usage.TotalTokens}); finishErr != nil {
+				return "", finishErr
+			}
+			return content, truncatedErr
+		}
+		if finishErr := invocation.Finish(AIInvocationResult{Status: "succeeded", HTTPStatus: resp.StatusCode, FinishReason: decoded.Choices[0].FinishReason, ResponseChars: len([]rune(content)), PromptTokens: decoded.Usage.PromptTokens, CompletionTokens: decoded.Usage.CompletionTokens, TotalTokens: decoded.Usage.TotalTokens}); finishErr != nil {
+			return "", finishErr
 		}
 		return content, nil
 	}

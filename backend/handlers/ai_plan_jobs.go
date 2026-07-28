@@ -255,6 +255,7 @@ func claimAIPlanJob(database *gorm.DB, owner string, now time.Time) (models.AIPl
 func (worker *AIPlanJobWorker) process(parent context.Context, job models.AIPlanGenerationJob) {
 	ctx, cancel := context.WithTimeout(parent, currentAIPlanJobWorkBudget(parent))
 	defer cancel()
+	ctx = services.WithAIInvocationContext(ctx, services.AIInvocationContext{UserID: job.UserID, JobType: "ai_plan_generation", JobID: strconv.FormatUint(uint64(job.ID), 10), Phase: "decomposing"})
 	leaseDone := make(chan struct{})
 	go worker.renewLease(ctx, cancel, job.ID, leaseDone)
 

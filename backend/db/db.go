@@ -65,6 +65,7 @@ func AutoMigrate() error {
 		&models.NotificationSubscription{},
 		&models.AIGenerationUsage{},
 		&models.AIPromptPattern{},
+		&models.AIInvocationLog{},
 		&models.OpsContent{},
 		&models.FeedbackReport{},
 		&models.AccountEvent{},

@@ -89,8 +89,48 @@ export interface AIPlanningMetrics {
   fallback_reasons: Record<string, number>
   provider_models: Record<string, number>
   provider_attempts: number
+  successful_provider_responses: number
+  failed_provider_responses: number
+  truncated_provider_responses: number
   successful_generations: number
   prompt_playbook_patterns: Array<{ pattern_key: string; version: number; count: number; guidance: string }>
+}
+
+export interface AIInvocationLog {
+  id: number
+  trace_id: string
+  user_id?: number
+  user_nickname?: string
+  job_type: string
+  job_id?: string
+  phase?: string
+  batch_index?: number
+  agent_attempt?: number
+  provider_attempt: number
+  provider: string
+  model: string
+  request_fingerprint: string
+  prompt_chars: number
+  max_tokens: number
+  status: 'started' | 'succeeded' | 'failed' | 'truncated'
+  http_status?: number
+  finish_reason?: string
+  error_code?: string
+  error_message?: string
+  response_chars: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  duration_ms: number
+  started_at: string
+  finished_at?: string
+}
+
+export interface AIInvocationList {
+  items: AIInvocationLog[]
+  total: number
+  page: number
+  size: number
 }
 
 export interface SubscriptionConfig {
@@ -262,6 +302,12 @@ export const AdminApi = {
   },
   aiMetrics() {
     return request<AIPlanningMetrics>('/api/admin/ai-metrics')
+  },
+  aiInvocations(params: { page?: number; size?: number; user_id?: string; job_id?: string; status?: string; provider?: string } = {}) {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)) })
+    const suffix = query.toString()
+    return request<AIInvocationList>(`/api/admin/ai-invocations${suffix ? `?${suffix}` : ''}`)
   },
   saveAIConfig(data: AIConfig & { api_key?: string }) {
     return request<AIConfig>('/api/admin/ai-config', { method: 'PUT', body: JSON.stringify(data) })

@@ -281,6 +281,7 @@ func planningJobResponse(job models.PlanningJob) gin.H {
 func generatePlanEnrichment(parent context.Context, provider services.AIProvider, uid uint, providerName string, limit int, used *int64, prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, planningEnrichmentBudget)
 	defer cancel()
+	ctx = services.WithAIInvocationContext(ctx, services.AIInvocationContext{UserID: uid, JobType: "synchronous_enrichment", Phase: "enriching", AgentAttempt: 1})
 	return provider.GenerateContext(services.WithAIQuota(ctx, uid, providerName, limit, used), prompt, 1024)
 }
 

@@ -113,6 +113,40 @@ type AIPromptPattern struct {
 
 func (AIPromptPattern) TableName() string { return "ai_prompt_patterns" }
 
+type AIInvocationLog struct {
+	ID                 uint       `gorm:"primaryKey" json:"id"`
+	TraceID            string     `gorm:"size:32;not null;uniqueIndex" json:"trace_id"`
+	UserID             uint       `gorm:"not null;default:0;index" json:"user_id,omitempty"`
+	UserNickname       string     `gorm:"-" json:"user_nickname,omitempty"`
+	JobType            string     `gorm:"size:32;not null;default:'unscoped';index" json:"job_type"`
+	JobID              string     `gorm:"size:64;not null;default:'';index" json:"job_id,omitempty"`
+	Phase              string     `gorm:"size:32;not null;default:''" json:"phase,omitempty"`
+	BatchIndex         int        `gorm:"not null;default:0" json:"batch_index,omitempty"`
+	AgentAttempt       int        `gorm:"not null;default:0" json:"agent_attempt,omitempty"`
+	ProviderAttempt    int        `gorm:"not null;default:1" json:"provider_attempt"`
+	Provider           string     `gorm:"size:32;not null;index" json:"provider"`
+	ModelName          string     `gorm:"size:128;not null" json:"model"`
+	RequestFingerprint string     `gorm:"size:64;not null;index" json:"request_fingerprint"`
+	PromptChars        int        `gorm:"not null;default:0" json:"prompt_chars"`
+	MaxTokens          int        `gorm:"not null;default:0" json:"max_tokens"`
+	Status             string     `gorm:"size:24;not null;index" json:"status"`
+	HTTPStatus         int        `gorm:"not null;default:0" json:"http_status,omitempty"`
+	FinishReason       string     `gorm:"size:32;not null;default:''" json:"finish_reason,omitempty"`
+	ErrorCode          string     `gorm:"size:64;not null;default:'';index" json:"error_code,omitempty"`
+	ErrorMessage       string     `gorm:"size:256;not null;default:''" json:"error_message,omitempty"`
+	ResponseChars      int        `gorm:"not null;default:0" json:"response_chars"`
+	PromptTokens       int        `gorm:"not null;default:0" json:"prompt_tokens"`
+	CompletionTokens   int        `gorm:"not null;default:0" json:"completion_tokens"`
+	TotalTokens        int        `gorm:"not null;default:0" json:"total_tokens"`
+	DurationMS         int64      `gorm:"not null;default:0;index" json:"duration_ms"`
+	StartedAt          time.Time  `gorm:"not null;index" json:"started_at"`
+	FinishedAt         *time.Time `gorm:"index" json:"finished_at,omitempty"`
+	RetainUntil        time.Time  `gorm:"not null;index" json:"retain_until"`
+	CreatedAt          time.Time  `json:"created_at"`
+}
+
+func (AIInvocationLog) TableName() string { return "ai_invocation_logs" }
+
 type OpsContent struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Kind      string    `gorm:"uniqueIndex;size:32;not null" json:"kind"`

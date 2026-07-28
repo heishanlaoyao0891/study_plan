@@ -14,6 +14,7 @@ The product needs AI to participate in curriculum and task decomposition without
 - Support plans up to 30 days by constraining total effort to requested capacity and avoiding one oversized JSON response.
 - Charge the user's daily AI generation allowance exactly once, only after a valid `ai_decomposed` preview is published; record provider attempts separately for operations and cost control.
 - Accumulate bounded failure signatures and proven repair guidance in a versioned Prompt Playbook so recurring truncation and schema defects are prevented proactively.
+- Persist an immutable audit record for every external model HTTP attempt so operators can identify which user/job/batch succeeded or failed, when it ran, how long it took, which provider/model handled it, token usage, and the bounded failure reason.
 - Add job status, progress phase, preview ID, preview version, expiry, source, phase timings, and bounded failure metadata.
 - Prevent a late AI result from silently overwriting a preview the user has already edited; expose the newer version for explicit review instead.
 - Separate the short interactive response budget from a configurable background model budget. Default the model job budget to 5 minutes and allow administrators to select a 5-minute or 10-minute tier.

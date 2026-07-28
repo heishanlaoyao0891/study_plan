@@ -88,6 +88,37 @@ func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
 	}
 }
 
+func TestListAIInvocationsFiltersAndNeverReturnsRawContent(t *testing.T) {
+	setupTestDB(t)
+	now := time.Now().UTC()
+	rows := []models.AIInvocationLog{
+		{TraceID: "11111111111111111111111111111111", UserID: 7, JobType: "ai_plan_generation", JobID: "42", Phase: "repairing", BatchIndex: 2, AgentAttempt: 3, ProviderAttempt: 1, Provider: "siliconflow", ModelName: "model", RequestFingerprint: strings.Repeat("a", 64), PromptChars: 100, MaxTokens: 2048, Status: "failed", ErrorCode: "http_5xx", ErrorMessage: "provider returned http 500", StartedAt: now},
+		{TraceID: "22222222222222222222222222222222", UserID: 8, JobType: "provider_test", ProviderAttempt: 1, Provider: "siliconflow", ModelName: "model", RequestFingerprint: strings.Repeat("b", 64), PromptChars: 50, MaxTokens: 512, Status: "succeeded", StartedAt: now.Add(-time.Minute)},
+	}
+	if err := db.DB.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.GET("/invocations", ListAIInvocations)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/invocations?user_id=7&status=failed&job_id=42", nil))
+	var response struct {
+		Data struct {
+			Items []models.AIInvocationLog `json:"items"`
+			Total int64                    `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || response.Data.Total != 1 || len(response.Data.Items) != 1 || response.Data.Items[0].TraceID != rows[0].TraceID {
+		t.Fatalf("unexpected invocation query: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "prompt") && strings.Contains(recorder.Body.String(), "private learning") {
+		t.Fatalf("raw content leaked: %s", recorder.Body.String())
+	}
+}
+
 func TestUpdateAIConfigNormalizesLegacyProviderAlias(t *testing.T) {
 	setupTestDB(t)
 	config.App.AIKeySecret = "test-only-encryption-secret"

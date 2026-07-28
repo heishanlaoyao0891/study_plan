@@ -356,6 +356,9 @@ func cleanupUserData(tx *gorm.DB, uid uint) error {
 	if err := tx.Where("user_id = ?", uid).Delete(&models.AIGenerationUsage{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("user_id = ?", uid).Delete(&models.AIInvocationLog{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Where("user_id = ?", uid).Delete(&models.FeedbackReport{}).Error; err != nil {
 		return err
 	}
