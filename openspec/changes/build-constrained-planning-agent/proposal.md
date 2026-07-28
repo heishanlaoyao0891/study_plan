@@ -14,6 +14,8 @@ The product needs AI to participate in curriculum and task decomposition without
 - Support plans up to 30 days by constraining total effort to requested capacity and avoiding one oversized JSON response.
 - Charge the user's daily AI generation allowance exactly once, only after a valid `ai_decomposed` preview is published; record provider attempts separately for operations and cost control.
 - Accumulate bounded failure signatures and proven repair guidance in a versioned Prompt Playbook so recurring truncation and schema defects are prevented proactively.
+- Use a versioned backend-owned blueprint prompt template that always supplies the complete normalized request, exact output schema, read-only scheduling constraints, and effective capacity derived from both desired hours and the actual available time slot.
+- Make decomposition horizon-aware: short plans compress detail to cover the complete learning arc, while longer plans use finer tasks and pass bounded prior-stage/task progress into later batches; preserve every accepted model task through scheduling rather than silently truncating the blueprint.
 - Persist an immutable audit record for every external model HTTP attempt so operators can identify which user/job/batch succeeded or failed, when it ran, how long it took, which provider/model handled it, token usage, and the bounded failure reason.
 - Add job status, progress phase, preview ID, preview version, expiry, source, phase timings, and bounded failure metadata.
 - Prevent a late AI result from silently overwriting a preview the user has already edited; expose the newer version for explicit review instead.

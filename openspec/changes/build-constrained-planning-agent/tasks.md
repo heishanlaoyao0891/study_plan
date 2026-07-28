@@ -106,3 +106,12 @@
 - [x] Add paginated/filterable admin APIs and an invocation-history table showing who succeeded, who failed, and why.
 - [x] Add regression tests for success, HTTP failure, timeout/truncation, internal retry, context linkage, redaction, and audit-write failure behavior.
 - [x] Run backend/frontend/admin validation, strict OpenSpec validation, update the living scan, commit, and push.
+
+## 10. Versioned Prompt Contract Accuracy
+
+- [x] Add a backend-owned `planning_blueprint_v2` template containing the complete normalized request, exact output schema, fixed validation rules, and safe aggregate learning context.
+- [x] Derive effective daily and total capacity from both requested hours and the actual available time slot, and use the same values in the prompt and validator.
+- [x] Add horizon-aware breadth rules so short plans compress detail into a complete learning arc and long-plan batches retain fine-grained total-plan context.
+- [x] Pass bounded accepted-stage and recent-task progress into later long-plan batches with explicit foundation, progression, and completion roles.
+- [x] Prove accepted model tasks are all scheduled or the blueprint is rejected, with no silent prefix truncation.
+- [x] Add red-green regression coverage, run backend tests and vet, strictly validate OpenSpec, update the living scan, commit, and push.

@@ -28,6 +28,10 @@ The model returns a blueprint containing plan title, summary, rationale, ordered
 
 The output token allowance is calculated from requested plan scope and bounded by provider-safe minimum and maximum values. The contract remains structured JSON and requests non-thinking mode when supported.
 
+Prompt construction uses a backend-owned, versioned template rather than assembling ad hoc instructions at call sites. The normalized brief includes goal, requested learning days, hours per day, start date, available time slot, skip dates, refinement, safe aggregate learning signals, the exact output schema, and explicit output rules. Scheduling fields are provided as read-only constraints and are never accepted as authoritative model output. Effective daily capacity is the smaller of requested daily minutes and the actual slot length; the same derived total capacity is used in both the prompt and backend validation so the model is not asked to produce work the Agent will subsequently reject.
+
+The template makes breadth and granularity explicit. For plans up to seven days, the model must merge detail into a small number of coarse end-to-end tasks and still cover foundations, practice, integrated application, review, and acceptance. Medium plans use balanced tasks, while plans longer than fourteen days use fine-grained milestones. Every bounded batch receives both its batch scope and the original total-plan horizon so a 30-day plan does not accidentally revert to short-plan behavior. Later batches also receive bounded previous stage names and recent task titles plus an explicit role: foundation, progression, or completion. This prevents each batch from restarting at introductory material. Once a blueprint passes validation, the scheduler iterates every model task; it may split oversized tasks, but it never keeps only a prefix.
+
 ### The backend turns the blueprint into an executable plan
 
 After validating the blueprint schema and content bounds, the Agent allocates tasks into the user's available dates and time ranges. It uses the same occupancy, overlap, overload, and mutation rules as manual plans and recovery scheduling.
@@ -57,7 +61,7 @@ The job-status response never exposes raw provider errors, credentials, prompts 
 
 ### Decomposition is a durable multi-pass Agent loop
 
-The worker first asks for a compact outline whose total estimated effort fits `days * hours_per_day * 60`. It then expands stages in bounded batches, persists each accepted checkpoint, combines the batches, normalizes harmless deviations, validates the complete blueprint, schedules it, and publishes it.
+The worker first asks for a compact outline whose total estimated effort fits `days * min(hours_per_day * 60, available_slot_minutes)`. It then expands stages in bounded batches, persists each accepted checkpoint, combines the batches, normalizes harmless deviations, validates the complete blueprint, schedules it, and publishes it.
 
 Normalization may regenerate opaque task IDs, convert stage-local order values to one global order, clamp supported difficulty aliases and effort bounds, and discard unknown fields. It must not invent missing learning content or hide a capacity violation.
 

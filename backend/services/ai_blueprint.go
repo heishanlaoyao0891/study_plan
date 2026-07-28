@@ -13,6 +13,24 @@ import (
 const maxBlueprintStages = 24
 const maxBlueprintTasks = 120
 const maxGeneratedPreviewTasks = 120
+const planningBlueprintPromptVersion = "planning_blueprint_v2"
+const planningBlueprintSystemContract = `You produce planning_blueprint_v2. Return exactly one JSON object and no Markdown, comments, prose, dates, time slots, persisted IDs, or private data. Use only this schema:
+{"title":"string","summary":"string","rationale":"string","stages":[{"id":"stage_1","name":"string","objective":"string","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"string","objective":"specific action different from title","description":"string","effort_minutes":60,"difficulty":"easy|medium|hard","order":1,"prerequisite_ids":[]}]}`
+
+var planningBlueprintOutputRules = []string{
+	"只输出一个完整 JSON 对象，不要 Markdown、注释、前后说明或额外字段",
+	"严格输出 title、summary、rationale、stages、tasks；stages 和 tasks 必须是非空数组",
+	"stage.id 和 task.id 使用小写字母、数字、下划线或连字符，且各自唯一",
+	"stage.order 与 task.order 都从 1 开始连续递增，跨阶段不得重置",
+	"task.stage_id 必须引用已输出的 stage.id，prerequisite_ids 只能引用更早的 task.id",
+	"task.objective 必须是可验收动作，不能与 task.title 相同",
+	"difficulty 只能是 easy、medium、hard",
+	"每个 effort_minutes 必须在 15 到 720 之间，所有任务总和不得超过 total_capacity_minutes",
+	"任务颗粒度必须遵循 planning_strategy.granularity_rule，不能因容量有限而只输出学习目标的前半段",
+	"start_date、available_time_slot、skip_dates 仅是只读排程约束，不得出现在输出任务字段中",
+}
+
+var planningBlueprintOutputSchema = json.RawMessage(`{"title":"string","summary":"string","rationale":"string","stages":[{"id":"stage_1","name":"string","objective":"string","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"string","objective":"specific action different from title","description":"string","effort_minutes":60,"difficulty":"easy|medium|hard","order":1,"prerequisite_ids":[]}]}`)
 
 type PlanningBlueprint struct {
 	Title     string                   `json:"title"`
@@ -154,7 +172,7 @@ func ValidatePlanningBlueprintForInput(blueprint PlanningBlueprint, input PlanGe
 	if err := ValidatePlanningBlueprint(blueprint); err != nil {
 		return err
 	}
-	capacity := input.Days * input.HoursPerDay * 60
+	_, capacity := planningCapacityMinutes(input)
 	if capacity <= 0 {
 		return fmt.Errorf("invalid requested plan capacity")
 	}
@@ -169,18 +187,128 @@ func ValidatePlanningBlueprintForInput(blueprint PlanningBlueprint, input PlanGe
 }
 
 func BuildPlanningBlueprintPrompt(ctx PlanningContext) string {
+	dailyCapacity, totalCapacity := planningCapacityMinutes(ctx.Input)
+	scope := resolvedPlanningPromptScope(ctx)
+	granularity, granularityRule := planningGranularity(scope.TotalPlanLearningDays)
+	batchRole, batchRule := planningBatchStrategy(scope)
+	type planningStrategy struct {
+		CoveragePriority string `json:"coverage_priority"`
+		Granularity      string `json:"granularity"`
+		BatchRole        string `json:"batch_role"`
+		CoverageRule     string `json:"coverage_rule"`
+		GranularityRule  string `json:"granularity_rule"`
+		BatchRule        string `json:"batch_rule"`
+	}
+	type previousProgress struct {
+		PreviousStageNames []string `json:"previous_stage_names"`
+		RecentTaskTitles   []string `json:"recent_task_titles"`
+	}
 	brief, _ := json.Marshal(struct {
-		Contract           string             `json:"contract"`
-		Goal               string             `json:"goal"`
-		Days               int                `json:"days"`
-		HoursPerDay        int                `json:"hours_per_day"`
-		Refinement         string             `json:"refinement,omitempty"`
-		LearningProfile    LearningProfile    `json:"learning_profile"`
-		ActivePlanLoad     ActivePlanLoad     `json:"active_plan_load"`
-		RecentTaskOutcomes RecentTaskOutcomes `json:"recent_task_outcomes"`
-		CapacityMinutes    int                `json:"capacity_minutes"`
-	}{"planning_blueprint_v1", ctx.Input.Goal, ctx.Input.Days, ctx.Input.HoursPerDay, ctx.Input.Refinement, ctx.LearningProfile, ctx.ActivePlanLoad, ctx.RecentTaskOutcomes, ctx.Input.Days * ctx.Input.HoursPerDay * 60})
-	return "请作为学习任务拆解专家输出简体中文 JSON 蓝图。你负责学习阶段、任务数量、目标、描述、难度、工作量、顺序和前置关系；不要输出日期、时间、数据库 ID 或用户隐私。任务必须可执行、目标不能只是重复标题。所有任务 effort_minutes 总和不得超过 capacity_minutes。每个批次最多 8 个阶段。stage.order 和 task.order 都必须从 1 开始全局连续递增，不能在新阶段重置。尽量使用 30-90 分钟的任务，30 天计划也必须输出完整且精炼的内容。仅输出一个完整 JSON 对象。" + ActivePromptPlaybookGuidance(context.Background()) + "\nNORMALIZED_DECOMPOSITION_BRIEF:\n" + string(brief)
+		Contract                      string             `json:"contract"`
+		Goal                          string             `json:"goal"`
+		RequestedLearningDays         int                `json:"requested_learning_days"`
+		HoursPerDay                   int                `json:"hours_per_day"`
+		StartDate                     string             `json:"start_date"`
+		AvailableTimeSlot             string             `json:"available_time_slot"`
+		SkipDates                     []string           `json:"skip_dates"`
+		Refinement                    string             `json:"refinement,omitempty"`
+		EffectiveDailyCapacityMinutes int                `json:"effective_daily_capacity_minutes"`
+		TotalCapacityMinutes          int                `json:"total_capacity_minutes"`
+		TotalPlanLearningDays         int                `json:"total_plan_learning_days"`
+		BatchIndex                    int                `json:"batch_index"`
+		CompletedLearningDays         int                `json:"completed_learning_days"`
+		BatchLearningDays             int                `json:"batch_learning_days"`
+		LearningProfile               LearningProfile    `json:"learning_profile"`
+		ActivePlanLoad                ActivePlanLoad     `json:"active_plan_load"`
+		RecentTaskOutcomes            RecentTaskOutcomes `json:"recent_task_outcomes"`
+		PreviousProgress              previousProgress   `json:"previous_progress"`
+		OutputSchema                  json.RawMessage    `json:"output_schema"`
+		PlanningStrategy              planningStrategy   `json:"planning_strategy"`
+		OutputRules                   []string           `json:"output_rules"`
+	}{
+		Contract:                      planningBlueprintPromptVersion,
+		Goal:                          ctx.Input.Goal,
+		RequestedLearningDays:         ctx.Input.Days,
+		HoursPerDay:                   ctx.Input.HoursPerDay,
+		StartDate:                     ctx.Input.StartDate,
+		AvailableTimeSlot:             ctx.Input.AvailableTimeSlot,
+		SkipDates:                     append([]string{}, ctx.Input.SkipDates...),
+		Refinement:                    ctx.Input.Refinement,
+		EffectiveDailyCapacityMinutes: dailyCapacity,
+		TotalCapacityMinutes:          totalCapacity,
+		TotalPlanLearningDays:         scope.TotalPlanLearningDays,
+		BatchIndex:                    scope.BatchIndex,
+		CompletedLearningDays:         scope.CompletedLearningDays,
+		BatchLearningDays:             scope.BatchLearningDays,
+		LearningProfile:               ctx.LearningProfile,
+		ActivePlanLoad:                ctx.ActivePlanLoad,
+		RecentTaskOutcomes:            ctx.RecentTaskOutcomes,
+		PreviousProgress: previousProgress{
+			PreviousStageNames: append([]string{}, scope.PreviousStageNames...),
+			RecentTaskTitles:   append([]string{}, scope.RecentTaskTitles...),
+		},
+		OutputSchema: planningBlueprintOutputSchema,
+		PlanningStrategy: planningStrategy{
+			CoveragePriority: "complete_learning_arc_before_detail",
+			Granularity:      granularity,
+			BatchRole:        batchRole,
+			CoverageRule:     "必须先覆盖从基础、练习、综合应用到复盘验收的完整学习闭环；容量不足时压缩每个阶段的深度并合并任务，绝不能只生成前半段。",
+			GranularityRule:  granularityRule,
+			BatchRule:        batchRule,
+		},
+		OutputRules: planningBlueprintOutputRules,
+	})
+	return "你是学习计划后台 Agent 的任务拆解器。请严格依据下面已经归一化的参数生成简体中文学习蓝图；后端会负责日期和时间排程，你只负责阶段、任务内容、工作量、顺序与前置关系。不得猜测、忽略或改写用户约束。" + ActivePromptPlaybookGuidance(context.Background()) + "\nPLANNING_BLUEPRINT_REQUEST_V2:\n" + string(brief)
+}
+
+func resolvedPlanningPromptScope(ctx PlanningContext) PlanningPromptScope {
+	scope := ctx.PromptScope
+	if scope.TotalPlanLearningDays <= 0 {
+		scope.TotalPlanLearningDays = ctx.Input.Days
+	}
+	if scope.BatchLearningDays <= 0 {
+		scope.BatchLearningDays = ctx.Input.Days
+	}
+	if scope.BatchIndex <= 0 {
+		scope.BatchIndex = 1
+	}
+	return scope
+}
+
+func planningGranularity(totalPlanDays int) (string, string) {
+	switch {
+	case totalPlanDays <= 7:
+		return "coarse_complete", "短周期计划应使用较少、较大的端到端任务，优先合并同类知识点；通常每项 60 到 120 分钟，并确保最后包含综合应用和验收。"
+	case totalPlanDays <= 14:
+		return "balanced", "中等周期计划使用平衡颗粒度，通常每项 45 到 90 分钟，在完整学习闭环内安排阶段练习和复盘。"
+	default:
+		return "fine_grained", "长周期计划可以细化知识点、练习和里程碑，通常每项 30 到 60 分钟，但每个批次仍须连续推进并服务于完整学习闭环。"
+	}
+}
+
+func planningBatchStrategy(scope PlanningPromptScope) (string, string) {
+	totalBatches := (scope.TotalPlanLearningDays + 9) / 10
+	if totalBatches <= 1 {
+		return "complete", "当前请求是单批计划，本批必须覆盖完整学习闭环。"
+	}
+	if scope.BatchIndex <= 1 {
+		return "foundation", "这是长计划首批：建立必要基础并尽快进入可执行练习，为后续批次留下综合应用和复盘空间。"
+	}
+	if scope.BatchIndex >= totalBatches {
+		return "completion", "这是长计划末批：不要重复前序基础；完成综合应用、查漏补缺、复盘和最终验收。"
+	}
+	return "progression", "这是长计划中间批：根据 previous_progress 衔接前序内容，推进更深入的练习、应用和阶段里程碑，不要从基础重新开始。"
+}
+
+func planningCapacityMinutes(input PlanGenerationInput) (int, int) {
+	daily := input.HoursPerDay * 60
+	if start, end, err := parsePlanningSlot(input.AvailableTimeSlot); err == nil && end-start < daily {
+		daily = end - start
+	}
+	if daily < 0 {
+		daily = 0
+	}
+	return daily, daily * input.Days
 }
 
 func PlanningBlueprintTokenAllowance(input PlanGenerationInput) int {
@@ -232,7 +360,30 @@ func GeneratePlanningBlueprintWithCheckpoint(ctx context.Context, provider AIPro
 		batchDays := minInt(remaining, 10)
 		batchContext := planningContext
 		batchContext.Input.Days = batchDays
-		batchContext.Input.Refinement = strings.TrimSpace(planningContext.Input.Refinement + fmt.Sprintf("\n这是完整 %d 天计划的第 %d 个连续批次；保持与前序批次递进，当前批次覆盖 %d 个学习日。", planningContext.Input.Days, batchIndex, batchDays))
+		previousStageNames := make([]string, 0, minInt(len(combined.Stages), 12))
+		startStage := len(combined.Stages) - 12
+		if startStage < 0 {
+			startStage = 0
+		}
+		for _, stage := range combined.Stages[startStage:] {
+			previousStageNames = append(previousStageNames, stage.Name)
+		}
+		recentTaskTitles := make([]string, 0, minInt(len(combined.Tasks), 12))
+		startTask := len(combined.Tasks) - 12
+		if startTask < 0 {
+			startTask = 0
+		}
+		for _, task := range combined.Tasks[startTask:] {
+			recentTaskTitles = append(recentTaskTitles, task.Title)
+		}
+		batchContext.PromptScope = PlanningPromptScope{
+			TotalPlanLearningDays: planningContext.Input.Days,
+			BatchIndex:            batchIndex,
+			CompletedLearningDays: completedDays,
+			BatchLearningDays:     batchDays,
+			PreviousStageNames:    previousStageNames,
+			RecentTaskTitles:      recentTaskTitles,
+		}
 		batch, err := generatePlanningBlueprintBatchWithRepair(ctx, provider, batchContext, maxAttempts, batchIndex)
 		if err != nil {
 			return PlanningBlueprint{}, fmt.Errorf("expand blueprint batch %d: %w", batchIndex, err)

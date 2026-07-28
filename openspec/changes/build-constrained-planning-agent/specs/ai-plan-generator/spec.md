@@ -32,6 +32,14 @@ The system SHALL validate desired plan duration, daily capacity, available time 
 - **WHEN** requested availability intersects existing unfinished work
 - **THEN** the Agent searches another valid time or eligible date and returns a repaired local schedule rather than an avoidable conflict
 
+#### Scenario: Build the model decomposition brief
+- **WHEN** the Agent starts a model decomposition batch
+- **THEN** it uses a versioned backend template containing the normalized goal, learning days, hours per day, start date, available time slot, skip dates, refinement, effective capacity, exact JSON schema, and fixed output rules
+
+#### Scenario: Requested hours exceed the actual slot
+- **WHEN** requested daily minutes are greater than the available time-slot length
+- **THEN** both the model brief and backend blueprint validation use the slot length as effective daily capacity
+
 ### Requirement: AI considers historical learning ability
 The system SHALL provide only safe aggregate learning history to local pacing and model decomposition and SHALL not expose raw private learning records in the provider prompt.
 
@@ -129,6 +137,18 @@ The model SHALL produce a bounded structured blueprint containing ordered learni
 #### Scenario: Model varies task count
 - **WHEN** the learning goal requires more or fewer semantic tasks than the requested plan duration
 - **THEN** the blueprint may return a different task count while remaining within configured schema and size limits
+
+#### Scenario: Generate a short complete plan
+- **WHEN** the user requests no more than seven learning days
+- **THEN** the model uses coarse merged tasks and covers the complete learning arc through integrated application and review instead of spending the whole capacity on introductory detail
+
+#### Scenario: Generate a longer detailed plan
+- **WHEN** the user requests more than fourteen learning days
+- **THEN** every batch retains the original total-plan horizon, receives bounded prior-stage/task progress, has a foundation/progression/completion role, and may use finer-grained knowledge, practice, milestone, and review tasks without restarting from the beginning
+
+#### Scenario: Schedule an accepted complete blueprint
+- **WHEN** a blueprint with multiple ordered tasks passes validation
+- **THEN** the Agent schedules every task or rejects the whole blueprint and never silently persists only a prefix
 
 #### Scenario: Model attempts to provide authoritative schedule fields
 - **WHEN** model output includes persisted IDs or untrusted final dates and time ranges

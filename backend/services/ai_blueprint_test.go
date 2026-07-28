@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -93,8 +94,10 @@ func TestBlueprintNormalizationRepairsStageLocalOrderAndAliases(t *testing.T) {
 
 func TestBlueprintRepairRetriesTruncationAndSupportsThirtyDays(t *testing.T) {
 	attempts := 0
-	provider := workerTestProvider{generate: func(context.Context, string, int) (string, error) {
+	prompts := []string{}
+	provider := workerTestProvider{generate: func(_ context.Context, prompt string, _ int) (string, error) {
 		attempts++
+		prompts = append(prompts, prompt)
 		if attempts == 1 {
 			return `{"title":"cut"`, &AIOutputTruncatedError{FinishReason: "length"}
 		}
@@ -112,6 +115,17 @@ func TestBlueprintRepairRetriesTruncationAndSupportsThirtyDays(t *testing.T) {
 	if PlanningBlueprintTokenAllowance(planningContext.Input) != 8192 {
 		t.Fatalf("30-day allowance should reach safe maximum, got %d", PlanningBlueprintTokenAllowance(planningContext.Input))
 	}
+	for _, prompt := range prompts {
+		if !strings.Contains(prompt, `"total_plan_learning_days":30`) || !strings.Contains(prompt, `"batch_learning_days":10`) || !strings.Contains(prompt, `"granularity":"fine_grained"`) {
+			t.Fatalf("30-day batch lost full-plan scope or fine-grained strategy: %s", prompt)
+		}
+	}
+	if !strings.Contains(prompts[0], `"batch_role":"foundation"`) ||
+		!strings.Contains(prompts[len(prompts)-1], `"batch_role":"completion"`) ||
+		!strings.Contains(prompts[len(prompts)-1], `"previous_stage_names":["基础","基础"]`) ||
+		!strings.Contains(prompts[len(prompts)-1], `"recent_task_titles":["理解 goroutine","实现 worker pool","理解 goroutine","实现 worker pool"]`) {
+		t.Fatalf("long-plan batches did not receive bounded prior progress and distinct roles: %+v", prompts)
+	}
 }
 
 func TestBlueprintCapacityOverflowRequiresRepair(t *testing.T) {
@@ -120,6 +134,65 @@ func TestBlueprintCapacityOverflowRequiresRepair(t *testing.T) {
 	blueprint.Tasks[1].EffortMinutes = 60
 	if err := ValidatePlanningBlueprintForInput(blueprint, PlanGenerationInput{Days: 1, HoursPerDay: 1}); err == nil || !strings.Contains(err.Error(), "capacity") {
 		t.Fatalf("capacity overflow was accepted: %v", err)
+	}
+}
+
+func TestPlanningBlueprintPromptUsesCompleteNormalizedConstraintsAndEffectiveCapacity(t *testing.T) {
+	ctx := PlanningContext{Input: PlanGenerationInput{
+		Goal: "学习 Go 并发", Days: 7, HoursPerDay: 2, StartDate: "2026-08-03",
+		AvailableTimeSlot: "20:00-21:00", SkipDates: []string{"2026-08-05"}, Refinement: "周末侧重项目实践",
+	}}
+	prompt := BuildPlanningBlueprintPrompt(ctx)
+	for _, required := range []string{
+		`"contract":"planning_blueprint_v2"`, `"requested_learning_days":7`, `"hours_per_day":2`,
+		`"start_date":"2026-08-03"`, `"available_time_slot":"20:00-21:00"`,
+		`"skip_dates":["2026-08-05"]`, `"refinement":"周末侧重项目实践"`,
+		`"effective_daily_capacity_minutes":60`, `"total_capacity_minutes":420`,
+		`"coverage_priority":"complete_learning_arc_before_detail"`, `"granularity":"coarse_complete"`,
+		`"output_rules"`, `"effort_minutes"`, `"prerequisite_ids"`,
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("planning prompt omitted required normalized constraint %s: %s", required, prompt)
+		}
+	}
+
+	overCapacity := validBlueprint()
+	overCapacity.Tasks[0].EffortMinutes = 210
+	overCapacity.Tasks[1].EffortMinutes = 211
+	if err := ValidatePlanningBlueprintForInput(overCapacity, ctx.Input); err == nil || !strings.Contains(err.Error(), "capacity 420") {
+		t.Fatalf("validation did not use the same effective slot capacity advertised to AI: %v", err)
+	}
+}
+
+func TestPlanningBlueprintPromptScalesDetailWithPlanHorizon(t *testing.T) {
+	long := BuildPlanningBlueprintPrompt(PlanningContext{Input: PlanGenerationInput{
+		Goal: "系统学习 Go", Days: 30, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00",
+	}})
+	for _, required := range []string{
+		`"total_plan_learning_days":30`, `"batch_learning_days":30`, `"granularity":"fine_grained"`,
+		"必须先覆盖从基础、练习、综合应用到复盘验收的完整学习闭环",
+	} {
+		if !strings.Contains(long, required) {
+			t.Fatalf("long-plan prompt omitted horizon-aware coverage rule %s: %s", required, long)
+		}
+	}
+}
+
+func TestSchedulePlanningBlueprintPreservesEveryModelTask(t *testing.T) {
+	blueprint := PlanningBlueprint{Title: "完整 Go 计划", Summary: "覆盖完整闭环", Rationale: "从基础到验收"}
+	blueprint.Stages = []PlanningBlueprintStage{{ID: "stage_1", Name: "完整学习", Objective: "完成端到端学习", Order: 1}}
+	for index := 1; index <= 7; index++ {
+		blueprint.Tasks = append(blueprint.Tasks, PlanningBlueprintTask{
+			ID: fmt.Sprintf("task_%d", index), StageID: "stage_1", Title: fmt.Sprintf("阶段任务 %d", index),
+			Objective: fmt.Sprintf("完成第 %d 个可验收成果", index), Description: "执行并验证", EffortMinutes: 60,
+			Difficulty: "medium", Order: index,
+		})
+	}
+	preview, _, err := SchedulePlanningBlueprint(PlanningContext{Input: PlanGenerationInput{
+		Goal: "系统学习 Go", Days: 7, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00",
+	}}, blueprint)
+	if err != nil || len(preview.Tasks) != len(blueprint.Tasks) || preview.Tasks[len(preview.Tasks)-1].Title != "阶段任务 7" {
+		t.Fatalf("backend dropped model tasks during scheduling: model=%d scheduled=%d err=%v", len(blueprint.Tasks), len(preview.Tasks), err)
 	}
 }
 

@@ -313,9 +313,8 @@ func (p *OpenAICompatibleProvider) GenerateContext(ctx context.Context, prompt s
 func buildCompletionRequest(cfg models.AIConfig, prompt string, maxTokens int) map[string]any {
 	contract := `Return exactly one JSON object with this shape and these exact key names. Do not rename tasks to task, steps, schedule, or daily_tasks. Do not wrap the JSON in Markdown:
 {"title":"string","summary":"string","estimated_total_hours":1,"rationale":"string","tasks":[{"date":"YYYY-MM-DD","planned_start":"HH:mm","planned_end":"HH:mm","title":"string","objective":"specific action different from title","description":"string","estimated_minutes":60,"difficulty":"easy"}]}`
-	if strings.Contains(prompt, `"contract":"planning_blueprint_v1"`) {
-		contract = `Return exactly one JSON object and no Markdown. Do not include dates, time slots, persisted IDs, or private data. Use this schema:
-{"title":"string","summary":"string","rationale":"string","stages":[{"id":"stage_1","name":"string","objective":"string","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"string","objective":"specific action different from title","description":"string","effort_minutes":60,"difficulty":"easy|medium|hard","order":1,"prerequisite_ids":[]}]}`
+	if strings.Contains(prompt, `"contract":"planning_blueprint_`) {
+		contract = planningBlueprintSystemContract
 	}
 	request := map[string]any{
 		"model":       cfg.ModelName,

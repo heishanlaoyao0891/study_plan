@@ -65,6 +65,16 @@ type PlanningContext struct {
 	ConflictingDates   []string            `json:"conflicting_dates"`
 	Warnings           []string            `json:"warnings,omitempty"`
 	Prompt             string              `json:"prompt"`
+	PromptScope        PlanningPromptScope `json:"-"`
+}
+
+type PlanningPromptScope struct {
+	TotalPlanLearningDays int
+	BatchIndex            int
+	CompletedLearningDays int
+	BatchLearningDays     int
+	PreviousStageNames    []string
+	RecentTaskTitles      []string
 }
 
 type PlanPreview struct {
