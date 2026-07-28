@@ -49,9 +49,9 @@ func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
 	now := time.Now().UTC()
 	jobs := []models.PlanningJob{
 		{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", UserID: 1, RequestFingerprint: "a", Status: models.PlanningJobStatusQueued, Phase: models.PlanningJobStatusQueued, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ExpiresAt: now.Add(time.Hour)},
-		{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UserID: 1, RequestFingerprint: "b", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, Provider: "siliconflow", ModelName: "model", ProviderLatencyMS: 100, TotalTokens: 10, ExpiresAt: now.Add(time.Hour)},
-		{ID: "cccccccccccccccccccccccccccccccc", UserID: 1, RequestFingerprint: "c", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 200, TotalTokens: 20, ExpiresAt: now.Add(time.Hour)},
-		{ID: "dddddddddddddddddddddddddddddddd", UserID: 1, RequestFingerprint: "d", Status: models.PlanningJobStatusFallback, Phase: models.PlanningJobStatusFallback, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 900, TotalTokens: 30, FailureReason: "invalid_blueprint", ExpiresAt: now.Add(time.Hour)},
+		{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UserID: 1, RequestFingerprint: "b", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, Provider: "siliconflow", ModelName: "model", ProviderLatencyMS: 100, ExpiresAt: now.Add(time.Hour)},
+		{ID: "cccccccccccccccccccccccccccccccc", UserID: 1, RequestFingerprint: "c", Status: models.PlanningJobStatusReady, Phase: models.PlanningJobStatusReady, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 200, ExpiresAt: now.Add(time.Hour)},
+		{ID: "dddddddddddddddddddddddddddddddd", UserID: 1, RequestFingerprint: "d", Status: models.PlanningJobStatusFallback, Phase: models.PlanningJobStatusFallback, BaselinePreviewID: "p", BaselinePreviewVersion: 1, RequestJSON: `{}`, ProviderLatencyMS: 900, FailureReason: "invalid_blueprint", ExpiresAt: now.Add(time.Hour)},
 	}
 	if err := db.DB.Create(&jobs).Error; err != nil {
 		t.Fatal(err)
@@ -64,26 +64,36 @@ func TestAIPlanningMetricsReportsQueueLatencyTokensAndFallback(t *testing.T) {
 	if err := db.DB.Create(&currentJobs).Error; err != nil {
 		t.Fatal(err)
 	}
+	invocations := []models.AIInvocationLog{
+		{TraceID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", UserID: 1, JobType: "ai_plan_generation", JobID: "1", ProviderAttempt: 1, Provider: "siliconflow", ModelName: "model", RequestFingerprint: strings.Repeat("a", 64), Status: "succeeded", PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5, StartedAt: now, RetainUntil: now.AddDate(0, 0, 90)},
+		{TraceID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2", UserID: 1, JobType: "ai_plan_generation", JobID: "1", ProviderAttempt: 1, Provider: "siliconflow", ModelName: "model", RequestFingerprint: strings.Repeat("b", 64), Status: "succeeded", PromptTokens: 6, CompletionTokens: 9, TotalTokens: 15, StartedAt: now, RetainUntil: now.AddDate(0, 0, 90)},
+		{TraceID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3", UserID: 1, JobType: "ai_plan_generation", JobID: "1", ProviderAttempt: 1, Provider: "siliconflow", ModelName: "model", RequestFingerprint: strings.Repeat("c", 64), Status: "succeeded", PromptTokens: 20, CompletionTokens: 20, TotalTokens: 40, StartedAt: now, RetainUntil: now.AddDate(0, 0, 90)},
+	}
+	if err := db.DB.Create(&invocations).Error; err != nil {
+		t.Fatal(err)
+	}
 	router := gin.New()
 	router.GET("/metrics", GetAIPlanningMetrics)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	var response struct {
 		Data struct {
-			QueueDepth   int64            `json:"queue_depth"`
-			SuccessRate  float64          `json:"success_rate"`
-			FallbackRate float64          `json:"fallback_rate"`
-			P50          int64            `json:"p50_latency_ms"`
-			P95          int64            `json:"p95_latency_ms"`
-			TotalTokens  int64            `json:"total_tokens"`
-			Reasons      map[string]int64 `json:"fallback_reasons"`
-			Providers    map[string]int64 `json:"provider_models"`
+			QueueDepth       int64            `json:"queue_depth"`
+			SuccessRate      float64          `json:"success_rate"`
+			FallbackRate     float64          `json:"fallback_rate"`
+			P50              int64            `json:"p50_latency_ms"`
+			P95              int64            `json:"p95_latency_ms"`
+			PromptTokens     int64            `json:"prompt_tokens"`
+			CompletionTokens int64            `json:"completion_tokens"`
+			TotalTokens      int64            `json:"total_tokens"`
+			Reasons          map[string]int64 `json:"fallback_reasons"`
+			Providers        map[string]int64 `json:"provider_models"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Data.QueueDepth != 2 || response.Data.SuccessRate != 3.0/5.0 || response.Data.FallbackRate != 2.0/5.0 || response.Data.P50 != 200 || response.Data.P95 != 900 || response.Data.TotalTokens != 60 || response.Data.Reasons["invalid_blueprint"] != 1 || response.Data.Reasons["provider_request_failed"] != 1 || response.Data.Providers["siliconflow/current-model"] != 2 {
+	if response.Data.QueueDepth != 2 || response.Data.SuccessRate != 3.0/5.0 || response.Data.FallbackRate != 2.0/5.0 || response.Data.P50 != 200 || response.Data.P95 != 900 || response.Data.PromptTokens != 28 || response.Data.CompletionTokens != 32 || response.Data.TotalTokens != 60 || response.Data.Reasons["invalid_blueprint"] != 1 || response.Data.Reasons["provider_request_failed"] != 1 || response.Data.Providers["siliconflow/current-model"] != 2 {
 		t.Fatalf("unexpected planning metrics: %+v", response.Data)
 	}
 }

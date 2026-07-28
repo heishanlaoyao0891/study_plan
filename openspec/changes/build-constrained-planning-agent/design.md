@@ -81,6 +81,8 @@ The ledger never stores API keys, authorization headers, raw prompts, raw model 
 
 Administrators can inspect recent invocation traces with bounded pagination and filters for user, job, status, provider, and time. Aggregate metrics distinguish Agent cycles, actual provider HTTP attempts, successful model responses, failed responses, and successfully published user plans.
 
+The invocation ledger is also the sole source for aggregate prompt, completion, and total Token usage. Planning-job rows may describe orchestration state but are not authoritative for provider usage because one job can contain several outline, batch, repair, and transport attempts. The administration page reloads these aggregates together with invocation history so a manual refresh cannot leave the summary cards stale.
+
 ### Preview versions prevent late-result overwrite
 
 The local baseline is preview version 1. A successful AI decomposition produces a new immutable version with `source=ai_decomposed`. Every version carries task identities, request/context fingerprint, creation time, and expiry.

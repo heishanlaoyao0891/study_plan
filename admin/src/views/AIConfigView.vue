@@ -79,8 +79,12 @@ onMounted(async () => {
 async function loadInvocations() {
   error.value = ''
   try {
-    const result = await AdminApi.aiInvocations({ size: 50, ...invocationFilter })
+    const [result, planningMetrics] = await Promise.all([
+      AdminApi.aiInvocations({ size: 50, ...invocationFilter }),
+      AdminApi.aiMetrics(),
+    ])
     invocations.value = result.items
+    metrics.value = planningMetrics
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'AI 调用流水加载失败'
   }

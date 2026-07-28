@@ -42,6 +42,14 @@ The system SHALL expose bounded operational metrics for local planning and exter
 - **WHEN** an administrator reviews AI operations
 - **THEN** the system distinguishes provider attempts from successful user generations and reports retry states, truncation, schema repairs, checkpoint resumes, and active Prompt Playbook patterns
 
+#### Scenario: Aggregate provider Token usage
+- **WHEN** an administrator reviews prompt, completion, or total Token usage
+- **THEN** the system sums the recent immutable invocation traces rather than legacy orchestration-job Token fields, including all recorded provider and repair attempts in the metrics window
+
+#### Scenario: Refresh invocation operations
+- **WHEN** an administrator refreshes recent AI invocation history
+- **THEN** the administration page reloads aggregate planning metrics in the same action so Token totals reflect newly completed calls
+
 ### Requirement: Administrator inspects every AI invocation
 The system SHALL expose a paginated, filterable audit ledger containing one immutable trace for every external provider HTTP attempt.
 

@@ -423,7 +423,6 @@ func GetAIPlanningMetrics(c *gin.Context) {
 	fallbackReasons := map[string]int64{}
 	latencies := make([]int64, 0, len(jobs))
 	providerModels := map[string]int64{}
-	var promptTokens, completionTokens, totalTokens int64
 	var queueDepth int64
 	for _, job := range jobs {
 		statusCounts[job.Status]++
@@ -439,9 +438,6 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		if job.Provider != "" || job.ModelName != "" {
 			providerModels[job.Provider+"/"+job.ModelName]++
 		}
-		promptTokens += int64(job.PromptTokens)
-		completionTokens += int64(job.CompletionTokens)
-		totalTokens += int64(job.TotalTokens)
 	}
 	var currentJobs []models.AIPlanGenerationJob
 	if err := db.DB.Where("created_at >= ?", from).Find(&currentJobs).Error; err != nil {
@@ -481,6 +477,17 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		successRate = float64(ready) / float64(terminal)
 		fallbackRate = float64(fallback) / float64(terminal)
 	}
+	var tokenUsage struct {
+		PromptTokens     int64 `gorm:"column:prompt_tokens"`
+		CompletionTokens int64 `gorm:"column:completion_tokens"`
+		TotalTokens      int64 `gorm:"column:total_tokens"`
+	}
+	if err := db.DB.Model(&models.AIInvocationLog{}).
+		Select("COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens").
+		Where("started_at >= ?", from).Scan(&tokenUsage).Error; err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query ai token usage failed")
+		return
+	}
 	var providerAttempts, successfulResponses, failedResponses, truncatedResponses, successfulGenerations int64
 	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ?", from).Count(&providerAttempts)
 	db.DB.Model(&models.AIInvocationLog{}).Where("started_at >= ? AND status = ?", from, "succeeded").Count(&successfulResponses)
@@ -493,7 +500,7 @@ func GetAIPlanningMetrics(c *gin.Context) {
 		"window_days": 30, "queue_depth": queueDepth, "status_counts": statusCounts,
 		"success_rate": successRate, "fallback_rate": fallbackRate,
 		"p50_latency_ms": planningLatencyPercentile(latencies, 0.50), "p95_latency_ms": planningLatencyPercentile(latencies, 0.95),
-		"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
+		"prompt_tokens": tokenUsage.PromptTokens, "completion_tokens": tokenUsage.CompletionTokens, "total_tokens": tokenUsage.TotalTokens,
 		"fallback_reasons": fallbackReasons, "provider_models": providerModels,
 		"provider_attempts": providerAttempts, "successful_provider_responses": successfulResponses, "failed_provider_responses": failedResponses,
 		"truncated_provider_responses": truncatedResponses, "successful_generations": successfulGenerations, "prompt_playbook_patterns": promptPatterns,

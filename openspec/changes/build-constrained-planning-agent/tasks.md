@@ -115,3 +115,9 @@
 - [x] Pass bounded accepted-stage and recent-task progress into later long-plan batches with explicit foundation, progression, and completion roles.
 - [x] Prove accepted model tasks are all scheduled or the blueprint is rejected, with no silent prefix truncation.
 - [x] Add red-green regression coverage, run backend tests and vet, strictly validate OpenSpec, update the living scan, commit, and push.
+
+## 11. Invocation-ledger Token Metrics
+
+- [x] Aggregate 30-day prompt, completion, and total Token usage from immutable AI invocation logs instead of legacy planning-job fields.
+- [x] Refresh aggregate planning metrics whenever the administration invocation history is refreshed, with backend and admin regression coverage.
+- [x] Run backend and admin validation, strictly validate OpenSpec, update the living scan, commit, and push.
