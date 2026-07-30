@@ -57,4 +57,7 @@ test('user directory exposes account identities and safe management actions', as
   assert.match(source, /AdminApi\.deleteUser\(user\.id\)/)
   assert.match(source, /确认删除 \$\{label\}？该操作会清理学习数据并无法恢复。/)
   assert.match(source, /user\.role !== 'admin' && user\.account_status !== 'deleted'/)
+  assert.match(source, /<table class="data-table user-table">/)
+  assert.match(source, /\.user-table th:last-child,\.user-table td\.actions\{width:122px\}/)
+  assert.match(source, /\.actions\{display:grid;grid-template-columns:32px 42px;align-items:center;column-gap:10px;white-space:nowrap\}/)
 })

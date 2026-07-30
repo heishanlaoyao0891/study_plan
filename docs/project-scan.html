@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="project-scan-last-updated" content="2026-07-30" />
+  <meta name="project-scan-last-updated" content="2026-07-31" />
   <title>studyPlan 持续项目扫描报告</title>
   <style>
     :root { --bg:#0b1020; --panel:#121a2f; --panel2:#18233d; --text:#e8edf8; --muted:#9eabc3; --line:#2a3858; --blue:#73a7ff; --green:#61d7a3; --yellow:#ffd166; --red:#ff7a90; --violet:#b89cff; }
@@ -55,7 +55,7 @@
 </head>
 <body><main>
   <h1>studyPlan 持续项目扫描报告</h1>
-  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-30</div>
+  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-31</div>
 
   <section class="grid metrics">
     <div class="metric"><b>385</b><span>当前项目文件（跟踪 + 新增）</span></div>
@@ -81,6 +81,7 @@
   <table>
     <thead><tr><th>日期</th><th>范围</th><th>更新摘要</th><th>验证</th></tr></thead>
     <tbody>
+      <tr><td>2026-07-31</td><td>管理台用户目录操作列对齐</td><td>用户表为“操作”列设定固定宽度，并将操作区改为固定的查看、删除双槽位。普通用户的查看和删除操作、管理员的仅查看操作均保持同一列基线，避免按钮数量变化造成视觉错位。</td><td>管理端布局契约已覆盖固定列宽和双槽位网格；<code>npm test</code>、<code>npm run type-check</code>、<code>npm run build</code> 通过。构建仍有既有单 chunk 超过 500 KB 警告。</td></tr>
       <tr><td>2026-07-30</td><td>修复历史计划日程字段兼容</td><td>新增 <code>normalize-legacy-plan-schedule-data</code>（4/4）。历史计划未保存学习日、指定日期或覆盖时段时，计划列表和详情 API 现在稳定返回空数组而非 <code>null</code>；小程序计划列表与详情同时对非数组值做防御性处理，避免 <code>null.length</code> 中断计划卡片渲染。</td><td>新增列表与详情 API 的空数组 JSON 合同回归，以及小程序双页面静态渲染契约；后端全量测试/vet、管理端测试/type-check/build、H5/微信小程序测试/type-check/build 和 OpenSpec strict validate 通过。管理端仍有既有单 chunk 超过 500 KB 警告，UniApp 仍有 Sass legacy API 和 <code>strong</code> 选择器警告。</td></tr>
       <tr><td>2026-07-30</td><td>补齐管理台用户管理闭环</td><td>扩展 <code>complete-admin-user-management</code>（15/15）：用户目录将登录名、昵称和 OpenID 分列展示并支持三者搜索；默认只展示正常、未封禁账户，筛选明确支持全部展示、正常、已封禁和已删除；管理员可直接填写登录名、昵称创建普通密码账户，初始密码按账户随机生成且仅本次显示；用户可自行修改微信号式或 11 位手机号登录名，每个上海自然月最多 3 次。管理员删除普通账户复用自助删除的数据清理、凭据匿名化和 Token 失效逻辑，并禁止删除任何管理员，敏感操作写入 <code>admin_audit_logs</code>。</td><td>新增后端用户名搜索、删除清理、管理员保护、状态筛选、直接创建、登录名冲突和月度限额回归测试，以及管理端和用户端契约测试；后端全量测试/vet、管理端测试/type-check/build、H5/微信小程序测试/type-check/build 与 OpenSpec strict validate 通过。管理端构建仍有既有的单 chunk 大于 500 KB 警告。</td></tr>
       <tr><td>2026-07-30</td><td>备案域名与微信小程序 1.0.1 发布准备</td><td>新增 <code>prepare-domain-and-wechat-release</code>（11/11），将 <code>https://slls.asia</code> 统一为 H5、<code>/admin/</code>、<code>/api/</code> 与小程序生产请求入口；生产 Compose 移除 <code>:82</code> IP 测试映射，Nginx 与部署文档统一 HTTPS、loopback 排障和保留数据卷的回滚路径。小程序 manifest 升至 <code>1.0.1 (101)</code>，新增 <code>npm run release:mp-weixin</code>，构建前拒绝 HTTP、IP、空域名、开发覆盖、错误 AppID 与陈旧版本，构建后校验真实 AppID、生产域名和产物。</td><td>前端 7 项测试、type-check、微信构建及 74 个产物文件检查通过；后端全量测试/vet、管理端 2 项测试/type-check/build、Compose YAML 与 Nginx 静态契约、OpenSpec strict validate 通过。线上 <code>/health</code>、H5、管理台均返回 200，Let's Encrypt 证书覆盖根域和 www，有效期至 2026-10-22。本机无 Docker CLI，未执行本地 <code>docker compose config</code>，已用 YAML 解析替代；微信合法域名、真机测试、上传、审核与发布仍需按提审清单人工完成。</td></tr>

@@ -36,7 +36,7 @@
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
-    <table class="data-table">
+    <table class="data-table user-table">
       <thead>
         <tr><th>ID</th><th>登录名</th><th>昵称</th><th>OpenID</th><th>最近登录</th><th>角色</th><th>状态</th><th>躺平分钟</th><th>操作</th></tr>
       </thead>
@@ -151,5 +151,5 @@ function userStatus(user:AdminUser){if(user.account_status==='deleted')return '�
 </script>
 
 <style scoped>
-.page-actions,.actions,.initial-password{display:flex;align-items:center;gap:10px}.add-user{display:inline-flex;align-items:center}.create-user-panel{display:grid;gap:18px;margin-bottom:18px}.create-user-panel p{margin:7px 0 0;color:#7a6773}.create-user-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:end;gap:12px}.initial-password{padding:14px;border:1px solid #f3d6d0;border-radius:14px;background:#fff6da}.initial-password span{font-weight:900}.initial-password code{flex:1;overflow-wrap:anywhere;color:#4b3040;font-weight:900}.delete-button{border:0;background:transparent;color:#b42318;cursor:pointer;font-weight:900}.delete-button:disabled{cursor:default;opacity:.55}td code{display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}td small{display:block;margin-top:4px;color:#7a8790}
+.page-actions,.initial-password{display:flex;align-items:center;gap:10px}.add-user{display:inline-flex;align-items:center}.create-user-panel{display:grid;gap:18px;margin-bottom:18px}.create-user-panel p{margin:7px 0 0;color:#7a6773}.create-user-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:end;gap:12px}.initial-password{padding:14px;border:1px solid #f3d6d0;border-radius:14px;background:#fff6da}.initial-password span{font-weight:900}.initial-password code{flex:1;overflow-wrap:anywhere;color:#4b3040;font-weight:900}.user-table th:last-child,.user-table td.actions{width:122px}.actions{display:grid;grid-template-columns:32px 42px;align-items:center;column-gap:10px;white-space:nowrap}.delete-button{border:0;background:transparent;color:#b42318;cursor:pointer;font-weight:900}.delete-button:disabled{cursor:default;opacity:.55}td code{display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}td small{display:block;margin-top:4px;color:#7a8790}
 </style>
