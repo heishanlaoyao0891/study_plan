@@ -252,6 +252,76 @@ func TestWechatLinksExistingH5AccountWithoutInvitation(t *testing.T) {
 	}
 }
 
+func TestWechatLinkMigratesLegacyIncompleteOpenIDHolder(t *testing.T) {
+	setupGroupTestDB(t)
+	config.App.JWTSecret = "wechat-link-legacy-secret"
+	openID := "mock_legacy-openid"
+	if err := db.DB.Create(&models.User{OpenID: openID, Role: models.RoleUser, AccountStatus: models.AccountStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
+	code := createTestInvite(t, time.Now().Add(time.Hour), false)
+	register := performJSONRequest(H5Register, map[string]string{
+		"invite_code": code, "username": "legacy_link", "nickname": "Legacy Link", "password": "password1",
+	})
+	if recorderResponseCode(t, register) != 0 {
+		t.Fatal(register.Body.String())
+	}
+	registrationToken, err := services.SignRegistrationToken(openID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := performJSONRequest(WeChatLink, map[string]string{
+		"registration_token": registrationToken, "username": "legacy_link", "password": "password1",
+	})
+	if recorderResponseCode(t, link) != 0 {
+		t.Fatalf("link with legacy holder failed: %s", link.Body.String())
+	}
+	var user models.User
+	if err := db.DB.Where("username_normalized = ?", "legacy_link").First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.OpenID != openID {
+		t.Fatalf("openid not moved to H5 account: %+v", user)
+	}
+	var legacy models.User
+	if err := db.DB.Where("id <> ? AND account_status = ?", user.ID, models.AccountStatusInactive).First(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacy.OpenID != "" {
+		t.Fatalf("legacy holder still owns openid: %+v", legacy)
+	}
+}
+
+func TestWechatLinkReturnsChineseConflictForAlreadyLinkedIdentity(t *testing.T) {
+	setupGroupTestDB(t)
+	config.App.JWTSecret = "wechat-link-conflict-secret"
+	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existingHash := string(hash)
+	if err := db.DB.Create(&models.User{OpenID: "already-linked-openid", Username: "other_user", UsernameNormalized: "other_user", Nickname: "Other User", NicknameNormalized: "other user", PasswordHash: &existingHash, Role: models.RoleUser, AccountStatus: models.AccountStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
+	code := createTestInvite(t, time.Now().Add(time.Hour), false)
+	register := performJSONRequest(H5Register, map[string]string{
+		"invite_code": code, "username": "conflict_link", "nickname": "Conflict Link", "password": "password1",
+	})
+	if recorderResponseCode(t, register) != 0 {
+		t.Fatal(register.Body.String())
+	}
+	registrationToken, err := services.SignRegistrationToken("already-linked-openid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := performJSONRequest(WeChatLink, map[string]string{
+		"registration_token": registrationToken, "username": "conflict_link", "password": "password1",
+	})
+	if link.Code != http.StatusConflict || !strings.Contains(link.Body.String(), "当前微信身份已经绑定过账号") {
+		t.Fatalf("expected localized identity conflict, status=%d body=%s", link.Code, link.Body.String())
+	}
+}
+
 func createTestInvite(t *testing.T, expiresAt time.Time, disabled bool) string {
 	t.Helper()
 	var count int64

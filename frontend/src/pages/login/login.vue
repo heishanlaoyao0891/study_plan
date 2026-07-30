@@ -110,6 +110,13 @@
         <button v-if="isDev" class="dev-toggle" @click="showDev = !showDev">{{ showDev ? '收起调试' : '本地调试' }}</button>
       </view>
 
+      <view class="invite-help">
+        <text>没有邀请码？</text>
+        <button class="invite-link" type="button" @click="showInviteQr = true">添加管理员获取</button>
+      </view>
+
+      <LegalFooter />
+
       <view v-if="showDev" class="panel dev">
         <view class="section-title small">本地调试</view>
         <view class="field">
@@ -125,6 +132,15 @@
           <button class="dark-btn" @click="mockLogin">Mock 登录</button>
         </view>
       </view>
+
+      <view v-if="showInviteQr" class="qr-mask" @click="showInviteQr = false">
+        <view class="qr-card" @click.stop>
+          <view class="qr-title">添加管理员获取邀请码</view>
+          <view class="qr-copy">长按识别二维码，或点开后保存到微信扫码。</view>
+          <image class="qr-image" :src="inviteQrSrc" mode="aspectFit" @click="previewInviteQr" />
+          <button class="qr-close" type="button" @click="showInviteQr = false">我知道了</button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -134,6 +150,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { computed, reactive, ref, watch } from 'vue'
 import { AuthApi, type LoginResp, type RegistrationReq, type WechatLoginResp } from '@/api'
 import { getApiBase, setApiBase, setToken } from '@/api/request'
+import LegalFooter from '@/components/LegalFooter.vue'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
 import { routeForUser } from '@/utils/auth-routing'
 import { clearMiniProgramSetup, miniProgramAuth, resetMiniProgramAuth, startMiniProgramAuth } from '@/utils/mp-auth'
@@ -146,6 +163,8 @@ const showDev = ref(false)
 const isDev = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 const apiBase = ref(getApiBase())
 const mockCode = ref('test_user_' + Math.floor(Math.random() * 10000))
+const showInviteQr = ref(false)
+const inviteQrSrc = '/static/invite-qrcode.png'
 const h5Mode = ref<H5Mode>('login')
 const resetCode = ref('')
 const h5Form = reactive<RegistrationReq>({ invite_code: '', username: '', nickname: '', password: '' })
@@ -307,6 +326,10 @@ function saveApiBase() {
   uni.showToast({ title: '已保存', icon: 'success' })
 }
 
+function previewInviteQr() {
+  uni.previewImage({ urls: [inviteQrSrc], current: inviteQrSrc })
+}
+
 async function mockLogin() {
   clearError()
   submitting.value = true
@@ -363,6 +386,14 @@ button::after { border: 0; }
 .ghost-btn, .dark-btn { height: 82rpx; line-height: 82rpx; border-radius: 16rpx; font-size: 26rpx; }
 .ghost-btn { background: #f5eff2; color: #6c5963; }
 .dark-btn { background: #392f38; color: #fff; }
+.invite-help { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 24rpx; color: #8b7d85; font-size: 23rpx; line-height: 1.6; }
+.invite-link { min-width: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #e95f85; font-size: 23rpx; line-height: 1.6; font-weight: 800; }
+.qr-mask { position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 44rpx; background: rgba(47,35,48,.42); }
+.qr-card { width: 620rpx; max-width: 100%; box-sizing: border-box; padding: 34rpx; border-radius: 26rpx; background: #fff; text-align: center; box-shadow: 0 24rpx 70rpx rgba(47,35,48,.26); }
+.qr-title { color: #2f2330; font-size: 32rpx; font-weight: 900; }
+.qr-copy { margin-top: 10rpx; color: #867b89; font-size: 23rpx; line-height: 1.5; }
+.qr-image { display: block; width: 420rpx; height: 420rpx; max-width: 100%; margin: 28rpx auto; border: 1rpx solid #f0dce3; border-radius: 18rpx; background: #fffbfc; }
+.qr-close { width: 100%; height: 78rpx; line-height: 78rpx; border-radius: 16rpx; background: #f5eff2; color: #6c5963; font-size: 26rpx; }
 
 /* #ifdef H5 */
 .h5-auth-panel { border-radius: 18rpx; box-shadow: 0 12rpx 32rpx rgba(76,52,64,.1); }

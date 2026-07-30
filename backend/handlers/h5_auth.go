@@ -130,12 +130,21 @@ func WeChatLink(c *gin.Context) {
 		if user.OpenID != "" && user.OpenID != claims.OpenID {
 			return errOpenIDInUse
 		}
-		var count int64
-		if err := tx.Model(&models.User{}).Where("open_id = ? AND id <> ?", claims.OpenID, user.ID).Count(&count).Error; err != nil {
+		var identityHolder models.User
+		err := tx.Where("open_id = ? AND id <> ?", claims.OpenID, user.ID).First(&identityHolder).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if count > 0 {
-			return errOpenIDInUse
+		if err == nil {
+			if identityHolder.UsernameNormalized != "" || identityHolder.NicknameNormalized != "" || identityHolder.PasswordHash != nil {
+				return errOpenIDInUse
+			}
+			if err := tx.Model(&identityHolder).Updates(map[string]interface{}{
+				"open_id":        "",
+				"account_status": models.AccountStatusInactive,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		user.OpenID = claims.OpenID
 		return tx.Model(&user).Update("open_id", claims.OpenID).Error
@@ -279,7 +288,9 @@ func handleRegistrationError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errInvalidInvite):
 		api.Fail(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, errOpenIDInUse), isUniqueConstraintError(err):
+	case errors.Is(err, errOpenIDInUse):
+		api.Conflict(c, "当前微信身份已经绑定过账号，请直接用微信登录；如果需要换绑，请先联系管理员处理。", gin.H{"wechat_identity_conflict": true})
+	case isUniqueConstraintError(err):
 		api.Conflict(c, "username, nickname, or WeChat identity is already in use", nil)
 	default:
 		if strings.Contains(err.Error(), "username must") || strings.Contains(err.Error(), "password must") || strings.Contains(err.Error(), "nickname") {

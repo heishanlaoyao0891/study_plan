@@ -35,16 +35,21 @@
       </div>
     </form>
     <section class="panel wide-panel invocation-panel">
-      <div class="invocation-head"><div><h3>AI 调用流水</h3><p class="page-note">每次真实模型 HTTP 请求均单独留痕；仅保存哈希、长度、耗时、Token 与安全错误分类。</p></div><button class="ghost small-button" type="button" @click="loadInvocations">刷新</button></div>
+      <div class="invocation-head"><div><h3>AI 调用流水</h3><p class="page-note">每次真实模型 HTTP 请求均单独留痕；仅保存哈希、长度、耗时、Token 与安全错误分类。</p></div><button class="ghost small-button" type="button" @click="() => loadInvocations()">刷新</button></div>
       <div class="invocation-filters">
         <input v-model.trim="invocationFilter.user_id" placeholder="用户 ID" />
         <input v-model.trim="invocationFilter.job_id" placeholder="Job ID" />
         <select v-model="invocationFilter.status"><option value="">全部状态</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="truncated">截断</option><option value="started">执行中</option></select>
-        <button class="primary small-button" type="button" @click="loadInvocations">查询</button>
+        <button class="primary small-button" type="button" @click="queryInvocations">查询</button>
       </div>
       <div class="table-wrap">
-        <table><thead><tr><th>时间 / Trace</th><th>用户 / Job</th><th>阶段 / 轮次</th><th>Provider / Model</th><th>结果</th><th>耗时 / Token</th><th>原因</th></tr></thead>
+        <table class="invocation-table"><thead><tr><th>时间 / Trace</th><th>用户 / Job</th><th>阶段 / 轮次</th><th>Provider / Model</th><th>结果</th><th>耗时 / Token</th><th>原因</th></tr></thead>
         <tbody><tr v-for="row in invocations" :key="row.trace_id"><td>{{ formatTime(row.started_at) }}<small>{{ row.trace_id.slice(0, 12) }}</small></td><td>{{ row.user_nickname || (row.user_id ? `用户 ${row.user_id}` : '系统') }}<small>{{ row.job_type }} {{ row.job_id || '' }}</small></td><td>{{ row.phase || '-' }}<small>批次 {{ row.batch_index || '-' }} · Agent {{ row.agent_attempt || '-' }} · HTTP {{ row.provider_attempt }}</small></td><td>{{ row.provider }}<small>{{ row.model }}</small></td><td><span class="invoke-status" :class="row.status">{{ statusLabel(row.status) }}</span><small>HTTP {{ row.http_status || '-' }} · {{ row.finish_reason || '-' }}</small></td><td>{{ row.duration_ms }} ms<small>{{ row.total_tokens || 0 }} tokens</small></td><td>{{ row.error_code || '-' }}<small>{{ row.error_message || '' }}</small></td></tr><tr v-if="!invocations.length"><td colspan="7">暂无调用记录</td></tr></tbody></table>
+      </div>
+      <div class="invocation-pagination">
+        <span class="pagination-summary">共 {{ invocationTotal }} 条 · 第 {{ invocationPage }} / {{ invocationTotalPages }} 页</span>
+        <label class="page-size"><span>每页</span><select v-model.number="invocationPageSize" @change="changeInvocationPageSize"><option :value="20">20</option><option :value="50">50</option><option :value="100">100</option></select></label>
+        <div class="pagination-actions"><button class="ghost small-button" type="button" :disabled="invocationPage <= 1 || loadingInvocations" @click="loadInvocations(invocationPage - 1)">上一页</button><button class="ghost small-button" type="button" :disabled="invocationPage >= invocationTotalPages || loadingInvocations" @click="loadInvocations(invocationPage + 1)">下一页</button></div>
       </div>
     </section>
   </main>
@@ -61,33 +66,55 @@ const apiKey = ref('')
 const metrics = ref<AIPlanningMetrics | null>(null)
 const invocations = ref<AIInvocationLog[]>([])
 const invocationFilter = reactive({ user_id: '', job_id: '', status: '' })
+const invocationPage = ref(1)
+const invocationPageSize = ref(20)
+const invocationTotal = ref(0)
+const loadingInvocations = ref(false)
+const invocationTotalPages = computed(() => Math.max(1, Math.ceil(invocationTotal.value / invocationPageSize.value)))
 const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, interactive_target_seconds: 2, background_job_timeout_seconds: 300, daily_generation_limit: 5, enabled: true })
 const modeLabel = computed(() => ({ ai: 'AI 生成', fallback: '规则回退', disabled: '已停用' }[form.effective_mode || (form.enabled ? (form.provider === 'mock' ? 'fallback' : 'ai') : 'disabled')]))
 const keyStorageLabel = computed(() => ({ encrypted: '已加密', plaintext: '明文，需重新保存密钥', missing: '未配置' }[form.key_storage || 'missing']))
 
 onMounted(async () => {
   try {
-    const [config, planningMetrics, invocationResult] = await Promise.all([AdminApi.aiConfig(), AdminApi.aiMetrics(), AdminApi.aiInvocations({ size: 50 })])
+    const [config, planningMetrics, invocationResult] = await Promise.all([AdminApi.aiConfig(), AdminApi.aiMetrics(), AdminApi.aiInvocations({ page: invocationPage.value, size: invocationPageSize.value })])
     Object.assign(form, config)
     metrics.value = planningMetrics
     invocations.value = invocationResult.items
+    invocationPage.value = invocationResult.page
+    invocationTotal.value = invocationResult.total
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'AI 配置加载失败'
   }
 })
 
-async function loadInvocations() {
+async function loadInvocations(page = invocationPage.value) {
   error.value = ''
+  loadingInvocations.value = true
   try {
     const [result, planningMetrics] = await Promise.all([
-      AdminApi.aiInvocations({ size: 50, ...invocationFilter }),
+      AdminApi.aiInvocations({ page, size: invocationPageSize.value, ...invocationFilter }),
       AdminApi.aiMetrics(),
     ])
     invocations.value = result.items
+    invocationPage.value = result.page
+    invocationTotal.value = result.total
     metrics.value = planningMetrics
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'AI 调用流水加载失败'
+  } finally {
+    loadingInvocations.value = false
   }
+}
+
+function changeInvocationPageSize() {
+  invocationPage.value = 1
+  loadInvocations(1)
+}
+
+function queryInvocations() {
+  invocationPage.value = 1
+  loadInvocations(1)
 }
 
 async function save() {
@@ -131,15 +158,19 @@ function statusLabel(value: AIInvocationLog['status']) { return ({ started: '执
 .metrics-grid div { display:flex; flex-direction:column; gap:3px; padding:14px; border:1px solid #e4e8f0; border-radius:10px; background:#fff; }
 .metrics-grid strong { font-size:20px; color:#1f4f9a; }
 .metrics-grid span { color:#788397; font-size:13px; }
-.invocation-panel { margin-top:18px; }
+.invocation-panel { width:100%; max-width:none; margin-top:18px; }
 .invocation-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
 .invocation-filters { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:10px; margin:16px 0; }
 .invocation-filters input,.invocation-filters select { min-height:38px; padding:8px 10px; border:1px solid #d9dfeb; border-radius:8px; }
-.table-wrap { overflow:auto; }
-table { width:100%; border-collapse:collapse; min-width:1100px; }
-th,td { padding:10px; border-bottom:1px solid #e6eaf1; text-align:left; vertical-align:top; }
+.table-wrap { width:100%; overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+.invocation-table { table-layout:fixed; }
+.invocation-table th:nth-child(1) { width:14%; }.invocation-table th:nth-child(2) { width:16%; }.invocation-table th:nth-child(3) { width:16%; }.invocation-table th:nth-child(4) { width:14%; }.invocation-table th:nth-child(5) { width:14%; }.invocation-table th:nth-child(6) { width:11%; }.invocation-table th:nth-child(7) { width:15%; }
+th,td { padding:10px; border-bottom:1px solid #e6eaf1; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
 td small { display:block; max-width:260px; margin-top:4px; color:#7b8496; overflow-wrap:anywhere; }
 .invoke-status { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2f7; }
 .invoke-status.succeeded { color:#18794e; background:#e8f7ef; }.invoke-status.failed { color:#b4233b; background:#fff0f2; }.invoke-status.truncated { color:#9a5a10; background:#fff4df; }.invoke-status.started { color:#2459a9; background:#eaf2ff; }
+.invocation-pagination { display:flex; align-items:center; justify-content:flex-end; gap:14px; flex-wrap:wrap; margin-top:14px; color:#788397; font-size:13px; }
+.pagination-summary { margin-right:auto; }.page-size,.pagination-actions { display:flex; align-items:center; gap:8px; }.page-size select { min-height:34px; padding:4px 8px; border:1px solid #d9dfeb; border-radius:7px; background:#fff; color:#334155; }.pagination-actions button:disabled { opacity:.45; cursor:not-allowed; }
 @media (max-width:760px) { .metrics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>

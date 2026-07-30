@@ -46,6 +46,33 @@ test('mini program authenticates automatically and has no manual login landing a
   assert.doesNotMatch(auth, /setStorageSync/)
 })
 
+test('login page exposes administrator QR entry for invitation requests', async () => {
+  const login = await source('pages/login/login.vue')
+
+  assert.match(login, /没有邀请码？/)
+  assert.match(login, /添加管理员获取/)
+  assert.match(login, /const showInviteQr = ref\(false\)/)
+  assert.match(login, /const inviteQrSrc = '\/static\/invite-qrcode\.png'/)
+  assert.match(login, /class="qr-mask"/)
+  assert.match(login, /uni\.previewImage\(\{ urls: \[inviteQrSrc\], current: inviteQrSrc \}\)/)
+  assert.match(login, /\.invite-help \{/)
+  assert.match(login, /\.qr-image \{/)
+})
+
+test('H5 landing pages expose the ICP filing link', async () => {
+  const [footer, login, checkin] = await Promise.all([
+    source('components/LegalFooter.vue'),
+    source('pages/login/login.vue'),
+    source('pages/checkin/checkin.vue'),
+  ])
+
+  assert.match(footer, /鄂ICP备2026038065号/)
+  assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//)
+  assert.match(footer, /const publicSecurityRecordNo = ''/)
+  assert.match(login, /<LegalFooter \/>/)
+  assert.match(checkin, /<LegalFooter \/>/)
+})
+
 test('AI client uses durable jobs without preview or commit state', async () => {
   const [api, ai, plans] = await Promise.all([
     source('api/index.ts'),

@@ -114,6 +114,8 @@
 
     <view class="loading" v-if="loading">加载中...</view>
 
+    <LegalFooter />
+
     <view class="modal" v-if="completionItem" @click.self="cancelCompletion">
       <view class="modal-body">
         <view class="modal-title">{{ completionEarly ? '结束本次学习' : '完成任务' }}</view>
@@ -147,6 +149,7 @@
 import { ref, computed, onUnmounted } from 'vue'
 import { onHide, onShow } from '@dcloudio/uni-app'
 import { CheckinApi, MotivationApi, SlackApi, StudyTaskApi, type CheckinInfo, type DailyCheckin, type DailyTask, type Motivation, type NextTaskInfo, type TimerTask } from '@/api'
+import LegalFooter from '@/components/LegalFooter.vue'
 import { addLocalDays, localDateKey } from '@/utils/date'
 
 const todayStr = ref('')

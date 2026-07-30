@@ -19,6 +19,24 @@ test('admin sidebar width is independent from routed content reflow', async () =
 test('AI invocation refresh also refreshes aggregate token metrics', async () => {
   const source = await view('AIConfigView.vue')
 
-  assert.match(source, /async function loadInvocations\(\)[\s\S]*AdminApi\.aiMetrics\(\)/)
+  assert.match(source, /async function loadInvocations\([^)]*\)[\s\S]*AdminApi\.aiMetrics\(\)/)
   assert.match(source, /metrics\.value = planningMetrics/)
+})
+
+test('AI invocation history exposes pagination and uses full workspace width', async () => {
+  const source = await view('AIConfigView.vue')
+
+  assert.match(source, /const invocationPage = ref\(1\)/)
+  assert.match(source, /const invocationPageSize = ref\(20\)/)
+  assert.match(source, /const invocationTotal = ref\(0\)/)
+  assert.match(source, /const invocationTotalPages = computed\(/)
+  assert.match(source, /AdminApi\.aiInvocations\(\{ page, size: invocationPageSize\.value/)
+  assert.match(source, /queryInvocations/)
+  assert.match(source, /changeInvocationPageSize/)
+  assert.match(source, /共 \{\{ invocationTotal \}\} 条 · 第 \{\{ invocationPage \}\} \/ \{\{ invocationTotalPages \}\} 页/)
+  assert.match(source, /:disabled="invocationPage <= 1/)
+  assert.match(source, /:disabled="invocationPage >= invocationTotalPages/)
+  assert.match(source, /\.invocation-panel \{[^}]*width:100%;[^}]*max-width:none/s)
+  assert.match(source, /\.invocation-table \{ table-layout:fixed;/)
+  assert.doesNotMatch(source, /min-width:1100px/)
 })
