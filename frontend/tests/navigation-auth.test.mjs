@@ -73,6 +73,31 @@ test('H5 landing pages expose the ICP filing link', async () => {
   assert.match(checkin, /<LegalFooter \/>/)
 })
 
+test('account settings let users change login names within the monthly limit', async () => {
+  const [account, api] = await Promise.all([
+    source('pages/account/account.vue'),
+    source('api/index.ts'),
+  ])
+
+  assert.match(account, /修改登录名/)
+  assert.match(account, /每个自然月最多修改 3 次/)
+  assert.match(account, /微信号样式的字母、数字、下划线，也可使用 11 位手机号/)
+  assert.match(account, /AuthApi\.updateUsername\(loginUsername\.value\)/)
+  assert.match(account, /本月还可修改 \$\{result\.remaining_changes\} 次/)
+  assert.match(api, /updateUsername\(username: string\)/)
+  assert.match(api, /\/api\/auth\/username/)
+})
+
+test('plan screens safely render legacy null schedule arrays', async () => {
+  const [plans, detail] = await Promise.all([
+    source('pages/plans/plans.vue'),
+    source('pages/plan-detail/plan-detail.vue'),
+  ])
+
+  assert.match(plans, /function weekdaySummary\(selected:unknown\)\{const days=Array\.isArray\(selected\)\?selected:\[\]/)
+  assert.match(detail, /function weekdaySummary\(selected: unknown\) \{ const days = Array\.isArray\(selected\) \? selected : \[\]/)
+})
+
 test('AI client uses durable jobs without preview or commit state', async () => {
   const [api, ai, plans] = await Promise.all([
     source('api/index.ts'),

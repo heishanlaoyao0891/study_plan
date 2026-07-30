@@ -23,3 +23,24 @@ The system SHALL let users deactivate their mini program account and choose whet
 #### Scenario: Restore retained account
 - **WHEN** user logs in again with the same verified identity after retaining data
 - **THEN** system restores the user's retained account data
+
+## ADDED Requirements
+
+### Requirement: User can manage login username with a monthly limit
+The system SHALL allow an authenticated active user to change their login username to a unique 4-24 character ASCII letter, digit, or underscore value, including an 11-digit mobile number, at most three times in a Shanghai calendar month.
+
+#### Scenario: User changes login username
+- **WHEN** an authenticated user selects a valid unused login username
+- **THEN** the system updates the username and normalized username, records the change, invalidates other sessions, and returns a refreshed session token
+
+#### Scenario: User selects a mobile number as login username
+- **WHEN** an authenticated user selects a valid 11-digit mobile number as the login username
+- **THEN** the system accepts it as a login identifier without claiming that the phone number has been verified
+
+#### Scenario: User exceeds monthly change limit
+- **WHEN** an authenticated user has already changed the login username three times in the current Shanghai calendar month
+- **THEN** the system rejects another change without changing the username
+
+#### Scenario: User selects an already used login username
+- **WHEN** an authenticated user selects a username used by another active account
+- **THEN** the system rejects the change with a conflict response

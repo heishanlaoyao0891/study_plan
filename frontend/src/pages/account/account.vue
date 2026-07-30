@@ -11,6 +11,13 @@
       <button class="secondary" @click="logout">退出当前设备</button>
     </view>
 
+    <view class="panel" v-if="user">
+      <view class="title">修改登录名</view>
+      <view class="desc">可使用微信号样式的字母、数字、下划线，也可使用 11 位手机号。每个自然月最多修改 3 次。</view>
+      <input v-model.trim="loginUsername" class="input" maxlength="24" placeholder="登录名" />
+      <button class="primary" :loading="updatingUsername" @click="changeUsername">更新登录名</button>
+    </view>
+
     <view class="support" @click="goFeedback">
       <view><view class="support-title">反馈与问题报告</view><view class="desc">提交问题，并查看处理进度与回复</view></view>
       <view class="support-arrow">›</view>
@@ -42,10 +49,37 @@ const user = ref<User | null>(null)
 const currentPassword = ref('')
 const newPassword = ref('')
 const changingPassword = ref(false)
+const loginUsername = ref('')
+const updatingUsername = ref(false)
 
 async function load() {
-  try { user.value = await AuthApi.me() }
+  try {
+    user.value = await AuthApi.me()
+    loginUsername.value = user.value.username || ''
+  }
   catch (error: any) { uni.showToast({ title: error?.message || '加载失败', icon: 'none' }) }
+}
+
+async function changeUsername() {
+  if (!/^[A-Za-z0-9_]{4,24}$/.test(loginUsername.value)) {
+    uni.showToast({ title: '登录名需为 4-24 位字母、数字或下划线', icon: 'none' })
+    return
+  }
+  if (loginUsername.value === user.value?.username) {
+    uni.showToast({ title: '登录名没有变化', icon: 'none' })
+    return
+  }
+  updatingUsername.value = true
+  try {
+    const result = await AuthApi.updateUsername(loginUsername.value)
+    setToken(result.token)
+    user.value = result.user
+    uni.showToast({ title: `登录名已更新，本月还可修改 ${result.remaining_changes} 次`, icon: 'success' })
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '修改失败', icon: 'none' })
+  } finally {
+    updatingUsername.value = false
+  }
 }
 
 function goNickname() { uni.navigateTo({ url: '/pages/nickname/nickname?mode=edit' }) }

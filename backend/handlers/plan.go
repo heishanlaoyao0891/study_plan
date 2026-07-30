@@ -112,6 +112,9 @@ func ListPlans(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query plans failed: "+err.Error())
 		return
 	}
+	for index := range plans {
+		normalizePlanScheduleArrays(&plans[index])
+	}
 	views := make([]planListView, 0, len(plans))
 	for _, plan := range plans {
 		var total, completed int64
@@ -141,7 +144,20 @@ func GetPlan(c *gin.Context) {
 		return
 	}
 	db.DB.Preload("ScheduleOverrides").First(plan, plan.ID)
+	normalizePlanScheduleArrays(plan)
 	api.OK(c, plan)
+}
+
+func normalizePlanScheduleArrays(plan *models.Plan) {
+	if plan.StudyWeekdays == nil {
+		plan.StudyWeekdays = []int{}
+	}
+	if plan.StudyDates == nil {
+		plan.StudyDates = []string{}
+	}
+	if plan.ScheduleOverrides == nil {
+		plan.ScheduleOverrides = []models.PlanScheduleOverride{}
+	}
 }
 
 func UpdatePlanVisibility(c *gin.Context) {

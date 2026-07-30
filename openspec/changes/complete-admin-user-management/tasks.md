@@ -15,3 +15,15 @@
 - [x] 3.1 Add backend regression coverage for username search, deletion, privilege protection, and audit logging.
 - [x] 3.2 Add admin UI contract coverage for identity columns and account-management actions.
 - [x] 3.3 Run focused tests and builds, validate the OpenSpec change, and update the living project scan report.
+
+## 4. User directory state visibility refinement
+
+- [x] 4.1 Make normal, unbanned accounts the default API and console result, excluding deleted and inactive accounts.
+- [x] 4.2 Add all, normal, banned, and deleted filters with backend and admin UI regression coverage.
+
+## 5. Direct account creation and login-name control
+
+- [x] 5.1 Replace the invitation redirect with an in-directory administrator account-creation form and one-time generated initial password.
+- [x] 5.2 Add direct account creation API validation, hashing, group invite-target identity generation, and administrator audit logging.
+- [x] 5.3 Let users update login names through account settings, record each change, refresh sessions, and enforce a three-per-Shanghai-calendar-month limit.
+- [x] 5.4 Run cross-surface regression tests, strict validation, and update the living project scan report.

@@ -28,7 +28,7 @@ type Plan struct {
 	GenerationSource    string                 `gorm:"size:32;not null;default:''" json:"generation_source"`
 	IsShared            bool                   `gorm:"default:false" json:"is_shared"`
 	SortOrder           int                    `gorm:"default:0" json:"sort_order"`
-	ScheduleOverrides   []PlanScheduleOverride `gorm:"foreignKey:PlanID" json:"schedule_overrides,omitempty"`
+	ScheduleOverrides   []PlanScheduleOverride `gorm:"foreignKey:PlanID" json:"schedule_overrides"`
 	CreatedAt           time.Time              `json:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at"`
 }

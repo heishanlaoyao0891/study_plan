@@ -81,7 +81,7 @@ function openTask(task: TimerTask) { uni.navigateTo({ url: `/pages/task/task?id=
 function generationSource(value: Plan) { if (value.generation_source === 'ai_decomposed') return 'AI 任务拆解'; if (value.generation_source === 'local_enriched') return 'AI 增强'; if (value.generation_source === 'local') return '本地智能规划'; return value.ai_generated ? '历史 AI 生成' : '手动创建' }
 function statusText(status: string) { return status === 'paused' ? '已暂停' : status === 'archived' ? '已归档' : '进行中' }
 function taskStatus(status: string) { return status === 'completed' ? '已完成' : status === 'in_progress' ? '学习中' : '待执行' }
-function weekdaySummary(selected: number[] = []) { return selected.length === 7 ? '每天' : selected.length ? `周${selected.map(value => weekdays.find(day => day.value === value)?.label).join('、')}` : '按指定日期' }
+function weekdaySummary(selected: unknown) { const days = Array.isArray(selected) ? selected : []; return days.length === 7 ? '每天' : days.length ? `周${days.map(value => weekdays.find(day => day.value === value)?.label).join('、')}` : '按指定日期' }
 </script>
 
 <style lang="scss">

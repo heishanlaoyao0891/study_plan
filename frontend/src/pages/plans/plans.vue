@@ -64,7 +64,7 @@ async function save(){formError.value='';if(!form.title.trim()||!drafts.value.le
 function scheduleError(error:any){const rows=error?.raw?.invalid_tasks;return Array.isArray(rows)?formatScheduleConflicts(rows.map((row:any)=>({...row,id:row.task_id,conflicting_tasks:row.conflicting_tasks||[]}))):''}
 function invite(plan:Plan){uni.navigateTo({url:`/pages/plan-detail/plan-detail?id=${plan.id}&invite=1`})}function openPlan(plan:Plan){uni.navigateTo({url:`/pages/plan-detail/plan-detail?id=${plan.id}`})}
 function weekdayLabel(date:string){return `周${weekdays.find(row=>row.value===(new Date(`${date}T12:00:00`).getDay()||7))?.label}`}
-function weekdaySummary(selected:number[]=[]){return selected.length===7?'每天':selected.length?`周${selected.map(value=>weekdays.find(day=>day.value===value)?.label).join('、')}`:'未设置学习日'}
+function weekdaySummary(selected:unknown){const days=Array.isArray(selected)?selected:[];return days.length===7?'每天':days.length?`周${days.map(value=>weekdays.find(day=>day.value===value)?.label).join('、')}`:'未设置学习日'}
 function rate(plan:Plan){return plan.completion_rate??(plan.total_tasks?Math.round(plan.completed_tasks/plan.total_tasks*100):0)}function statusText(status:string){return status==='paused'?'暂停':status==='archived'?'归档':'进行中'}
 function openGeneratedPlan(){if(aiJob.value?.result_plan_id)uni.navigateTo({url:`/pages/plan-detail/plan-detail?id=${aiJob.value.result_plan_id}`})}
 function goAI(){uni.navigateTo({url:'/pages/ai/ai'})}function goSchedule(){uni.navigateTo({url:'/pages/schedule/schedule'})}function goGroup(){uni.navigateTo({url:'/pages/group/group'})}function goNotifications(){uni.navigateTo({url:'/pages/notifications/notifications'})}function goRecovery(){uni.navigateTo({url:'/pages/recovery/recovery'})}

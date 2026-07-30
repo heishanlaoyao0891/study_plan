@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Admin user directory supports complete account operations
-The system SHALL allow an authenticated administrator to identify normal user accounts by login username, nickname, and OpenID; search by any of those identifiers; reach invitation-based account creation; and delete a normal user account from the PC admin console.
+The system SHALL allow an authenticated administrator to identify normal user accounts by login username, nickname, and OpenID; search by any of those identifiers; directly create a normal password account; and delete a normal user account from the PC admin console.
 
 #### Scenario: Operator reviews identity columns
 - **WHEN** an administrator opens the user directory
@@ -13,7 +13,7 @@ The system SHALL allow an authenticated administrator to identify normal user ac
 
 #### Scenario: Operator adds a user
 - **WHEN** an administrator selects the user-directory add action
-- **THEN** the console opens the invitation creation workflow used for account registration
+- **THEN** the console accepts a valid login username and nickname, creates a normal account without requiring an invitation, and displays a unique generated initial password only for that successful creation
 
 #### Scenario: Operator deletes a normal user
 - **WHEN** an administrator confirms deletion of a normal user in the directory

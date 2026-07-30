@@ -426,6 +426,9 @@ export const AuthApi = {
   setNickname(nickname: string) {
     return api.put<User>('/api/auth/nickname', { nickname })
   },
+  updateUsername(username: string) {
+    return api.put<{ token: string; user: User; remaining_changes: number }>('/api/auth/username', { username })
+  },
   updateAvatar(avatar_url: string) {
     return api.put<User>('/api/auth/avatar', { avatar_url })
   },

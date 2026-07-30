@@ -276,6 +276,9 @@ export const AdminApi = {
     const qs = query.toString()
     return request<UserListResp>(`/api/admin/users${qs ? `?${qs}` : ''}`)
   },
+  createUser(data: { username: string; nickname: string }) {
+    return request<{ user: AdminUser; initial_password: string }>('/api/admin/users', { method: 'POST', body: JSON.stringify(data) })
+  },
   user(id: number) {
     return request<UserDetailResp>(`/api/admin/users/${id}`)
   },

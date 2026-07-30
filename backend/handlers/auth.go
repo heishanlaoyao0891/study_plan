@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,6 +42,14 @@ type registrationRequiredResp struct {
 type updateNicknameReq struct {
 	Nickname string `json:"nickname" binding:"required"`
 }
+
+type updateUsernameReq struct {
+	Username string `json:"username" binding:"required"`
+}
+
+const usernameChangeLimit = 3
+
+var errUsernameChangeLimit = errors.New("username can only be changed 3 times per calendar month")
 
 var userSearchLimits = struct {
 	sync.Mutex
@@ -214,6 +223,73 @@ func UpdateNickname(c *gin.Context) {
 	}
 	user.Nickname, user.NicknameNormalized = display, key
 	api.OK(c, user)
+}
+
+func UpdateUsername(c *gin.Context) {
+	var req updateUsernameReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	if !usernamePattern.MatchString(username) {
+		api.Fail(c, http.StatusBadRequest, "username must contain 4 to 24 ASCII letters, digits, or underscores")
+		return
+	}
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var user models.User
+	if err := db.DB.First(&user, uid).Error; err != nil {
+		api.Fail(c, http.StatusNotFound, "user not found")
+		return
+	}
+	normalized := strings.ToLower(username)
+	if normalized == user.UsernameNormalized {
+		api.OK(c, gin.H{"token": "", "user": user, "remaining_changes": usernameChangeLimit})
+		return
+	}
+	now := shanghaiNow()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	remaining := 0
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		var changes int64
+		if err := tx.Model(&models.AccountEvent{}).Where("user_id = ? AND event_type = ? AND created_at >= ?", user.ID, "username_change", monthStart).Count(&changes).Error; err != nil {
+			return err
+		}
+		if changes >= usernameChangeLimit {
+			return errUsernameChangeLimit
+		}
+		if err := tx.Model(&user).Updates(map[string]interface{}{
+			"username": username, "username_normalized": normalized, "security_version": gorm.Expr("security_version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&models.AccountEvent{UserID: user.ID, EventType: "username_change", Detail: "user changed login username"}).Error; err != nil {
+			return err
+		}
+		remaining = usernameChangeLimit - int(changes) - 1
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errUsernameChangeLimit) {
+			api.Fail(c, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		if isUniqueConstraintError(err) {
+			api.Conflict(c, "username is already in use", gin.H{"username_conflict": true})
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "update username failed: "+err.Error())
+		return
+	}
+	user.Username = username
+	user.UsernameNormalized = normalized
+	user.SecurityVersion++
+	token, err := services.SignToken(user.ID, user.OpenID, user.Role, user.SecurityVersion)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "sign token failed: "+err.Error())
+		return
+	}
+	api.OK(c, gin.H{"token": token, "user": user, "remaining_changes": remaining})
 }
 
 func SearchUsers(c *gin.Context) {

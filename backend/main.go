@@ -62,6 +62,7 @@ func main() {
 		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)
 		auth.PUT("/auth/nickname", handlers.UpdateNickname)
+		auth.PUT("/auth/username", handlers.UpdateUsername)
 		auth.POST("/auth/onboarding", handlers.UpdateOnboarding)
 		auth.POST("/auth/password/change", handlers.ChangePassword)
 	}
@@ -176,6 +177,7 @@ func main() {
 		admin.POST("/invitations", handlers.CreateRegistrationInvites)
 		admin.DELETE("/invitations/:id", handlers.DisableRegistrationInvite)
 		admin.GET("/users", handlers.ListUsers)
+		admin.POST("/users", handlers.CreateAdminUser)
 		admin.GET("/users/:id", handlers.GetAdminUserDetail)
 		admin.DELETE("/users/:id", handlers.DeleteAdminUser)
 		admin.POST("/users/:id/ban", handlers.BanUser)

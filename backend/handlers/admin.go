@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"math"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 
 	"study_plan_backend/api"
 	"study_plan_backend/db"
+	"study_plan_backend/identity"
 	"study_plan_backend/middleware"
 	"study_plan_backend/models"
 	"study_plan_backend/services"
@@ -22,6 +25,11 @@ import (
 type banReq struct {
 	DurationHours int    `json:"duration_hours"` // 0=永久封禁；>0=指定小时数
 	Reason        string `json:"reason"`
+}
+
+type adminCreateUserReq struct {
+	Username string `json:"username" binding:"required"`
+	Nickname string `json:"nickname" binding:"required"`
 }
 
 type slackConfigReq struct {
@@ -89,15 +97,22 @@ func ListUsers(c *gin.Context) {
 
 	search := strings.TrimSpace(c.Query("search"))
 	status := strings.TrimSpace(c.Query("status"))
+	if status == "" {
+		status = "active"
+	}
 	q := db.DB.Model(&models.User{})
 	if search != "" {
 		like := "%" + search + "%"
 		q = q.Where("username LIKE ? OR nickname LIKE ? OR open_id LIKE ?", like, like, like)
 	}
-	if status == "banned" {
-		q = q.Where("banned_until IS NOT NULL AND banned_until > ?", time.Now())
-	} else if status == "active" {
-		q = q.Where("banned_until IS NULL OR banned_until <= ?", time.Now())
+	switch status {
+	case "all":
+	case "banned":
+		q = q.Where("account_status = ? AND banned_until IS NOT NULL AND banned_until > ?", models.AccountStatusActive, time.Now())
+	case "deleted":
+		q = q.Where("account_status = ?", models.AccountStatusDeleted)
+	case "active":
+		q = q.Where("account_status = ? AND (banned_until IS NULL OR banned_until <= ?)", models.AccountStatusActive, time.Now())
 	}
 
 	var total int64
@@ -136,6 +151,68 @@ func GetAdminUserDetail(c *gin.Context) {
 		"checkin_count": checkinCount,
 		"slack_balance": user.SlackBalance,
 	})
+}
+
+// CreateAdminUser 管理员：直接创建一个可使用密码登录的普通账户。
+func CreateAdminUser(c *gin.Context) {
+	var req adminCreateUserReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	if !usernamePattern.MatchString(username) {
+		api.Fail(c, http.StatusBadRequest, "username must contain 4 to 24 ASCII letters, digits, or underscores")
+		return
+	}
+	nickname, nicknameNormalized, err := identity.Validate(req.Nickname)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	initialPassword, err := generateInitialPassword()
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "generate initial password failed")
+		return
+	}
+	passwordHash, err := hashPassword(initialPassword)
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "hash initial password failed")
+		return
+	}
+	inviteTargetID, err := identity.NewInviteTargetID()
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "generate user identity failed")
+		return
+	}
+	user := models.User{
+		Username:           username,
+		UsernameNormalized: strings.ToLower(username),
+		Nickname:           nickname,
+		NicknameNormalized: nicknameNormalized,
+		InviteTargetID:     inviteTargetID,
+		PasswordHash:       &passwordHash,
+		Role:               models.RoleUser,
+		AccountStatus:      models.AccountStatusActive,
+	}
+	if err := db.DB.Create(&user).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			api.Conflict(c, "username or nickname is already in use", nil)
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "create user failed: "+err.Error())
+		return
+	}
+	recordAdminAudit(c.GetUint(middleware.CtxUserIDKey), &user.ID, "create_user", "admin-created password account")
+	api.OK(c, gin.H{"user": user, "initial_password": initialPassword})
+}
+
+func generateInitialPassword() (string, error) {
+	bytes := make([]byte, 18)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
 func AdminOverview(c *gin.Context) {
