@@ -134,6 +134,35 @@ func NextPendingTask(c *gin.Context) {
 	api.OK(c, gin.H{"task": task, "plan": plan})
 }
 
+// GetActiveTask returns the authenticated user's single open study session, if any.
+func GetActiveTask(c *gin.Context) {
+	uid := c.GetUint(middleware.CtxUserIDKey)
+	var session models.StudySession
+	if err := db.DB.Where("user_id = ? AND end_time IS NULL", uid).First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			api.OK(c, nil)
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "query active study session failed: "+err.Error())
+		return
+	}
+	var task models.DailyTask
+	if err := db.DB.Where("id = ? AND user_id = ?", session.TaskID, uid).First(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			api.OK(c, nil)
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "query active study task failed: "+err.Error())
+		return
+	}
+	view, err := buildTaskTimerView(task, time.Now())
+	if err != nil {
+		api.Fail(c, http.StatusInternalServerError, "query active timer failed: "+err.Error())
+		return
+	}
+	api.OK(c, view)
+}
+
 func CreatePlanTask(c *gin.Context) {
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	plan, err := mustGetOwnedPlan(c, uid)

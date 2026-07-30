@@ -152,7 +152,7 @@ import { AuthApi, type LoginResp, type RegistrationReq, type WechatLoginResp } f
 import { getApiBase, setApiBase, setToken } from '@/api/request'
 import LegalFooter from '@/components/LegalFooter.vue'
 import { normalizeDisplayText, unicodeLength } from '@/utils/text'
-import { routeForUser } from '@/utils/auth-routing'
+import { routeForAuthenticatedUser } from '@/utils/auth-routing'
 import { clearMiniProgramSetup, miniProgramAuth, resetMiniProgramAuth, startMiniProgramAuth } from '@/utils/mp-auth'
 
 type H5Mode = 'login' | 'register' | 'reset'
@@ -307,11 +307,11 @@ async function submitWechatAccount() {
   }
 }
 
-function afterLogin(resp: LoginResp) {
+async function afterLogin(resp: LoginResp) {
   setToken(resp.token)
   clearMiniProgramSetup()
   uni.showToast({ title: '登录成功', icon: 'success' })
-  const url = routeForUser(resp.user, resp.nickname_required)
+  const url = await routeForAuthenticatedUser(resp.user, resp.nickname_required)
   setTimeout(() => uni.reLaunch({ url }), 300)
 }
 

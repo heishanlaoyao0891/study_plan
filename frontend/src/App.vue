@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { onLaunch } from "@dcloudio/uni-app";
 import { isLoggedIn } from "@/api/request";
-import { AuthApi, StudyTaskApi } from "@/api";
-import { unicodeLength } from "@/utils/text";
-import { routeForUser } from "@/utils/auth-routing";
+import { AuthApi } from "@/api";
+import { routeForAuthenticatedUser } from "@/utils/auth-routing";
 import { getBanState } from "@/utils/ban-state";
 import { invitationFromLaunch, startMiniProgramAuth } from "@/utils/mp-auth";
 
@@ -26,26 +25,17 @@ onLaunch((options) => {
     // 这里用 reLaunch 而非 redirectTo/switchTab，因为它不在 tabBar 中
     uni.reLaunch({ url: "/pages/login/login" });
   } else {
-    AuthApi.me().then(user => {
-      if (!user.nickname || unicodeLength(user.nickname) < 2) {
-        uni.reLaunch({ url: "/pages/nickname/nickname" });
-        return;
-      }
-      const route = routeForUser(user)
-      if (route !== '/pages/checkin/checkin') {
-        uni.reLaunch({ url: route })
-        return
-      }
-      StudyTaskApi.compensateMidnight().catch(() => {});
+    AuthApi.me().then(async user => {
+      const route = await routeForAuthenticatedUser(user)
+      if (route !== '/pages/checkin/checkin') uni.reLaunch({ url: route })
     }).catch(() => {});
   }
   // #endif
 
   // #ifdef MP-WEIXIN
-  AuthApi.me().then(user => {
-    const route = routeForUser(user)
+  AuthApi.me().then(async user => {
+    const route = await routeForAuthenticatedUser(user)
     if (route !== '/pages/checkin/checkin') uni.reLaunch({ url: route })
-    else StudyTaskApi.compensateMidnight().catch(() => {})
   }).catch(() => {})
   // #endif
 });

@@ -98,6 +98,26 @@ test('plan screens safely render legacy null schedule arrays', async () => {
   assert.match(detail, /function weekdaySummary\(selected: unknown\) \{ const days = Array\.isArray\(selected\) \? selected : \[\]/)
 })
 
+test('authenticated clients recover an existing server-side study timer without restarting it', async () => {
+  const [api, routing, login, miniProgramAuth, app] = await Promise.all([
+    source('api/index.ts'),
+    source('utils/auth-routing.ts'),
+    source('pages/login/login.vue'),
+    source('utils/mp-auth.ts'),
+    source('App.vue'),
+  ])
+
+  assert.match(api, /active\(\) \{\s*return api\.get<TimerTask \| null>\('\/api\/tasks\/active'\)/)
+  assert.match(routing, /export async function routeForAuthenticatedUser/)
+  assert.match(routing, /StudyTaskApi\.compensateMidnight\(\)/)
+  assert.match(routing, /StudyTaskApi\.active\(\)/)
+  assert.match(routing, /return activeTask \? `\/pages\/task\/task\?id=\$\{activeTask\.id\}` : fallback/)
+  assert.doesNotMatch(routing, /StudyTaskApi\.(start|resume)\(/)
+  assert.match(login, /await routeForAuthenticatedUser\(resp\.user, resp\.nickname_required\)/)
+  assert.match(miniProgramAuth, /await routeForAuthenticatedUser\(resp\.user, resp\.nickname_required\)/)
+  assert.match(app, /await routeForAuthenticatedUser\(user\)/)
+})
+
 test('AI client uses durable jobs without preview or commit state', async () => {
   const [api, ai, plans] = await Promise.all([
     source('api/index.ts'),

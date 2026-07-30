@@ -581,6 +581,9 @@ export const CheckinApi = {
 }
 
 export const StudyTaskApi = {
+  active() {
+    return api.get<TimerTask | null>('/api/tasks/active')
+  },
   next(after?: string) {
     return api.get<NextTaskInfo | null>(`/api/tasks/next${after ? `?after=${after}` : ''}`)
   },

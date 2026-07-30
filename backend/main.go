@@ -117,6 +117,7 @@ func main() {
 		bound.GET("/plans/:id/tasks", handlers.ListPlanTasks)
 		bound.POST("/plans/:id/tasks", handlers.CreatePlanTask)
 		bound.PUT("/plans/:id/tasks/reorder", handlers.ReorderPlanTasks)
+		bound.GET("/tasks/active", handlers.GetActiveTask)
 		bound.GET("/tasks/next", handlers.NextPendingTask)
 		bound.PUT("/tasks/:id/start", handlers.StartTask)
 		bound.PUT("/tasks/:id/stop", handlers.StopTask)

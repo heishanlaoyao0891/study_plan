@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
-import { AuthApi, StudyTaskApi, type WechatLoginResp } from '@/api'
+import { AuthApi, type WechatLoginResp } from '@/api'
 import { setToken } from '@/api/request'
-import { routeForUser } from '@/utils/auth-routing'
+import { routeForAuthenticatedUser } from '@/utils/auth-routing'
 import { getBanState } from '@/utils/ban-state'
 
 export type MiniProgramAuthStatus = 'idle' | 'loading' | 'authenticated' | 'setup-required' | 'exchange-error' | 'banned'
@@ -74,9 +74,8 @@ export async function startMiniProgramAuth(invitation?: string) {
     setToken(resp.token)
     miniProgramAuth.launchInvitation = ''
     miniProgramAuth.status = 'authenticated'
-    const route = routeForUser(resp.user, resp.nickname_required)
+    const route = await routeForAuthenticatedUser(resp.user, resp.nickname_required)
     uni.reLaunch({ url: route })
-    if (route === '/pages/checkin/checkin') StudyTaskApi.compensateMidnight().catch(() => {})
   } catch (error: any) {
     if (getBanState()) {
       miniProgramAuth.status = 'banned'
