@@ -279,6 +279,9 @@ export const AdminApi = {
   user(id: number) {
     return request<UserDetailResp>(`/api/admin/users/${id}`)
   },
+  deleteUser(id: number) {
+    return request<AdminUser>(`/api/admin/users/${id}`, { method: 'DELETE' })
+  },
   banUser(id: number, data: { duration_hours: number; reason: string }) {
     return request<AdminUser>(`/api/admin/users/${id}/ban`, { method: 'POST', body: JSON.stringify(data) })
   },

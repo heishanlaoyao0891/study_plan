@@ -299,30 +299,44 @@ func DeactivateAccount(c *gin.Context) {
 		api.OK(c, user)
 		return
 	}
-	if err := db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := cleanupUserData(tx, user.ID); err != nil {
-			return err
-		}
-		return tx.Model(&user).Updates(map[string]interface{}{
-			"open_id":             "",
-			"username":            "",
-			"username_normalized": "",
-			"password_hash":       nil,
-			"nickname":            "",
-			"nickname_normalized": "",
-			"avatar_url":          "",
-			"weekly_hours":        0,
-			"slack_balance":       0,
-			"account_status":      models.AccountStatusDeleted,
-			"security_version":    gorm.Expr("security_version + 1"),
-		}).Error
-	}); err != nil {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error { return eraseUserAccount(tx, &user) }); err != nil {
 		api.Fail(c, http.StatusInternalServerError, "delete account failed: "+err.Error())
 		return
 	}
 	db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "deactivate_delete", Detail: req.Note})
 	user.AccountStatus = models.AccountStatusDeleted
 	api.OK(c, user)
+}
+
+func eraseUserAccount(tx *gorm.DB, user *models.User) error {
+	if err := cleanupUserData(tx, user.ID); err != nil {
+		return err
+	}
+	if err := tx.Model(user).Updates(map[string]interface{}{
+		"open_id":             "",
+		"username":            "",
+		"username_normalized": "",
+		"password_hash":       nil,
+		"nickname":            "",
+		"nickname_normalized": "",
+		"avatar_url":          "",
+		"weekly_hours":        0,
+		"slack_balance":       0,
+		"account_status":      models.AccountStatusDeleted,
+		"security_version":    gorm.Expr("security_version + 1"),
+	}).Error; err != nil {
+		return err
+	}
+	user.OpenID = ""
+	user.Username = ""
+	user.Nickname = ""
+	user.AvatarURL = ""
+	user.PasswordHash = nil
+	user.WeeklyHours = 0
+	user.SlackBalance = 0
+	user.AccountStatus = models.AccountStatusDeleted
+	user.SecurityVersion++
+	return nil
 }
 
 func cleanupUserData(tx *gorm.DB, uid uint) error {

@@ -177,6 +177,7 @@ func main() {
 		admin.DELETE("/invitations/:id", handlers.DisableRegistrationInvite)
 		admin.GET("/users", handlers.ListUsers)
 		admin.GET("/users/:id", handlers.GetAdminUserDetail)
+		admin.DELETE("/users/:id", handlers.DeleteAdminUser)
 		admin.POST("/users/:id/ban", handlers.BanUser)
 		admin.POST("/users/:id/unban", handlers.UnbanUser)
 		admin.POST("/users/:id/password-reset", handlers.CreatePasswordResetCode)

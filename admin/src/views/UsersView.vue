@@ -5,11 +5,14 @@
         <p class="eyebrow">用户目录</p>
         <h2>用户管理</h2>
       </div>
-      <button class="ghost small-button" type="button" @click="load">刷新</button>
+      <div class="page-actions">
+        <router-link class="primary small-button add-user" to="/invitations">添加用户</router-link>
+        <button class="ghost small-button" type="button" @click="load">刷新</button>
+      </div>
     </section>
 
     <div class="toolbar">
-      <input v-model.trim="search" placeholder="搜索昵称或 openid" @keyup.enter="load" />
+      <input v-model.trim="search" placeholder="搜索登录名、昵称或 OpenID" @keyup.enter="load" />
       <select v-model="status" @change="load">
         <option value="">全部状态</option>
         <option value="active">正常</option>
@@ -21,18 +24,19 @@
     <p v-if="error" class="error">{{ error }}</p>
     <table class="data-table">
       <thead>
-				<tr><th>ID</th><th>用户</th><th>OpenID</th><th>最近登录</th><th>角色</th><th>状态</th><th>躺平分钟</th><th></th></tr>
+        <tr><th>ID</th><th>登录名</th><th>昵称</th><th>OpenID</th><th>最近登录</th><th>角色</th><th>状态</th><th>躺平分钟</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="user in users" :key="user.id">
           <td>#{{ user.id }}</td>
-          <td>{{ user.nickname || user.openid || '-' }}</td>
-					<td><code>{{ user.openid || '-' }}</code></td>
+          <td>{{ user.username || '-' }}</td>
+          <td>{{ user.nickname || '-' }}</td>
+          <td><code>{{ user.openid || '-' }}</code></td>
 					<td><span>{{ formatDate(user.last_login_at) }}</span><small v-if="user.last_login_method">{{ loginMethod(user.last_login_method) }}</small></td>
           <td><span class="pill">{{ user.role === 'admin' ? '管理员' : '用户' }}</span></td>
 					<td>{{ userStatus(user) }}</td>
           <td>{{ user.slack_balance || 0 }}</td>
-          <td><router-link class="link" :to="`/users/${user.id}`">查看</router-link></td>
+          <td class="actions"><router-link class="link" :to="`/users/${user.id}`">查看</router-link><button v-if="canDelete(user)" class="delete-button" type="button" :disabled="deletingId === user.id" @click="remove(user)">{{ deletingId === user.id ? '删除中...' : '删除' }}</button></td>
         </tr>
       </tbody>
     </table>
@@ -48,6 +52,7 @@ const users = ref<AdminUser[]>([])
 const search = ref('')
 const status = ref('')
 const error = ref('')
+const deletingId = ref<number | null>(null)
 
 async function load() {
   error.value = ''
@@ -59,6 +64,25 @@ async function load() {
   }
 }
 
+function canDelete(user: AdminUser) {
+  return user.role !== 'admin' && user.account_status !== 'deleted'
+}
+
+async function remove(user: AdminUser) {
+  const label = user.username || user.nickname || `用户 #${user.id}`
+  if (!window.confirm(`确认删除 ${label}？该操作会清理学习数据并无法恢复。`)) return
+  deletingId.value = user.id
+  error.value = ''
+  try {
+    await AdminApi.deleteUser(user.id)
+    await load()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '删除用户失败'
+  } finally {
+    deletingId.value = null
+  }
+}
+
 onMounted(load)
 function formatDate(value?: string){if(!value)return '从未登录';const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString('zh-CN',{hour12:false})}
 function loginMethod(value:string){const labels:Record<string,string>={h5_password:'H5 密码',h5_register:'H5 注册',wechat:'微信',wechat_register:'微信注册',wechat_link:'微信绑定'};return labels[value]||value}
@@ -66,5 +90,5 @@ function userStatus(user:AdminUser){if(user.account_status==='deleted')return '�
 </script>
 
 <style scoped>
-td code{display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}td small{display:block;margin-top:4px;color:#7a8790}
+.page-actions,.actions{display:flex;align-items:center;gap:10px}.add-user{display:inline-flex;align-items:center}.delete-button{border:0;background:transparent;color:#b42318;cursor:pointer;font-weight:900}.delete-button:disabled{cursor:default;opacity:.55}td code{display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}td small{display:block;margin-top:4px;color:#7a8790}
 </style>

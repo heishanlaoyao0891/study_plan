@@ -92,7 +92,7 @@ func ListUsers(c *gin.Context) {
 	q := db.DB.Model(&models.User{})
 	if search != "" {
 		like := "%" + search + "%"
-		q = q.Where("nickname LIKE ? OR open_id LIKE ?", like, like)
+		q = q.Where("username LIKE ? OR nickname LIKE ? OR open_id LIKE ?", like, like, like)
 	}
 	if status == "banned" {
 		q = q.Where("banned_until IS NOT NULL AND banned_until > ?", time.Now())
@@ -319,6 +319,47 @@ func UnbanUser(c *gin.Context) {
 	user.BannedReason = ""
 	adminID := c.GetUint(middleware.CtxUserIDKey)
 	recordAdminAudit(adminID, &user.ID, "unban_user", "")
+	api.OK(c, user)
+}
+
+// DeleteAdminUser 管理员：按既有账户删除策略清理普通用户数据并匿名化身份。
+func DeleteAdminUser(c *gin.Context) {
+	adminID := c.GetUint(middleware.CtxUserIDKey)
+	targetID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		api.Fail(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+	if uint(targetID) == adminID {
+		api.Fail(c, http.StatusBadRequest, "cannot delete yourself")
+		return
+	}
+
+	var user models.User
+	if err := db.DB.First(&user, targetID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			api.Fail(c, http.StatusNotFound, "user not found")
+			return
+		}
+		api.Fail(c, http.StatusInternalServerError, "query user failed: "+err.Error())
+		return
+	}
+	if user.Role == models.RoleAdmin {
+		api.Fail(c, http.StatusBadRequest, "cannot delete admin user")
+		return
+	}
+	if user.AccountStatus == models.AccountStatusDeleted {
+		api.Fail(c, http.StatusConflict, "user is already deleted")
+		return
+	}
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
+		return eraseUserAccount(tx, &user)
+	}); err != nil {
+		api.Fail(c, http.StatusInternalServerError, "delete user failed: "+err.Error())
+		return
+	}
+	db.DB.Create(&models.AccountEvent{UserID: user.ID, EventType: "admin_delete", Detail: "deleted by administrator"})
+	recordAdminAudit(adminID, &user.ID, "delete_user", "")
 	api.OK(c, user)
 }
 

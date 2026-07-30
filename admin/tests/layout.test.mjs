@@ -40,3 +40,15 @@ test('AI invocation history exposes pagination and uses full workspace width', a
   assert.match(source, /\.invocation-table \{ table-layout:fixed;/)
   assert.doesNotMatch(source, /min-width:1100px/)
 })
+
+test('user directory exposes account identities and safe management actions', async () => {
+  const source = await view('UsersView.vue')
+
+  assert.match(source, /搜索登录名、昵称或 OpenID/)
+  assert.match(source, /<th>登录名<\/th><th>昵称<\/th><th>OpenID<\/th>/)
+  assert.match(source, /\{\{ user\.username \|\| '-' \}\}/)
+  assert.match(source, /to="\/invitations">添加用户<\/router-link>/)
+  assert.match(source, /AdminApi\.deleteUser\(user\.id\)/)
+  assert.match(source, /确认删除 \$\{label\}？该操作会清理学习数据并无法恢复。/)
+  assert.match(source, /user\.role !== 'admin' && user\.account_status !== 'deleted'/)
+})
