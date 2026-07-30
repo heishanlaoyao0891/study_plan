@@ -118,6 +118,16 @@ test('authenticated clients recover an existing server-side study timer without 
   assert.match(app, /await routeForAuthenticatedUser\(user\)/)
 })
 
+test('task detail always exposes a task-list exit without mutating the timer', async () => {
+  const task = await source('pages/task/task.vue')
+
+  assert.match(task, /class="task-list" @click="goTaskList">任务列表<\/button>/)
+  assert.match(task, /function goTaskList\(\)\{uni\.switchTab\(\{url:'\/pages\/checkin\/checkin'\}\)\}/)
+  assert.match(task, /\.anchor \.task-list,\.anchor \.more\{flex:none;width:132rpx/)
+  const taskListFunction = task.match(/function goTaskList\(\)\{[^}]+\}/)?.[0] || ''
+  assert.doesNotMatch(taskListFunction, /StudyTaskApi\.(start|resume|pause|stop|complete)\(/)
+})
+
 test('AI client uses durable jobs without preview or commit state', async () => {
   const [api, ai, plans] = await Promise.all([
     source('api/index.ts'),

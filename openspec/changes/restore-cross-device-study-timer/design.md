@@ -23,12 +23,14 @@ Study sessions are already persisted with a server timestamp and a database cons
 - **Use the existing timer view builder.** This keeps `accumulated_seconds`, target duration, state, and session timestamp consistent with task detail and check-in responses, instead of duplicating elapsed-time calculations in the client.
 - **Resolve navigation after a token is stored.** The shared client helper first respects onboarding requirements, then fetches the active task, and falls back to `/pages/checkin/checkin` if none exists or recovery lookup has a transient failure. A lookup failure must not block a successful login.
 - **Navigate directly to task detail without calling start/resume.** The task page reloads server state and ticks only from the loaded snapshot, so recovery cannot create a second session or reset elapsed time.
+- **Use a tab navigation exit rather than browser history.** Recovery opens task detail through `reLaunch`, which has no reliable back stack in H5. A visible task-list action uses `switchTab` to the check-in page so users can leave the timer without pausing it.
 
 ## Risks / Trade-offs
 
 - [A failed recovery lookup could make login feel broken] → Fall back to the established check-in route and leave the existing task visible there.
 - [An open session spanning midnight is stale] → Existing midnight compensation remains authoritative and runs before normal navigation; the active endpoint returns only an actually open row.
 - [A client holds an invalid token] → Existing 401 handling clears credentials; recovery makes no special exception.
+- [A recovered detail page can trap the user] → Keep a persistent task-list action outside the primary timer action; it works without navigation history and does not mutate the session.
 
 ## Migration Plan
 

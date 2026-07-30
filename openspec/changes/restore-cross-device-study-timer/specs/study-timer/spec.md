@@ -25,3 +25,10 @@ The client SHALL, after successfully storing a complete account's authentication
 #### Scenario: WeChat login resumes a running timer
 - **WHEN** mini-program authentication succeeds for a user with an active study session
 - **THEN** the client opens the active task and displays the continuing server-derived duration
+
+### Requirement: Recovered task detail has a stable exit to the task list
+The task detail view SHALL provide a persistent navigation action to the check-in task list. The action SHALL work when the task detail was opened through authentication recovery and SHALL not pause, resume, stop, or create a study session.
+
+#### Scenario: Leave a recovered task detail view
+- **WHEN** a user opens task detail through H5 or mini-program authentication recovery and selects the task-list action
+- **THEN** the client navigates to the check-in task list while the active session remains unchanged
