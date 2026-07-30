@@ -33,7 +33,7 @@ ADMIN_USERNAME=<admin-username>
 ADMIN_PASSWORD=<initial-admin-password>
 AI_KEY_ENCRYPTION_SECRET=<strong-random-server-side-secret>
 AVATAR_STORAGE=minio
-AVATAR_BASE_URL=https://assets.example.com/study-plan-assets
+AVATAR_BASE_URL=https://assets.slls.asia/study-plan-assets
 MINIO_ROOT_USER=<minio-admin-user>
 MINIO_ROOT_PASSWORD=<minio-strong-password>
 MINIO_BUCKET=study-plan-assets
@@ -42,25 +42,25 @@ ARCHIVE_DRIVER=mysql
 ARCHIVE_DSN=
 ARCHIVE_INTERVAL_MINUTES=5
 ARCHIVE_TABLES=users,plans,daily_tasks,checkins,study_sessions,slack_records
-BACKEND_PORT=8080
-FRONTEND_PORT=80
-ADMIN_PORT=8081
-MINIO_API_PORT=9000
-MINIO_CONSOLE_PORT=9001
+BACKEND_PORT=127.0.0.1:8080
+FRONTEND_PORT=127.0.0.1:8082
+ADMIN_PORT=127.0.0.1:8081
+MINIO_API_PORT=127.0.0.1:9000
+MINIO_CONSOLE_PORT=127.0.0.1:9001
 FRONTEND_API_BASE=/api
 ADMIN_API_BASE=
 ```
 
 ## Published Services
 
-- Frontend H5: `http://<server>:${FRONTEND_PORT}`.
-- Backend API: `http://<server>:${BACKEND_PORT}` and also proxied from frontend/admin `/api`.
-- Admin console: `http://<server>:${ADMIN_PORT}`.
-- MinIO API: `http://<server>:${MINIO_API_PORT}`.
-- MinIO console: `http://<server>:${MINIO_CONSOLE_PORT}`.
+- Frontend H5: `https://slls.asia/`.
+- Backend API: `https://slls.asia/api/`.
+- Admin console: `https://slls.asia/admin/`.
+- Health check: `https://slls.asia/health`.
+- Backend, frontend, admin, and MinIO host ports remain loopback-only for Nginx and SSH diagnostics.
 - Container names: `study-plan-backend`, `study-plan-frontend`, `study-plan-admin`, `study-plan-minio`, `study-plan-minio-init`.
 
-For a production domain, put Nginx or a cloud load balancer in front of these ports and enable HTTPS. The backend SQLite database is stored in the Docker volume `study-plan-data` at `/data/study_plan.db` inside the backend container. MinIO object data is stored in the Docker volume `study-plan-minio-data`.
+The production Nginx proxy uses `deploy/nginx.slls.conf`, redirects HTTP to HTTPS, and exposes the registered domain instead of raw service ports. The backend SQLite database is stored in the Docker volume `study-plan-data` at `/data/study_plan.db` inside the backend container. MinIO object data is stored in the Docker volume `study-plan-minio-data`.
 
 The deployment creates the bucket from `MINIO_BUCKET` and sets anonymous download permission. The current app stores avatar URLs; upload workflow still needs to place files into MinIO and then save the resulting public URL through the avatar API.
 
@@ -72,3 +72,5 @@ After deployment, configure AI through the admin console with provider `siliconf
 cd /opt/study-plan
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
 ```
+
+Record `git rev-parse HEAD` and take a data backup before deployment. If HTTPS smoke checks fail, check out the previous revision and rerun the same Compose command without removing named volumes.

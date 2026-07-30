@@ -1,13 +1,76 @@
-# WeChat Mini Program Submission Checklist
+# 微信小程序 1.0.1 提审清单
 
-- Privacy policy and user agreement are reachable from the mini program settings page.
-- Phone number collection is disclosed as account verification and safety use only.
-- Personal-subject mini programs cannot rely on WeChat phone-number verification; keep `PHONE_BINDING_REQUIRED=false` unless the app is a certified non-personal subject.
-- If `PHONE_BINDING_REQUIRED=true`, WeChat phone-number capability cost, quota, and account eligibility are confirmed in the WeChat console before release.
-- AI plan generation copy states that generated plans are editable suggestions, not professional advice or guaranteed outcomes.
-- Slack minutes are described as non-monetary rest minutes with no cash or tradable value.
-- Reminder subscription copy clearly states that WeChat subscription messages require user authorization and can be turned off.
-- Ranking and group features are framed as friendly study motivation, not pressure or punishment.
-- Feedback and problem report entry is reachable.
-- Version notes are reachable and can be updated from admin console.
-- Account deletion or retention flow is documented before submission.
+发布目标：`wx985c473e161501fc` / `1.0.1 (101)` / `https://slls.asia`
+
+## 基础设施
+
+- [ ] `slls.asia` 和 `www.slls.asia` DNS 指向当前生产服务器。
+- [ ] HTTPS 证书在有效期内，证书链完整，TLS 1.2/1.3 可用。
+- [ ] `https://slls.asia/health` 返回成功。
+- [ ] `https://slls.asia/` 与 `https://slls.asia/admin/` 可访问。
+- [ ] 已记录发布前 Git revision、数据库备份路径和 MinIO 备份状态。
+
+## 微信公众平台
+
+- [ ] request 合法域名已添加 `https://slls.asia`，平台校验通过。
+- [ ] 服务器生产环境 `WECHAT_LOGIN_MOCK=false`，AppID/AppSecret 与当前小程序一致。
+- [ ] 服务类目覆盖学习计划、效率工具等实际功能。
+- [ ] 用户隐私保护指引已声明登录标识、头像昵称及学习记录用途。
+- [ ] 如启用手机号能力，账号资质、费用、额度和隐私声明已确认；未启用时页面不强制索取手机号。
+- [ ] 如启用订阅消息，模板已审核并完成真实发送验证；未完成时不把占位事件描述为已推送。
+
+## 发布包
+
+- [ ] 已运行 `cd frontend && npm run release:mp-weixin`。
+- [ ] 发布包目录为 `frontend/dist/build/mp-weixin`。
+- [ ] 微信开发者工具显示 AppID `wx985c473e161501fc` 和版本 `1.0.1`。
+- [ ] 正式验收未依赖“开发环境不校验请求域名”。
+- [ ] 版本说明与实际功能一致，不承诺未上线的支付、真实订阅推送或其他能力。
+
+## 审核文案与合规
+
+- [ ] 设置页可访问隐私政策与用户协议。
+- [ ] 手机号仅用于账号核验与安全目的，收集用途已明确披露。
+- [ ] 个人主体不依赖微信手机号能力；除非已认证为符合资质的非个人主体，否则保持 `PHONE_BINDING_REQUIRED=false`。
+- [ ] 如设置 `PHONE_BINDING_REQUIRED=true`，已确认微信手机号能力费用、额度和账号资质。
+- [ ] AI 计划明确描述为可编辑建议，不构成专业意见，也不承诺结果。
+- [ ] 躺平时间明确为不可提现、不可交易的休息分钟，不描述为真实货币。
+- [ ] 订阅提醒文案说明需要用户授权且可关闭。
+- [ ] 排行与学习组描述为友好学习激励，不包含惩罚或过度施压文案。
+- [ ] 意见反馈和问题报告入口可访问。
+- [ ] 版本说明可访问，并可由管理台更新。
+- [ ] 账号注销、数据删除或保留流程已在提审材料中说明。
+
+## 真机冒烟
+
+- [ ] 新用户微信登录、昵称初始化成功。
+- [ ] 老用户重新登录和 Token 续用正常。
+- [ ] 创建普通计划、查看计划和任务正常。
+- [ ] AI 计划提交、后台处理、成功结果查看正常；失败不扣用户成功次数。
+- [ ] 学习计时、暂停/继续、完成任务和每日打卡正常。
+- [ ] 躺平时间余额、记录与统计页面正常。
+- [ ] 头像加载正常；若 `assets.slls.asia` 尚未就绪，生产配置未启用不可达的头像 URL。
+- [ ] 服务端日志中请求 Host 为 `slls.asia`，没有旧 IP API 请求。
+
+## 审核与发布
+
+- [ ] 已在微信开发者工具上传 `1.0.1`。
+- [ ] 已保存上传时间、操作者和代码包截图。
+- [ ] 已提交审核并记录审核单号。
+- [ ] 审核反馈已处理，或确认审核通过。
+- [ ] 已选择发布时间并完成发布。
+- [ ] 发布后再次完成登录、计划、AI 生成和打卡冒烟。
+
+## 证据记录
+
+```text
+发布前 Git revision：
+服务器部署时间：
+数据库备份：
+MinIO 备份：
+微信上传时间 / 操作者：
+审核单号：
+正式发布时间：
+发布后验证人：
+回滚 revision：
+```

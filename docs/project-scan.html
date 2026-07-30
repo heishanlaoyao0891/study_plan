@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="project-scan-last-updated" content="2026-07-28" />
+  <meta name="project-scan-last-updated" content="2026-07-30" />
   <title>studyPlan 持续项目扫描报告</title>
   <style>
     :root { --bg:#0b1020; --panel:#121a2f; --panel2:#18233d; --text:#e8edf8; --muted:#9eabc3; --line:#2a3858; --blue:#73a7ff; --green:#61d7a3; --yellow:#ffd166; --red:#ff7a90; --violet:#b89cff; }
@@ -55,13 +55,13 @@
 </head>
 <body><main>
   <h1>studyPlan 持续项目扫描报告</h1>
-  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-28</div>
+  <div class="sub">重点：OpenSpec 已归档 / 未归档 changes、架构深度、测试与交付风险 · 最后更新：2026-07-30</div>
 
   <section class="grid metrics">
-    <div class="metric"><b>356</b><span>当前项目文件（跟踪 + 新增）</span></div>
-    <div class="metric"><b>24</b><span>OpenSpec changes</span></div>
-    <div class="metric"><b>11 / 13</b><span>未归档 / 已归档</span></div>
-    <div class="metric"><b>342 / 368</b><span>未归档任务已完成</span></div>
+    <div class="metric"><b>377</b><span>当前项目文件（跟踪 + 新增）</span></div>
+    <div class="metric"><b>25</b><span>OpenSpec changes</span></div>
+    <div class="metric"><b>12 / 13</b><span>未归档 / 已归档</span></div>
+    <div class="metric"><b>353 / 379</b><span>未归档任务已完成</span></div>
     <div class="metric"><b>184</b><span>Go 测试函数</span></div>
     <div class="metric"><b>13</b><span>主规格能力模块</span></div>
   </section>
@@ -81,6 +81,7 @@
   <table>
     <thead><tr><th>日期</th><th>范围</th><th>更新摘要</th><th>验证</th></tr></thead>
     <tbody>
+      <tr><td>2026-07-30</td><td>备案域名与微信小程序 1.0.1 发布准备</td><td>新增 <code>prepare-domain-and-wechat-release</code>（11/11），将 <code>https://slls.asia</code> 统一为 H5、<code>/admin/</code>、<code>/api/</code> 与小程序生产请求入口；生产 Compose 移除 <code>:82</code> IP 测试映射，Nginx 与部署文档统一 HTTPS、loopback 排障和保留数据卷的回滚路径。小程序 manifest 升至 <code>1.0.1 (101)</code>，新增 <code>npm run release:mp-weixin</code>，构建前拒绝 HTTP、IP、空域名、开发覆盖、错误 AppID 与陈旧版本，构建后校验真实 AppID、生产域名和产物。</td><td>前端 7 项测试、type-check、微信构建及 74 个产物文件检查通过；后端全量测试/vet、管理端 2 项测试/type-check/build、Compose YAML 与 Nginx 静态契约、OpenSpec strict validate 通过。线上 <code>/health</code>、H5、管理台均返回 200，Let's Encrypt 证书覆盖根域和 www，有效期至 2026-10-22。本机无 Docker CLI，未执行本地 <code>docker compose config</code>，已用 YAML 解析替代；微信合法域名、真机测试、上传、审核与发布仍需按提审清单人工完成。</td></tr>
       <tr><td>2026-07-28</td><td>修复管理台 Token 总量不更新</td><td>确认 AI 计划的真实模型请求已迁移到 <code>ai_plan_generation_jobs</code>，每次调用的 Token 实际记录在 <code>ai_invocation_logs</code>；旧聚合仍读取 legacy <code>planning_jobs</code> Token 字段，因而长期显示 0 或历史值。后端现以最近 30 天不可变 invocation ledger 统一汇总 prompt、completion 和 total Token，覆盖 outline、分批扩展、修复及 provider 重试等真实调用；管理台刷新调用流水时并行刷新顶部聚合指标，避免页面打开后的数值停滞。</td><td><code>build-constrained-planning-agent</code> 从 86/86 扩展到 89/89；后端回归覆盖 invocation Token 合计，管理端新增刷新聚合指标契约。后端全量测试（184 个测试函数）与 vet、管理端 2 项测试/type-check/build、OpenSpec strict validate 和 diff check 通过。</td></tr>
       <tr><td>2026-07-28</td><td>优化 AI 拆解 Prompt 完整度与任务覆盖</td><td>诊断确认模型蓝图从解析、归一化、排程到落库均遍历全部任务，不存在只截取前半段；30 天计划因每批最多 10 天，正常至少产生 3 次模型调用，同一 <code>batch_index</code> 的 <code>repairing</code> 才属于校验重试。新增后端固定 <code>planning_blueprint_v2</code> 模板，完整投喂目标、天数、每日小时、开始日期、可用时段、跳过日期、追加说明、安全学习画像、精确 Schema 和固定规则；有效容量统一取每日小时与实际时段的较小值。短计划要求粗粒度覆盖基础、练习、综合应用和复盘验收的完整闭环；长计划分批保留原始总周期，并把已完成阶段、最近任务及 foundation/progression/completion 角色传给后续批次，避免每批重复基础内容。</td><td><code>build-constrained-planning-agent</code> 从 80/80 扩展到 86/86；新增完整参数/容量对齐、周期颗粒度、跨批进度衔接和全部模型任务不被截取的红绿回归测试。后端全量测试（184 个测试函数）、<code>go vet ./...</code> 与 OpenSpec strict validate 通过。</td></tr>
       <tr><td>2026-07-28</td><td>修复 AI 成功态入口与管理台侧栏抖动</td><td>AI 页面恢复到已成功且带 <code>result_plan_id</code> 的持久化 job 后，主操作改为“查看已保存计划”并直接打开计划详情；如需再次创建，使用独立的“生成另一个计划”操作，不再把已保存状态误显示为“重新生成计划”。管理台侧栏从参与整页 Grid 重排改为固定定位，宽度统一由 <code>--admin-sidebar-width</code> 管理，内容区使用同一变量留出偏移，避免路由内容宽度和滚动条变化影响菜单宽度。</td><td>先新增可失败的回归契约，再完成修复；前端 5 项测试、管理端 1 项布局测试、两端 type-check、H5/微信小程序构建及管理端 Vite build 全部通过。</td></tr>
@@ -142,10 +143,10 @@
   <section class="grid three">
     <div class="card"><h3>前端</h3><p>Vue 3 + UniApp + TypeScript，覆盖 H5 与多小程序构建。核心热点是 <code>checkin.vue</code>、<code>login.vue</code> 和统一 <code>api/index.ts</code>。</p></div>
     <div class="card"><h3>后端</h3><p>Go + Gin + GORM。业务实现主要集中在 handlers；<code>plan.go</code> 1066 行、<code>study.go</code> 1000 行、<code>group.go</code> 824 行。</p></div>
-    <div class="card"><h3>部署</h3><p>Docker Compose：backend、frontend、admin、MinIO。SQLite 为主存储，可选 MySQL 归档同步。</p></div>
+    <div class="card"><h3>部署</h3><p>Docker Compose：backend、frontend、admin、MinIO。生产统一通过 <code>https://slls.asia</code> 暴露 H5、管理台与 API，容器端口保持 loopback；SQLite 为主存储，可选 MySQL 归档同步。微信 1.0.1 候选包已生成，待人工提审发布。</p></div>
   </section>
 
-  <h2>未归档 changes（11）</h2>
+  <h2>未归档 changes（12）</h2>
   <table>
     <thead><tr><th>Change</th><th>完成度</th><th>Delta</th><th>判断</th></tr></thead>
     <tbody>
@@ -157,6 +158,7 @@
       <tr><td>improve-daily-checkin-and-timer-experience</td><td>33/35<div class="bar"><i style="width:94%"></i></div></td><td>6 / 25</td><td><span class="pill mid">缺测试闭环</span> 后端边界与前端状态检查仍未完成。</td></tr>
       <tr><td>improve-learning-economy-and-insights</td><td>32/32<div class="bar"><i style="width:100%"></i></div></td><td>6 / 7</td><td><span class="pill good">完成</span> 已补充运行时加固与跨平台图表升级，可进入严格校验与归档。</td></tr>
       <tr><td>improve-plan-schedule-and-reminder-settings</td><td>16/16<div class="bar"><i style="width:100%"></i></div></td><td>2 / 3</td><td><span class="pill good">完成</span> 建议在 refine change 之前归档。</td></tr>
+      <tr><td>prepare-domain-and-wechat-release</td><td>11/11<div class="bar"><i style="width:100%"></i></div></td><td>1 / 3</td><td><span class="pill good">本地完成</span> 域名、TLS、生产构建与提审资料已就绪；微信合法域名确认、真机预览、上传、审核和发布属于外部验收。</td></tr>
       <tr><td>productionize-siliconflow-ai-planning</td><td>19/19<div class="bar"><i style="width:100%"></i></div></td><td>2 / 4</td><td><span class="pill good">完成</span> 应作为 constrained planner 的前置基线归档。</td></tr>
       <tr><td>productionize-deepseek-ai-planning</td><td>0/0<div class="bar"><i style="width:0%"></i></div></td><td>空目录</td><td><span class="pill high">无产物</span> 既有空 change，导致全量 OpenSpec validate 失败，应清理或重建。</td></tr>
       <tr><td>refine-checkin-schedule-and-active-task-rules</td><td>69/89<div class="bar"><i style="width:78%"></i></div></td><td>5 / 21</td><td><span class="pill high">测试债集中</span> 20 项未完成，多数是边界、并发、UI 与迁移验证。</td></tr>
@@ -169,6 +171,7 @@
       <li>恢复 OpenSpec CLI 与 strict validate；修正验证脚本。</li>
       <li>先归档无依赖争议的完成项：<code>improve-learning-economy-and-insights</code>。</li>
       <li>AI 链：<code>productionize-siliconflow-ai-planning</code> → <code>build-constrained-planning-agent</code>。</li>
+      <li>发布链：<code>prepare-domain-and-wechat-release</code> 本地实现已完成，待微信公众平台外部验收后归档。</li>
       <li>计划/计时链：<code>improve-plan-schedule-and-reminder-settings</code> → <code>improve-daily-checkin-and-timer-experience</code> → <code>refine-checkin-schedule-and-active-task-rules</code>。</li>
       <li>认证链：先完成 <code>add-unified-h5-and-wechat-account-auth</code> 的真实验收，再决定与 <code>add-friendly-ban-state-experience</code> 的归档先后；后者依赖新 H5/微信登录路径。</li>
       <li>外部平台项单独标记 blocked：真实微信订阅模板验证不应和本地实现任务混在同一完成信号里。</li>
@@ -225,10 +228,10 @@
     <tbody>
       <tr><td>Go tests</td><td class="ok">通过</td><td>184 个测试函数；AI 管理指标回归现证明 prompt、completion 和 total Token 均从 invocation ledger 聚合，不再依赖 legacy planning job 字段。历史 coverage 数值未在本轮重算。</td></tr>
       <tr><td>Go vet</td><td class="ok">通过</td><td>无输出。</td></tr>
-      <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>前端与管理端 type-check、H5 build、微信小程序 build、管理端 Vite build 全部通过；仅有 Sass legacy API、UniApp 更新提示与管理端大 chunk 警告。</td></tr>
-      <tr><td>Frontend/Admin tests</td><td class="ok">7 项通过</td><td>前端 5 项覆盖个人入口迁移、H5 操作层级、小程序自动认证、AI durable-job 契约及已保存计划入口；管理端 2 项覆盖固定侧栏宽度与内容区偏移，以及调用流水刷新同步刷新 Token 聚合指标。</td></tr>
-      <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td>OpenSpec 1.6.0 已安装；<code>build-constrained-planning-agent</code> strict validate 无 issue。</td></tr>
-      <tr><td>Git</td><td class="ok">已交付</td><td>Token 聚合事实源与管理台刷新修复已完成验证，并随本轮提交推送至远端 master。</td></tr>
+      <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>微信小程序 1.0.1 production build、前端与管理端 type-check、管理端 Vite build 全部通过；发布校验检查了 74 个微信产物文件。仅有 Sass legacy API、微信 style 选择器与管理端大 chunk 警告。</td></tr>
+      <tr><td>Frontend/Admin tests</td><td class="ok">9 项通过</td><td>前端 7 项新增生产域名与错误 IP/HTTP/dev override/陈旧版本拒绝测试；管理端 2 项覆盖固定侧栏与 AI Token 指标刷新。</td></tr>
+      <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td><code>prepare-domain-and-wechat-release</code> strict validate 无 issue，11/11 项本地任务完成。</td></tr>
+      <tr><td>Git</td><td class="ok">已交付</td><td>备案域名与微信 1.0.1 发布准备已完成验证，并随本轮提交推送至远端 master。</td></tr>
     </tbody>
   </table>
 

@@ -33,7 +33,6 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-80}:80"
-      - "${IP_TEST_PORT:-82}:80"
     restart: unless-stopped
 
   admin:
