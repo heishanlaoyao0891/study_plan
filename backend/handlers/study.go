@@ -651,6 +651,10 @@ func MakeupTask(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if task.Status == models.TaskStatusInProgress || task.Status == models.TaskStatusCompleted {
+		api.Fail(c, http.StatusConflict, "running or completed tasks cannot be corrected")
+		return
+	}
 	var req makeupTaskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		api.Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())

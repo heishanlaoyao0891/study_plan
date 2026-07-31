@@ -494,6 +494,24 @@ func TestMakeupDateTimeUsesShanghaiDateAndStoresSeconds(t *testing.T) {
 	}
 }
 
+func TestMakeupTaskRejectsRunningAndCompletedTasks(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{OpenID: "makeup-state", Nickname: "makeup-state", SlackBalance: 200}
+	db.DB.Create(&user)
+	plan := models.Plan{UserID: user.ID, Title: "P"}
+	db.DB.Create(&plan)
+	payload := gin.H{"actual_date": "2020-01-02", "actual_start": "20:00", "actual_end": "20:01"}
+	for _, status := range []string{models.TaskStatusInProgress, models.TaskStatusCompleted} {
+		task := models.DailyTask{UserID: user.ID, PlanID: plan.ID, Date: "2020-01-02", Title: "Read", Objective: "finish chapter one", PlannedStart: "20:00", PlannedEnd: "21:00", Status: status}
+		if err := db.DB.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		if code := callTaskHandler(t, MakeupTask, user.ID, task.ID, payload); code != http.StatusConflict {
+			t.Fatalf("expected %s makeup conflict, got %d", status, code)
+		}
+	}
+}
+
 func TestEnsureDailyTaskRequiresActivePlanAndDoesNotInventObjective(t *testing.T) {
 	setupTestDB(t)
 	plan := models.Plan{UserID: 1, Title: "P", Description: "not an objective", Status: models.PlanStatusPaused, StudyDates: []string{"2026-07-20"}}

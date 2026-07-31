@@ -7,14 +7,14 @@
       <view class="loading" v-if="loading">正在读取提醒设置...</view>
       <view class="reminder-list" v-else>
         <view class="reminder" v-for="template in templates" :key="template.template_id">
-          <view class="reminder-head"><view><view class="reminder-name">{{ reminderCopy(template.reminder_type).name }}</view><view class="reminder-purpose">{{ reminderCopy(template.reminder_type).purpose }}</view></view><view :class="['state', { active: subscriptionFor(template.reminder_type) }]">{{ subscriptionFor(template.reminder_type) ? '已留存授权' : '尚未授权' }}</view></view>
-          <view class="record" v-if="subscriptionFor(template.reminder_type)">当前记录：{{ recordDate(subscriptionFor(template.reminder_type)?.updated_at) }} 更新。消息发送后仍建议再次授权，确保下一次可用。</view>
-          <view class="record" v-else>当前没有可用的授权记录，不会发送此类提醒。</view>
-          <button class="authorize" :disabled="authorizing === template.reminder_type" @click="authorize(template)">{{ authorizing === template.reminder_type ? '授权中...' : subscriptionFor(template.reminder_type) ? '再次授权' : '授权此提醒' }}</button>
+          <view class="reminder-head"><view><view class="reminder-name">{{ reminderCopy(template.reminder_type).name }}</view><view class="reminder-purpose">{{ reminderCopy(template.reminder_type).purpose }}</view></view><view :class="['state', { active: subscriptionFor(template.reminder_type) }]">{{ subscriptionFor(template.reminder_type) ? '本次授权待使用' : '尚未授权' }}</view></view>
+          <view class="record" v-if="subscriptionFor(template.reminder_type)">本次授权于 {{ recordDate(subscriptionFor(template.reminder_type)?.updated_at) }} 留存。微信成功发送一条此类提醒后会自动消耗，需要下一次提醒时请再次授权。</view>
+          <view class="record" v-else>当前没有待使用的授权；你可在需要提醒前主动补充一次授权。</view>
+          <button class="authorize" :disabled="authorizing === template.reminder_type" @click="authorize(template)">{{ authorizing === template.reminder_type ? '授权中...' : subscriptionFor(template.reminder_type) ? '补充下一次授权' : '授权此提醒' }}</button>
         </view>
         <view class="empty" v-if="!templates.length">管理员暂未启用提醒模板</view>
       </view>
-      <button class="cancel-all" v-if="subscriptions.length" @click="unsubscribe">取消全部提醒授权记录</button>
+      <button class="cancel-all" v-if="subscriptions.length" @click="unsubscribe">清除待使用授权</button>
       <!-- #endif -->
       <!-- #ifndef MP-WEIXIN -->
       <view class="desc unsupported">H5 不支持微信订阅消息授权。请使用已绑定同一账号的微信小程序，在“提醒设置”中逐项完成授权；每次授权通常只支持发送一次。</view>
@@ -60,7 +60,7 @@ async function authorize(template: NotificationTemplate) {
   try {
     const results = await new Promise<Record<string, string>>((resolve, reject) => { uni.requestSubscribeMessage({ tmplIds: [template.template_id], success: result => resolve(result as unknown as Record<string, string>), fail: reject }) })
     const saved = await NotificationApi.subscribe(template.reminder_type, template.template_id, results[template.template_id])
-    uni.showToast({ title: saved.accepted.includes(template.reminder_type) ? '授权记录已更新' : results[template.template_id] === 'reject' ? '你拒绝了此提醒' : '未获得授权', icon: 'none' })
+    uni.showToast({ title: saved.accepted.includes(template.reminder_type) ? '本次提醒已授权' : results[template.template_id] === 'reject' ? '你拒绝了此提醒' : '未获得授权', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '授权失败', icon: 'none' }) } finally { authorizing.value = ''; await load() }
   // #endif
 }

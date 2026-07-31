@@ -196,6 +196,49 @@ func TestSchedulePlanningBlueprintPreservesEveryModelTask(t *testing.T) {
 	}
 }
 
+func TestSchedulePlanningBlueprintUsesActualScheduleSpanInTitle(t *testing.T) {
+	blueprint := validBlueprint()
+	blueprint.Title = "Java 7天学习计划"
+	blueprint.Tasks[1].EffortMinutes = 60
+	for index := 3; index <= 7; index++ {
+		blueprint.Tasks = append(blueprint.Tasks, PlanningBlueprintTask{
+			ID: fmt.Sprintf("task_%d", index), StageID: "foundation", Title: fmt.Sprintf("Java 阶段 %d", index),
+			Objective: fmt.Sprintf("完成 Java 阶段 %d 的练习", index), Description: "执行并验证", EffortMinutes: 60,
+			Difficulty: "medium", Order: index,
+		})
+	}
+	preview, _, err := SchedulePlanningBlueprint(PlanningContext{Input: PlanGenerationInput{
+		Goal: "学习 Java", Days: 7, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00",
+		SkipDates: []string{"2026-08-04"},
+	}}, blueprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Title != "Java 学习计划（安排跨度 8 天）" {
+		t.Fatalf("title did not replace model duration with actual scheduled span: %q", preview.Title)
+	}
+}
+
+func TestSchedulePlanningBlueprintKeepsThirtyDayCadenceWhenTasksFitEarlier(t *testing.T) {
+	blueprint := PlanningBlueprint{Title: "Go 实战计划", Summary: "分阶段练习", Rationale: "保持每天推进", Stages: []PlanningBlueprintStage{{ID: "stage", Name: "实践", Objective: "完成学习闭环", Order: 1}}}
+	for index := 1; index <= 32; index++ {
+		blueprint.Tasks = append(blueprint.Tasks, PlanningBlueprintTask{
+			ID: fmt.Sprintf("task_%d", index), StageID: "stage", Title: fmt.Sprintf("练习 %d", index),
+			Objective: fmt.Sprintf("完成第 %d 项可验收练习", index), Description: "执行并验证", EffortMinutes: 30,
+			Difficulty: "medium", Order: index,
+		})
+	}
+	preview, _, err := SchedulePlanningBlueprint(PlanningContext{Input: PlanGenerationInput{
+		Goal: "系统学习 Go", Days: 30, HoursPerDay: 4, StartDate: "2026-08-01", AvailableTimeSlot: "18:00-22:00",
+	}}, blueprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Tasks) != 32 || preview.Tasks[len(preview.Tasks)-1].Date != "2026-08-30" || preview.Title != "Go 实战计划（安排跨度 30 天）" {
+		t.Fatalf("30-day plan was packed into too few days: title=%q tasks=%d last=%+v", preview.Title, len(preview.Tasks), preview.Tasks[len(preview.Tasks)-1])
+	}
+}
+
 func TestBlueprintBatchCheckpointResumesAfterFailure(t *testing.T) {
 	planningContext := PlanningContext{Input: PlanGenerationInput{Goal: "learn Go", Days: 30, HoursPerDay: 1, StartDate: "2026-08-01", AvailableTimeSlot: "20:00-21:00"}}
 	blueprintJSON, _ := json.Marshal(validBlueprint())

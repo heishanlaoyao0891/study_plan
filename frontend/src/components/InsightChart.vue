@@ -24,14 +24,14 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [index: number] }>()
 
 const canvasId = `insight-${Math.random().toString(36).slice(2, 9)}`
-const chartType = computed(() => props.dimension === 'time' ? 'mix' : 'bar')
+const chartType = computed(() => props.dimension === 'time' ? 'line' : 'bar')
 const chartData = computed(() => ({
   categories: props.points.map(point => point.plan_title || point.label),
   series: props.dimension === 'time'
     ? [
-        { name: '学习分钟', type: 'column', data: props.points.map(point => point.study_minutes), color: '#20745a' },
-        { name: '计划分钟', type: 'line', data: props.points.map(point => point.planned_minutes), color: '#d59a20' },
-        { name: '超时分钟', type: 'area', data: props.points.map(point => point.overtime_minutes), color: '#d35f72' },
+        { name: '学习分钟', data: props.points.map(point => point.study_minutes), color: '#20745a' },
+        { name: '计划分钟', data: props.points.map(point => point.planned_minutes), color: '#d59a20' },
+        { name: '超时分钟', data: props.points.map(point => point.overtime_minutes), color: '#d35f72' },
       ]
     : [
         { name: '学习分钟', data: props.points.map(point => point.study_minutes), color: '#20745a' },
@@ -54,7 +54,7 @@ const chartOptions = computed(() => ({
     : { disableGrid: true, fontSize: 9 },
   extra: props.dimension === 'time'
     ? {
-        mix: { column: { width: 14 }, line: { type: 'curve', width: 2 }, area: { type: 'curve', opacity: 0.12, width: 2 } },
+        line: { type: 'curve', width: 2 },
         tooltip: { showBox: true, showArrow: true, borderRadius: 6, bgColor: '#24362f', fontColor: '#ffffff', gridType: 'dash' },
       }
     : {

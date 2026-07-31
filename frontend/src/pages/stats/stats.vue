@@ -19,7 +19,7 @@
       <view class="empty" v-else-if="!trend || trend.summary.total_tasks === 0">这个范围内还没有学习计划</view>
       <template v-else>
         <view class="selected" v-if="selected"><text>{{ selected.plan_title || selected.label }}</text><text>学习 {{ selected.study_minutes }} 分 · 完成 {{ selected.completion_rate ?? 0 }}% · 超时 {{ selected.overtime_minutes }} 分</text></view>
-        <InsightChart :points="trend.series" :dimension="dimension" @select="selectedIndex = $event" />
+        <InsightChart :key="chartRenderKey" :points="trend.series" :dimension="dimension" @select="selectedIndex = $event" />
         <view class="chart-note">点击图形查看具体日期或计划；可点击图例切换指标。</view>
       </template>
     </view>
@@ -52,6 +52,7 @@ const cache = new Map<string, StatsTrend>()
 let requestSequence = 0
 const periodLabel = computed(() => periods.find(item => item.value === period.value)?.label || '')
 const selected = computed<StatsPoint | null>(() => trend.value?.series[selectedIndex.value] || null)
+const chartRenderKey = computed(() => `${dimension.value}:${trend.value?.series.map(point => point.key).join('|') || ''}`)
 
 function setPeriod(value: Period) { if (period.value === value) return; period.value = value; loadTrend() }
 function setDimension(value: Dimension) { if (dimension.value === value) return; dimension.value = value; loadTrend() }

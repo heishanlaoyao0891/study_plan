@@ -98,6 +98,32 @@ test('plan screens safely render legacy null schedule arrays', async () => {
   assert.match(detail, /function weekdaySummary\(selected: unknown\) \{ const days = Array\.isArray\(selected\) \? selected : \[\]/)
 })
 
+test('rearrangement preview differentiates conflicting and applicable tasks', async () => {
+  const recovery = await source('pages/recovery/recovery.vue')
+
+  assert.match(recovery, /'has-conflict': rowHasConflict\(row\), 'is-ready': rowIsReady\(row\)/)
+  assert.match(recovery, /存在冲突，请调整/)
+  assert.match(recovery, /可应用/)
+  assert.match(recovery, /const conflictingTaskIDs = computed\(\(\) =>/)
+  assert.match(recovery, /\.task\.is-ready\{background:#f2fff8/)
+  assert.match(recovery, /\.task\.has-conflict\{background:#fff3f4/)
+})
+
+test('plan editing sheets preserve mini-program input focus and scroll long forms', async () => {
+  const [plans, detail] = await Promise.all([
+    source('pages/plans/plans.vue'),
+    source('pages/plan-detail/plan-detail.vue'),
+  ])
+  const combined = `${plans}\n${detail}`
+
+  assert.doesNotMatch(combined, /@click\.self/)
+  assert.match(plans, /<scroll-view class="sheet-body" scroll-y @click\.stop>/)
+  assert.match(detail, /<scroll-view class="sheet-body" scroll-y @click\.stop>/)
+  assert.match(detail, /v-if="inviting" @click="inviting = false"/)
+  assert.match(plans, /\.sheet-body\{width:100%;height:90vh/)
+  assert.match(detail, /\.sheet-body\{width:100%;height:86vh/)
+})
+
 test('authenticated clients recover an existing server-side study timer without restarting it', async () => {
   const [api, routing, login, miniProgramAuth, app] = await Promise.all([
     source('api/index.ts'),
@@ -126,6 +152,50 @@ test('task detail always exposes a task-list exit without mutating the timer', a
   assert.match(task, /\.anchor \.task-list,\.anchor \.more\{flex:none;width:132rpx/)
   const taskListFunction = task.match(/function goTaskList\(\)\{[^}]+\}/)?.[0] || ''
   assert.doesNotMatch(taskListFunction, /StudyTaskApi\.(start|resume|pause|stop|complete)\(/)
+})
+
+test('completed-task overflow only edits reflection and switches sheets without overlap', async () => {
+  const task = await source('pages/task/task.vue')
+
+  assert.match(task, /v-if="canCorrectSchedule" @click="openCorrection\('postpone'\)">推迟任务<\/button>/)
+  assert.match(task, /v-if="canCorrectSchedule" @click="openCorrection\('makeup'\)">补录学习<\/button>/)
+  assert.match(task, /const canCorrectSchedule=computed\(\(\)=>detail\.value\?\.task\.timer_state==='pending'\|\|detail\.value\?\.task\.timer_state==='paused'\)/)
+  assert.match(task, /v-if="detail\.task\.timer_state === 'completed'" @click="openReflection">编辑完成心得<\/button>/)
+  assert.match(task, /showMore\.value=false;showCorrection\.value=false;await nextTick\(\);showReflection\.value=true/)
+  assert.match(task, /:disabled="savingReflection" @click="saveReflection"/)
+  assert.match(task, /if\(savingReflection\.value\)return/)
+})
+
+test('reminder settings represent WeChat authorization as one pending delivery', async () => {
+  const notifications = await source('pages/notifications/notifications.vue')
+
+  assert.match(notifications, /本次授权待使用/)
+  assert.match(notifications, /成功发送一条此类提醒后会自动消耗/)
+  assert.match(notifications, /补充下一次授权/)
+  assert.doesNotMatch(notifications, /已留存授权/)
+})
+
+test('statistics chart remounts when the time buckets or dimension change', async () => {
+  const [stats, chart] = await Promise.all([
+    source('pages/stats/stats.vue'),
+    source('components/InsightChart.vue'),
+  ])
+
+  assert.match(stats, /<InsightChart :key="chartRenderKey" :points="trend\.series" :dimension="dimension"/)
+  assert.match(stats, /const chartRenderKey = computed\(\(\) =>/)
+  assert.match(stats, /\$\{dimension\.value\}:\$\{trend\.value\?\.series\.map\(point => point\.key\)\.join\('\|'\) \|\| ''\}/)
+  assert.match(chart, /:canvas-id="canvasId"/)
+  assert.match(chart, /props\.dimension === 'time' \? 'line' : 'bar'/)
+  assert.doesNotMatch(chart, /props\.dimension === 'time' \? 'mix' : 'bar'/)
+})
+
+test('completed task detail offers a user-triggered next-reminder authorization', async () => {
+  const task = await source('pages/task/task.vue')
+
+  assert.match(task, /为下一次学习提醒授权/)
+  assert.match(task, /uni\.requestSubscribeMessage\(\{ tmplIds: \[template\.template_id\]/)
+  assert.match(task, /NotificationApi\.subscribe\('study_start',template\.template_id/)
+  assert.match(task, /&& canAuthorizeNextReminder"/)
 })
 
 test('AI client uses durable jobs without preview or commit state', async () => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,7 +29,10 @@ var planningBlueprintOutputRules = []string{
 	"每个 effort_minutes 必须在 15 到 720 之间，所有任务总和不得超过 total_capacity_minutes",
 	"任务颗粒度必须遵循 planning_strategy.granularity_rule，不能因容量有限而只输出学习目标的前半段",
 	"start_date、available_time_slot、skip_dates 仅是只读排程约束，不得出现在输出任务字段中",
+	"title 仅描述学习主题，不得包含计划天数、日期、时间段或安排跨度；后端会在排程完成后写入实际安排跨度",
 }
+
+var planTitleDurationPattern = regexp.MustCompile(`[0-9]+\s*天`)
 
 var planningBlueprintOutputSchema = json.RawMessage(`{"title":"string","summary":"string","rationale":"string","stages":[{"id":"stage_1","name":"string","objective":"string","order":1}],"tasks":[{"id":"task_1","stage_id":"stage_1","title":"string","objective":"specific action different from title","description":"string","effort_minutes":60,"difficulty":"easy|medium|hard","order":1,"prerequisite_ids":[]}]}`)
 
@@ -512,6 +516,11 @@ func SchedulePlanningBlueprint(ctx PlanningContext, blueprint PlanningBlueprint)
 	nextOffset := 0
 	tasks := make([]PlanPreviewTask, 0, len(blueprint.Tasks))
 	warnings := []string{}
+	// A requested plan length is a learning cadence, not a packing hint. When
+	// the model supplies enough tasks, reserve one task for every learning day
+	// before filling remaining free capacity on those days.
+	spreadAcrossRequestedDays := len(blueprint.Tasks) >= ctx.Input.Days
+	reservedDays := 0
 	for _, semanticTask := range blueprint.Tasks {
 		remaining := semanticTask.EffortMinutes
 		part := 1
@@ -539,6 +548,13 @@ func SchedulePlanningBlueprint(ctx PlanningContext, blueprint PlanningBlueprint)
 				occupied[date] = append(occupied[date], [2]int{taskStart, taskStart + duration})
 				remaining -= duration
 				part++
+				if spreadAcrossRequestedDays && reservedDays < ctx.Input.Days {
+					reservedDays++
+					nextOffset++
+					if reservedDays == ctx.Input.Days {
+						nextOffset = 0
+					}
+				}
 				allocated = true
 				break
 			}
@@ -551,9 +567,30 @@ func SchedulePlanningBlueprint(ctx PlanningContext, blueprint PlanningBlueprint)
 		return PlanPreview{}, warnings, fmt.Errorf("scheduled blueprint exceeds %d tasks", maxGeneratedPreviewTasks)
 	}
 	sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].Date < tasks[j].Date })
-	preview := PlanPreview{Title: strings.TrimSpace(blueprint.Title), Summary: strings.TrimSpace(blueprint.Summary), Rationale: strings.TrimSpace(blueprint.Rationale), Tasks: tasks}
+	preview := PlanPreview{Title: scheduledPlanTitle(blueprint.Title, tasks), Summary: strings.TrimSpace(blueprint.Summary), Rationale: strings.TrimSpace(blueprint.Rationale), Tasks: tasks}
 	recomputePlanTotals(&preview)
 	return preview, warnings, ValidatePlanPreview(preview, ctx.Input)
+}
+
+func scheduledPlanTitle(rawTitle string, tasks []PlanPreviewTask) string {
+	title := strings.TrimSpace(planTitleDurationPattern.ReplaceAllString(rawTitle, ""))
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		title = "学习计划"
+	}
+	if !strings.Contains(title, "计划") {
+		title += " 学习计划"
+	}
+	if len(tasks) == 0 {
+		return title
+	}
+	first, firstErr := time.Parse(aiPlanDateLayout, tasks[0].Date)
+	last, lastErr := time.Parse(aiPlanDateLayout, tasks[len(tasks)-1].Date)
+	if firstErr != nil || lastErr != nil || last.Before(first) {
+		return title
+	}
+	spanDays := int(last.Sub(first).Hours()/24) + 1
+	return fmt.Sprintf("%s（安排跨度 %d 天）", title, spanDays)
 }
 
 func validBlueprintID(value string) bool {
