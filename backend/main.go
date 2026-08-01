@@ -58,6 +58,7 @@ func main() {
 	// 需要登录
 	auth := apiGroup.Group("", middleware.Auth())
 	{
+		auth.GET("/client-features", handlers.GetClientFeatures)
 		auth.GET("/auth/me", handlers.CurrentUser)
 		auth.POST("/auth/deactivate", handlers.DeactivateAccount)
 		auth.PUT("/auth/avatar", handlers.UpdateAvatar)

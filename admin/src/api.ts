@@ -68,6 +68,7 @@ export interface AIConfig {
   background_job_timeout_seconds: number
   daily_generation_limit: number
   enabled: boolean
+  mini_program_ai_enabled: boolean
   api_key_masked?: string
   has_api_key?: boolean
   key_storage?: 'missing' | 'plaintext' | 'encrypted'

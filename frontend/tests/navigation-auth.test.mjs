@@ -230,3 +230,24 @@ test('AI page opens an already saved plan instead of presenting it as regenerati
   assert.match(ai, /生成另一个计划/)
   assert.doesNotMatch(ai, /return job\.value \? '重新生成计划'/)
 })
+
+test('mini-program AI planning is controlled by a fail-closed client feature', async () => {
+  const [request, api, plans, ai] = await Promise.all([
+    source('api/request.ts'),
+    source('api/index.ts'),
+    source('pages/plans/plans.vue'),
+    source('pages/ai/ai.vue'),
+  ])
+  assert.match(request, /X-Client-Platform.*mp-weixin/)
+  assert.match(request, /X-Client-Platform.*h5/)
+  assert.match(api, /ClientFeatureApi/)
+  assert.match(api, /\/api\/client-features/)
+  assert.match(plans, /const aiAvailable=ref\(!miniProgramBuild\)/)
+  assert.match(plans, /v-if="aiAvailable" @click="goAI"/)
+  assert.match(plans, /aiAvailable\.value\?AIApi\.currentPlanJob\(\)/)
+  assert.match(plans, /pageVisible&&aiAvailable\.value&&hasActiveAIJob\.value/)
+  assert.match(plans, /aiAvailable \? '＋ 手动创建' : '创建学习计划'/)
+  assert.match(ai, /const aiAvailable = ref\(!miniProgramBuild\)/)
+  assert.match(ai, /await ensureAIAvailable\(\)/)
+  assert.match(ai, /uni\.switchTab\(\{ url: '\/pages\/plans\/plans' \}\)/)
+})

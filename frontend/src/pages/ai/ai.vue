@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" v-if="aiAvailable">
     <view class="panel">
       <view class="title">智能规划学习计划</view>
       <view class="desc">提交后由系统在后台规划并自动创建计划。离开页面不会中断，完成后可在计划列表中继续编辑。</view>
@@ -41,7 +41,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
-import { AIApi, type AIPlanJob } from '@/api'
+import { AIApi, ClientFeatureApi, type AIPlanJob } from '@/api'
 
 const goal = ref('学习 Go 语言')
 const hours = ref(1)
@@ -50,6 +50,11 @@ const availableStart = ref('20:00')
 const availableEnd = ref('21:00')
 const additionalInstructions = ref('')
 const job = ref<AIPlanJob | null>(null)
+let miniProgramBuild = false
+// #ifdef MP-WEIXIN
+miniProgramBuild = true
+// #endif
+const aiAvailable = ref(!miniProgramBuild)
 const requestError = ref('')
 const isSubmitting = ref(false)
 const isRestoring = ref(false)
@@ -115,6 +120,7 @@ function prepareNewPlan() {
 }
 
 async function submit(confirmOverload: boolean) {
+  if (!(await ensureAIAvailable())) return
   if (isSubmitting.value || isRestoring.value || hasActiveJob.value) return
   requestError.value = ''
   if (!goal.value.trim()) return void uni.showToast({ title: '请输入学习目标', icon: 'none' })
@@ -152,6 +158,7 @@ async function confirmOverload() {
 }
 
 async function restoreCurrentJob() {
+  if (!aiAvailable.value) return
   const sequence = ++pollSequence
   isRestoring.value = true
   requestError.value = ''
@@ -207,9 +214,24 @@ function openResult() {
   if (job.value?.result_plan_id) uni.navigateTo({ url: `/pages/plan-detail/plan-detail?id=${job.value.result_plan_id}` })
 }
 
-onShow(() => {
+async function ensureAIAvailable() {
+  if (!miniProgramBuild) return true
+  try {
+    const features = await ClientFeatureApi.get()
+    aiAvailable.value = features?.mini_program_ai_enabled === true
+  } catch {
+    aiAvailable.value = false
+  }
+  if (aiAvailable.value) return true
+  stopPolling()
+  uni.switchTab({ url: '/pages/plans/plans' })
+  return false
+}
+
+onShow(async () => {
   visible = true
-  restoreCurrentJob()
+  await ensureAIAvailable()
+  if (aiAvailable.value) restoreCurrentJob()
 })
 onHide(stopPolling)
 onUnload(stopPolling)

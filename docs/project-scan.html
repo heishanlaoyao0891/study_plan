@@ -61,8 +61,8 @@
     <div class="metric"><b>385</b><span>当前项目文件（跟踪 + 新增）</span></div>
     <div class="metric"><b>29</b><span>OpenSpec changes</span></div>
     <div class="metric"><b>16 / 13</b><span>未归档 / 已归档</span></div>
-    <div class="metric"><b>395 / 421</b><span>未归档任务已完成</span></div>
-    <div class="metric"><b>197</b><span>Go 测试函数</span></div>
+    <div class="metric"><b>407 / 433</b><span>未归档任务已完成</span></div>
+    <div class="metric"><b>203</b><span>Go 测试函数</span></div>
     <div class="metric"><b>13</b><span>主规格能力模块</span></div>
   </section>
 
@@ -81,6 +81,7 @@
   <table>
     <thead><tr><th>日期</th><th>范围</th><th>更新摘要</th><th>验证</th></tr></thead>
     <tbody>
+      <tr><td>2026-08-01</td><td>小程序 AI 入口运行时开关</td><td>新增 <code>control-mini-program-ai-entry</code>（12/12）：AI 配置增加默认关闭的 <code>mini_program_ai_enabled</code>，管理台独立控制并展示微信平台政策风险，开关变化记录旧值/新值审计。认证客户端通过最小化的 <code>GET /api/client-features</code> 获取能力；新 H5/微信构建分别发送 <code>X-Client-Platform</code>，小程序计划页和 AI 页在关闭或读取失败时隐藏入口、停止状态请求/轮询并回到手动创建。后端只拦截明确的 <code>mp-weixin</code> 请求，H5 与不带平台头的已发布 1.0.1 保持兼容。</td><td>后端 <code>go test ./...</code>、<code>go vet ./...</code>，前端 20 项测试/type-check/H5/微信构建，管理端 5 项测试/type-check/build，OpenSpec strict validate 和 diff check 均通过。保留既有 Sass legacy API、微信 <code>strong</code> 选择器和管理端大 chunk 警告。</td></tr>
       <tr><td>2026-08-01</td><td>建立 v1.0.1 发布基线</td><td>以小程序清单版本 <code>1.0.1 (101)</code> 为准，在当前 <code>master</code> 建立首个 annotated Git tag <code>v1.0.1</code>。该基线包含备案域名与小程序发布配置、跨端计时恢复、用户管理闭环、提醒体验、统计图兼容、计划表单修复，以及 AI 长周期排程与调用审计能力。</td><td>tag 创建前确认本地与远端均无重名标签，工作树仅保留未跟踪的 <code>tmp-public-security/</code> 且不纳入版本。</td></tr>
       <tr><td>2026-07-31</td><td>小程序计划表单与 AI 长周期排程</td><td>诊断确认计划详情和手动创建共用的底部弹层以 <code>@click.self</code> 判断遮罩关闭；微信原生输入组件的事件目标会被错误视为遮罩，造成输入框无法输入、页面回弹，且长表单使用普通 <code>view</code> 导致内容被裁切。现改为显式遮罩关闭、内容区事件拦截和固定高度 <code>scroll-view</code>，覆盖编辑计划、邀请伙伴、新建/编辑任务与手动创建。AI 排程此前仅按每天容量紧凑装箱，忽略请求天数作为学习节奏，32 个任务可被压缩到约 7 天；现在当 AI 蓝图任务数足以覆盖请求学习日时，先为每个学习日保留一项任务，再回填剩余容量，保留一天多任务的优点，同时保证 30 天计划覆盖 30 个学习日。</td><td>新增小程序弹层输入/滚动契约，以及 32 项任务在 30 天、每天 4 小时下仍覆盖至第 30 天的服务端回归；后端全量测试、<code>go vet ./...</code>、前端 19 项测试、type-check、微信小程序构建与 OpenSpec strict validate 通过。UniApp 构建仍有既有 Sass legacy API 与 <code>strong</code> 选择器警告。</td></tr>
       <tr><td>2026-07-31</td><td>计划延期冲突可视化与 AI 排程标题</td><td>“重新安排 / 延期预览”逐项区分状态：与现有日程、同计划日期或输入范围冲突的任务使用浅红卡片、红色状态和就地调整说明；可直接应用的任务使用浅绿卡片和“可应用”标记，顶部汇总冲突提示继续保留。AI 蓝图的标题规则明确禁止模型填写天数、日期与时段；后端在最终排程后移除模型标题中的“X天”，并按首末任务日期写入真实的<code>安排跨度 X 天</code>，避免请求 7 个学习日但因跳过日期或容量挤占跨 8 天时仍显示“7天计划”的歧义。</td><td>新增延期状态前端契约和 7 个学习日跨 8 个日历日的服务端回归；后端全量测试、<code>go vet ./...</code>、前端 18 项测试、type-check、微信小程序构建及 OpenSpec strict validate 通过。UniApp 构建仍有既有 Sass legacy API 与 <code>strong</code> 选择器警告。</td></tr>
@@ -118,7 +119,7 @@
     <div class="card">
       <h3 class="ok">健康信号</h3>
       <ul>
-        <li>后端 <code>go test ./...</code>、<code>go vet ./...</code>、OpenSpec strict validate、前端/管理端 type-check 与三类生产构建全部通过。</li>
+        <li>后端 <code>go test ./...</code>、<code>go vet ./...</code>、OpenSpec strict validate、前端/管理端 type-check 与三类生产构建全部通过；新小程序 AI 入口默认关闭并可由管理台运行时控制。</li>
         <li>13 个已归档 change 均已完成任务；本次发布前变更已完成，生产测试账号已清理并保留可恢复备份。</li>
         <li>生产配置对 JWT、WeChat、AI 密钥加密 secret 有启动校验；密码使用 bcrypt；关键并发规则有数据库唯一索引。</li>
         <li>代码已经覆盖 H5/微信统一账号、封禁体验、AI 计划、反馈、通知、学习组、计时与打卡等较完整产品面。</li>
@@ -131,7 +132,7 @@
         <li><b>归档滞后：</b>4 个 change 已 100% 完成仍留在 active；这会让后续 delta 的基线和归档顺序变得含糊。</li>
         <li><b>检查清单漂移：</b>部分 tasks 仍未勾选，但对应测试已经存在，例如 interval-union 测试。</li>
         <li><b>前端验证缺口：</b>UniApp 已有 6 项导航/认证/AI 契约测试，管理端已有 3 项布局与 AI 指标刷新契约测试，但两端仍缺少常规组件与交互测试；关键 check-in 页面和 API 聚合文件仍偏大。</li>
-        <li><b>验证入口失效：</b><code>scripts/verify.ps1</code> 默认验证已归档的旧 change 名，且当前环境没有 OpenSpec CLI。</li>
+        <li><b>验证入口失效：</b><code>scripts/verify.ps1</code> 默认验证已归档的旧 change 名；当前环境已有 OpenSpec CLI，但脚本默认目标和跨平台入口仍需修正。</li>
         <li><b>AI Agent 后续演进：</b>当前功能 change 已完成；更广泛的 provider 重试策略重构和非关键故障注入矩阵已明确移出本 change，可在独立质量 change 中处理。</li>
         <li><b>邀请码二维码：</b>认证页现在指向 <code>/static/invite-qrcode.png</code>，真实个人二维码图片已放入前端静态资源。</li>
       </ul>
@@ -150,7 +151,7 @@
   <h2>系统轮廓</h2>
   <div class="flow">
     <span class="node">UniApp / Vue 3<br><small>H5 + 微信小程序 · 18 pages</small></span><span class="arrow">→</span>
-    <span class="node">Gin API<br><small>119 routes · 116 handlers</small></span><span class="arrow">→</span>
+    <span class="node">Gin API<br><small>120 routes · 117 handlers</small></span><span class="arrow">→</span>
     <span class="node">GORM / SQLite<br><small>30 model structs</small></span><span class="arrow">→</span>
     <span class="node">可选适配器<br><small>SiliconFlow · WeChat · MySQL archive · MinIO</small></span>
   </div>
@@ -164,6 +165,7 @@
   <table>
     <thead><tr><th>Change</th><th>完成度</th><th>Delta</th><th>判断</th></tr></thead>
     <tbody>
+      <tr><td>control-mini-program-ai-entry</td><td>12/12<div class="bar"><i style="width:100%"></i></div></td><td>3 capabilities / 3 requirements</td><td><span class="pill good">实现完成</span> 默认关闭；管理台可独立控制小程序 AI，H5 与已发布无平台头客户端保持兼容。建议发布新小程序版本后再按平台政策决定是否开启。</td></tr>
       <tr><td>add-friendly-ban-state-experience</td><td>29/29<div class="bar"><i style="width:100%"></i></div></td><td>4 capabilities / 7 requirements</td><td><span class="pill good">完成</span> 需先厘清与统一认证 change 的归档顺序。</td></tr>
       <tr><td>add-unified-h5-and-wechat-account-auth</td><td>17/18<div class="bar"><i style="width:94%"></i></div></td><td>2 / 5</td><td><span class="pill mid">外部验收</span> 缺生产邀请码与 H5/小程序联验。</td></tr>
       <tr><td>build-constrained-planning-agent</td><td>89/89<div class="bar"><i style="width:100%"></i></div></td><td>3 / 22</td><td><span class="pill good">完成</span> 在耐久生成闭环和逐次审计基础上，新增完整参数的版本化 Prompt、实际时段容量对齐、短计划完整覆盖、长计划细粒度及跨批进度衔接策略；Token 聚合以 invocation ledger 为唯一事实源，并在管理台调用流水刷新时同步更新。</td></tr>
@@ -207,6 +209,7 @@
       <tr><td>plan-management / edit a study plan</td><td>2</td><td>计划设置与每日计时 change 重叠。</td></tr>
       <tr><td>user-auth / login &amp; API authentication</td><td>2</td><td>统一账号与友好封禁同时改认证合同。</td></tr>
       <tr><td>notification / subscribe to reminders</td><td>2</td><td>设置体验与完整通知工作流重叠。</td></tr>
+      <tr><td>client-feature-control / mini-program AI availability</td><td>1</td><td>新增运行时能力接口；归档前应确认与 admin-config、ai-plan-generator 的依赖顺序。</td></tr>
       <tr><td>user-onboarding / first-run onboarding</td><td>2</td><td>完整工作流与 nickname/phone 规则 refine 重叠。</td></tr>
     </tbody>
   </table>
@@ -234,7 +237,7 @@
 
   <h2>Change 治理问题</h2>
   <section class="grid two">
-    <div class="card"><h3>1. 元数据和基线不清晰</h3><ul><li>10 个 active change 中 7 个缺少 <code>created</code>。</li><li>10 个 active proposal 均无一级标题。</li><li><code>openspec/config.yaml</code> 没有项目 context 与 artifact rules。</li><li>结果：AI 与人工都难以判断依赖、优先级、归档顺序和完成定义。</li></ul></div>
+    <div class="card"><h3>1. 元数据和基线不清晰</h3><ul><li>16 个 active change 中 7 个缺少 <code>created</code>。</li><li>16 个 active proposal 均无一级标题。</li><li><code>openspec/config.yaml</code> 没有项目 context 与 artifact rules。</li><li>结果：AI 与人工都难以判断依赖、优先级、归档顺序和完成定义。</li></ul></div>
     <div class="card"><h3>2. tasks 与实现不同步</h3><ul><li><code>refine...</code> 的 interval-union 测试仍未勾选，但 <code>TestCoveredMinutesUsesUnionAndRejectsAtSixty</code> 已存在。</li><li>reward idempotency、schedule resolution 等也已有部分测试，却被更大的组合任务继续标成未完成。</li><li>建议将大任务拆成可独立验证的边界项，并在实现提交中同步勾选。</li></ul></div>
     <div class="card"><h3>3. 验证脚本仍需修正</h3><ul><li>默认 change 是 <code>quality-and-testing</code>，但该 change 已以日期前缀归档。</li><li>脚本只提供 PowerShell 入口。</li><li>OpenSpec 1.6.0 已安装且当前 change 可 strict validate；剩余问题是脚本默认目标与跨平台入口仍过期。</li></ul></div>
     <div class="card"><h3>4. 外部验收和本地完成混杂</h3><ul><li>真实微信模板审批、生产邀请码、端到端验收属于外部状态。</li><li>它们让本地代码完成的 change 长期停留 active。</li><li>建议在 change 状态中明确区分 implementation complete、external acceptance pending、ready to archive。</li></ul></div>
@@ -244,12 +247,12 @@
   <table>
     <thead><tr><th>项目</th><th>结果</th><th>说明</th></tr></thead>
     <tbody>
-      <tr><td>Go tests</td><td class="ok">通过</td><td>184 个测试函数；AI 管理指标回归现证明 prompt、completion 和 total Token 均从 invocation ledger 聚合，不再依赖 legacy planning job 字段。历史 coverage 数值未在本轮重算。</td></tr>
+      <tr><td>Go tests</td><td class="ok">通过</td><td>203 个测试函数；新增 client-feature 隐私、默认关闭、渠道兼容与开关审计回归。AI 管理指标仍从 invocation ledger 聚合 Token，不依赖 legacy planning job 字段。历史 coverage 数值未在本轮重算。</td></tr>
       <tr><td>Go vet</td><td class="ok">通过</td><td>无输出。</td></tr>
-      <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>微信小程序 1.0.1 production build、前端与管理端 type-check、管理端 Vite build 全部通过；发布校验检查了 74 个微信产物文件。仅有 Sass legacy API、微信 style 选择器与管理端大 chunk 警告。</td></tr>
-      <tr><td>Frontend/Admin tests</td><td class="ok">9 项通过</td><td>前端 7 项新增生产域名与错误 IP/HTTP/dev override/陈旧版本拒绝测试；管理端 2 项覆盖固定侧栏与 AI Token 指标刷新。</td></tr>
-      <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td><code>prepare-domain-and-wechat-release</code> strict validate 无 issue，11/11 项本地任务完成。</td></tr>
-      <tr><td>Git</td><td class="ok">已交付</td><td>备案域名与微信 1.0.1 发布准备已完成验证，并随本轮提交推送至远端 master。</td></tr>
+      <tr><td>Frontend/Admin build</td><td class="ok">通过</td><td>微信小程序与 H5 production build、前端与管理端 type-check、管理端 Vite build 全部通过；仅有 Sass legacy API、微信 style 选择器与管理端大 chunk 警告。</td></tr>
+      <tr><td>Frontend/Admin tests</td><td class="ok">25 项通过</td><td>前端 20 项覆盖平台头、关闭态 UI/轮询和直达路由守卫；管理端 5 项覆盖独立开关、政策提示、分页和布局契约。</td></tr>
+      <tr><td>OpenSpec strict validate</td><td class="ok">通过</td><td><code>control-mini-program-ai-entry</code> strict validate 无 issue，12/12 项本地任务完成。</td></tr>
+      <tr><td>Git</td><td class="warn">待提交</td><td>本轮运行时开关实现和 OpenSpec 报告已在工作树；未修改或纳入未跟踪的 <code>tmp-public-security/</code>。</td></tr>
     </tbody>
   </table>
 
@@ -266,7 +269,7 @@
   <section class="card candidate strong">
     <h3>候选 A：OpenSpec change portfolio 收敛 <span class="pill high">强烈推荐 · 立即</span></h3>
     <p><b>文件：</b><code>openspec/changes/*</code>、<code>openspec/config.yaml</code>、<code>scripts/verify.ps1</code></p>
-    <p><b>问题：</b>10 个 active change 同时改 100 条 delta requirements，存在 10 组同名 Requirement 重叠；4 个完成项未归档，验证入口失效，导致“规格基线”这个 interface 比实际 implementation 更难理解。</p>
+    <p><b>问题：</b>16 个 active change 同时改动大量 delta requirements，存在多组同名 Requirement 重叠；多个完成项未归档，验证入口失效，导致“规格基线”这个 interface 比实际 implementation 更难理解。</p>
     <p><b>方向：</b>先恢复验证与状态元数据，再按依赖链归档完成项，把外部验收单独标识；让主规格重新成为唯一稳定基线。</p>
     <p><b>收益：</b>消除归档顺序歧义，减少后续 change 合并冲突，提高规格 locality 与发布可追溯性。</p>
     <div class="diagram"><div class="side"><b>Before</b><br>10 active deltas<br>↕ 同名 Requirement 交叉覆盖<br>↕ tasks 与代码状态漂移<br>→ 主规格基线不清</div><div class="to">→</div><div class="side"><b>After</b><br>有序 dependency chain<br>→ strict validate gate<br>→ 完成项及时 archive/sync<br>→ 主规格是稳定事实源</div></div>
@@ -299,5 +302,5 @@
     <div class="diagram"><div class="side"><b>Before</b><br>Page → giant API object<br>Page 自行管理 timer/error/navigation<br>0 frontend tests</div><div class="to">→</div><div class="side"><b>After</b><br>Page → deep workflow client<br>→ request/platform adapters<br>状态转换可单测</div></div>
   </section>
 
-  <div class="footer">本报告为持续维护索引。最近一次完整扫描使用了只读文件分析、OpenSpec 结构统计、Requirement 重叠检查、Go test/vet/coverage；当时未安装 npm 依赖和 OpenSpec CLI。后续变更应增量更新相关结论与验证状态。</div>
+  <div class="footer">本报告为持续维护索引。历史完整扫描使用了只读文件分析、OpenSpec 结构统计、Requirement 重叠检查、Go test/vet/coverage；本轮按变更范围增量核对并执行了 OpenSpec strict validate、后端/前端/管理端测试和构建。后续变更应继续增量更新相关结论与验证状态。</div>
 </main></body></html>

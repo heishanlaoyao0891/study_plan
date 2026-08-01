@@ -1,12 +1,12 @@
 <template>
   <view class="page">
     <view class="summary"><view><view class="eyebrow">学习愿望花园</view><view class="summary-title">{{ activeCount }} 个计划正在发芽</view></view><view class="summary-count">{{ plans.length }}</view></view>
-    <view class="ai-hero" @click="goAI"><view class="ai-badge">AI</view><view class="ai-copy"><view class="ai-title">{{ aiTitle }}</view><view class="ai-desc">{{ aiDescription }}</view></view><view class="arrow">›</view></view>
-    <view class="ai-status" v-if="aiJob"><view class="ai-state"><view class="ai-state-dot" :class="aiJob.status" /><view>{{ aiStatusText }}</view></view><view class="ai-result" v-if="aiJob.status === 'succeeded' && aiJob.result_plan_id" @click="openGeneratedPlan">查看计划 ›</view></view>
-    <button class="manual" @click="openCreate">＋ 手动创建</button>
+    <view class="ai-hero" v-if="aiAvailable" @click="goAI"><view class="ai-badge">AI</view><view class="ai-copy"><view class="ai-title">{{ aiTitle }}</view><view class="ai-desc">{{ aiDescription }}</view></view><view class="arrow">›</view></view>
+    <view class="ai-status" v-if="aiAvailable && aiJob"><view class="ai-state"><view class="ai-state-dot" :class="aiJob.status" /><view>{{ aiStatusText }}</view></view><view class="ai-result" v-if="aiJob.status === 'succeeded' && aiJob.result_plan_id" @click="openGeneratedPlan">查看计划 ›</view></view>
+    <button class="manual" :class="{ 'manual-primary': !aiAvailable }" @click="openCreate">{{ aiAvailable ? '＋ 手动创建' : '创建学习计划' }}</button>
     <view class="tools"><view class="tool" @click="goSchedule">日程</view><view class="tool" @click="goGroup">小组</view><view class="tool" @click="goNotifications">提醒</view><view class="tool recovery" v-if="overdueCount" @click="goRecovery">重排 {{ overdueCount }}</view></view>
     <view class="section-head">我的计划</view>
-    <view class="empty" v-if="!loading && !plans.length"><view class="empty-title">还没有计划</view><view class="empty-desc">从 AI 生成开始，或手动安排清晰的日期与时段。</view></view>
+    <view class="empty" v-if="!loading && !plans.length"><view class="empty-title">还没有计划</view><view class="empty-desc">{{ aiAvailable ? '从 AI 生成开始，或手动安排清晰的日期与时段。' : '手动安排清晰的日期与时段，开始你的学习计划。' }}</view></view>
     <view class="cards" v-else>
       <view class="card" v-for="plan in plans" :key="plan.id" :class="{ paused: plan.status === 'paused' }" @click="openPlan(plan)">
         <view class="card-head"><view class="plan-title">{{ plan.title }}</view><view class="pill" :class="plan.status">{{ statusText(plan.status) }}</view></view>
@@ -32,12 +32,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
-import { AIApi, PlanApi, RecoveryApi, type AIPlanJob, type CreatePlanReq, type Plan, type TaskDraft } from '@/api'
+import { AIApi, ClientFeatureApi, PlanApi, RecoveryApi, type AIPlanJob, type CreatePlanReq, type Plan, type TaskDraft } from '@/api'
 import { addLocalDays, localDateKey } from '@/utils/date'
 import { formatScheduleConflicts } from '@/utils/schedule'
 
 const plans=ref<Plan[]>([]),loading=ref(false),overdueCount=ref(0),showForm=ref(false),formError=ref('')
 const aiJob=ref<AIPlanJob|null>(null)
+let miniProgramBuild = false
+// #ifdef MP-WEIXIN
+miniProgramBuild = true
+// #endif
+const aiAvailable=ref(!miniProgramBuild)
 const weekdays=[{value:1,label:'一'},{value:2,label:'二'},{value:3,label:'三'},{value:4,label:'四'},{value:5,label:'五'},{value:6,label:'六'},{value:7,label:'日'}]
 const form=reactive<CreatePlanReq>({title:'',description:'',weekly_target_hours:7,start_date:'',end_date:'',default_planned_start:'20:00',default_planned_end:'21:00',study_weekdays:[1,2,3,4,5],confirm_overload:false})
 const bulk=reactive({title:'',objective:'',planned_start:'20:00',planned_end:'21:00'}),drafts=ref<TaskDraft[]>([])
@@ -47,9 +52,10 @@ const aiTitle=computed(()=>hasActiveAIJob.value?'AI 正在生成计划':aiJob.va
 const aiDescription=computed(()=>aiJob.value?.status==='pending'?'任务已排队，离开页面也会继续':aiJob.value?.status==='running'?'后台正在规划并校验学习日程':aiJob.value?.status==='succeeded'?'计划已自动保存，可查看或再次生成':aiJob.value?.status==='failed'?'调整目标或可用时间后可以重试':'说出目标，自动拆成有日期、有节奏的学习任务')
 const aiStatusText=computed(()=>aiJob.value?.status==='pending'?'等待处理':aiJob.value?.status==='running'?'生成中':aiJob.value?.status==='succeeded'?'生成完成':`生成失败：${aiJob.value?.error_message||'请调整条件后重试'}`)
 let pageVisible=false,aiPollTimer:ReturnType<typeof setTimeout>|undefined,aiPollSequence=0
-async function load(){loading.value=true;try{const [rows,recovery,currentJob]=await Promise.all([PlanApi.list(),RecoveryApi.preview().catch(()=>null),AIApi.currentPlanJob().catch(()=>null)]);if(!pageVisible)return;plans.value=rows||[];overdueCount.value=recovery?.overdue_tasks||0;aiJob.value=currentJob;scheduleAIPoll()}catch(error:any){if(pageVisible)uni.showToast({title:error?.message||'加载失败',icon:'none'})}finally{loading.value=false}}
-async function pollAIJob(){const current=aiJob.value;if(!pageVisible||!current||!hasActiveAIJob.value)return;const sequence=++aiPollSequence;try{const updated=await AIApi.getPlanJob(current.id);if(!pageVisible||sequence!==aiPollSequence)return;const completed=!hasActiveAIJob.value||updated.status==='succeeded'||updated.status==='failed';aiJob.value=updated;if(completed&&updated.status==='succeeded'){plans.value=await PlanApi.list()||[]}}catch{}if(pageVisible&&sequence===aiPollSequence&&hasActiveAIJob.value)scheduleAIPoll()}
-function scheduleAIPoll(){stopAIPollTimer();if(pageVisible&&hasActiveAIJob.value)aiPollTimer=setTimeout(pollAIJob,2000)}
+async function loadFeatures(){if(!miniProgramBuild){aiAvailable.value=true;return}try{const features=await ClientFeatureApi.get();aiAvailable.value=features?.mini_program_ai_enabled===true}catch{aiAvailable.value=false}if(!aiAvailable.value){aiJob.value=null;aiPollSequence++;stopAIPollTimer()}}
+async function load(){loading.value=true;try{await loadFeatures();const [rows,recovery,currentJob]=await Promise.all([PlanApi.list(),RecoveryApi.preview().catch(()=>null),aiAvailable.value?AIApi.currentPlanJob().catch(()=>null):Promise.resolve(null)]);if(!pageVisible)return;plans.value=rows||[];overdueCount.value=recovery?.overdue_tasks||0;aiJob.value=currentJob;scheduleAIPoll()}catch(error:any){if(pageVisible)uni.showToast({title:error?.message||'加载失败',icon:'none'})}finally{loading.value=false}}
+async function pollAIJob(){const current=aiJob.value;if(!pageVisible||!aiAvailable.value||!current||!hasActiveAIJob.value)return;const sequence=++aiPollSequence;try{const updated=await AIApi.getPlanJob(current.id);if(!pageVisible||!aiAvailable.value||sequence!==aiPollSequence)return;const completed=!hasActiveAIJob.value||updated.status==='succeeded'||updated.status==='failed';aiJob.value=updated;if(completed&&updated.status==='succeeded'){plans.value=await PlanApi.list()||[]}}catch{}if(pageVisible&&aiAvailable.value&&sequence===aiPollSequence&&hasActiveAIJob.value)scheduleAIPoll()}
+function scheduleAIPoll(){stopAIPollTimer();if(pageVisible&&aiAvailable.value&&hasActiveAIJob.value)aiPollTimer=setTimeout(pollAIJob,2000)}
 function stopAIPollTimer(){if(aiPollTimer)clearTimeout(aiPollTimer);aiPollTimer=undefined}
 function stopAIPolling(){pageVisible=false;aiPollSequence++;stopAIPollTimer()}
 function openCreate(){const start=new Date();Object.assign(form,{title:'',description:'',weekly_target_hours:7,start_date:localDateKey(start),end_date:localDateKey(addLocalDays(start,6)),default_planned_start:'20:00',default_planned_end:'21:00',study_weekdays:[1,2,3,4,5],confirm_overload:false});Object.assign(bulk,{title:'',objective:'',planned_start:'20:00',planned_end:'21:00'});formError.value='';drafts.value=[];refreshDrafts();showForm.value=true}
@@ -67,7 +73,7 @@ function weekdayLabel(date:string){return `周${weekdays.find(row=>row.value===(
 function weekdaySummary(selected:unknown){const days=Array.isArray(selected)?selected:[];return days.length===7?'每天':days.length?`周${days.map(value=>weekdays.find(day=>day.value===value)?.label).join('、')}`:'未设置学习日'}
 function rate(plan:Plan){return plan.completion_rate??(plan.total_tasks?Math.round(plan.completed_tasks/plan.total_tasks*100):0)}function statusText(status:string){return status==='paused'?'暂停':status==='archived'?'归档':'进行中'}
 function openGeneratedPlan(){if(aiJob.value?.result_plan_id)uni.navigateTo({url:`/pages/plan-detail/plan-detail?id=${aiJob.value.result_plan_id}`})}
-function goAI(){uni.navigateTo({url:'/pages/ai/ai'})}function goSchedule(){uni.navigateTo({url:'/pages/schedule/schedule'})}function goGroup(){uni.navigateTo({url:'/pages/group/group'})}function goNotifications(){uni.navigateTo({url:'/pages/notifications/notifications'})}function goRecovery(){uni.navigateTo({url:'/pages/recovery/recovery'})}
+function goAI(){if(!aiAvailable.value)return void uni.showToast({title:'小程序暂未开放 AI 计划',icon:'none'});uni.navigateTo({url:'/pages/ai/ai'})}function goSchedule(){uni.navigateTo({url:'/pages/schedule/schedule'})}function goGroup(){uni.navigateTo({url:'/pages/group/group'})}function goNotifications(){uni.navigateTo({url:'/pages/notifications/notifications'})}function goRecovery(){uni.navigateTo({url:'/pages/recovery/recovery'})}
 onShow(()=>{pageVisible=true;load()})
 onHide(stopAIPolling)
 onUnload(stopAIPolling)

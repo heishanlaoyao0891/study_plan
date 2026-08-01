@@ -69,6 +69,9 @@ type aiPlanJobView struct {
 }
 
 func SubmitAIPlanJob(c *gin.Context) {
+	if !allowMiniProgramAIRequest(c) {
+		return
+	}
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAIGenerateBodyBytes)
 	var req submitAIPlanJobReq
@@ -147,6 +150,9 @@ func createOrReuseAIPlanJob(database *gorm.DB, requested models.AIPlanGeneration
 }
 
 func GetCurrentAIPlanJob(c *gin.Context) {
+	if !allowMiniProgramAIRequest(c) {
+		return
+	}
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	var job models.AIPlanGenerationJob
 	err := db.DB.Where("user_id = ?", uid).Order("CASE WHEN status IN ('pending','running') THEN 0 ELSE 1 END, created_at DESC, id DESC").First(&job).Error
@@ -162,6 +168,9 @@ func GetCurrentAIPlanJob(c *gin.Context) {
 }
 
 func GetAIPlanJob(c *gin.Context) {
+	if !allowMiniProgramAIRequest(c) {
+		return
+	}
 	uid := c.GetUint(middleware.CtxUserIDKey)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {

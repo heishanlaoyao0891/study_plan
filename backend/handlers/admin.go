@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -54,6 +55,7 @@ type aiConfigReq struct {
 	BackgroundJobTimeoutSeconds int    `json:"background_job_timeout_seconds"`
 	DailyGenerationLimit        int    `json:"daily_generation_limit"`
 	Enabled                     *bool  `json:"enabled"`
+	MiniProgramAIEnabled        *bool  `json:"mini_program_ai_enabled"`
 	APIKey                      string `json:"api_key"`
 }
 
@@ -704,6 +706,7 @@ func UpdateAIConfig(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "query ai config failed: "+err.Error())
 		return
 	}
+	previousMiniProgramAIEnabled := cfg.MiniProgramAIEnabled
 	cfg.Provider = req.Provider
 	cfg.ModelName = strings.TrimSpace(req.ModelName)
 	cfg.BaseURL = strings.TrimSpace(req.BaseURL)
@@ -718,6 +721,9 @@ func UpdateAIConfig(c *gin.Context) {
 	cfg.DailyGenerationLimit = req.DailyGenerationLimit
 	if req.Enabled != nil {
 		cfg.Enabled = *req.Enabled
+	}
+	if req.MiniProgramAIEnabled != nil {
+		cfg.MiniProgramAIEnabled = *req.MiniProgramAIEnabled
 	}
 	cfg.UpdatedBy = &adminID
 	if req.APIKey != "" {
@@ -737,7 +743,11 @@ func UpdateAIConfig(c *gin.Context) {
 		api.Fail(c, http.StatusInternalServerError, "save ai config failed: "+err.Error())
 		return
 	}
-	recordAdminAudit(adminID, nil, "update_ai_config", "")
+	reason := ""
+	if previousMiniProgramAIEnabled != cfg.MiniProgramAIEnabled {
+		reason = fmt.Sprintf("mini_program_ai_enabled: %t -> %t", previousMiniProgramAIEnabled, cfg.MiniProgramAIEnabled)
+	}
+	recordAdminAudit(adminID, nil, "update_ai_config", reason)
 	api.OK(c, aiConfigResp(cfg))
 }
 
@@ -873,7 +883,7 @@ func firstAIConfig() (models.AIConfig, error) {
 	var cfg models.AIConfig
 	err := db.DB.Order("id ASC").First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 300, DailyGenerationLimit: 5, Enabled: true}
+		cfg = models.AIConfig{Provider: services.AIProviderMock, RequestTimeoutSeconds: 30, InteractiveTargetSeconds: 2, BackgroundJobTimeoutSeconds: 300, DailyGenerationLimit: 5, Enabled: true, MiniProgramAIEnabled: false}
 		err = db.DB.Create(&cfg).Error
 	} else if err == nil {
 		original := cfg
@@ -918,6 +928,7 @@ func aiConfigResp(cfg models.AIConfig) gin.H {
 		"background_job_timeout_seconds": cfg.BackgroundJobTimeoutSeconds,
 		"daily_generation_limit":         cfg.DailyGenerationLimit,
 		"enabled":                        cfg.Enabled,
+		"mini_program_ai_enabled":        cfg.MiniProgramAIEnabled,
 		"has_api_key":                    cfg.APIKeyCiphertext != "",
 		"api_key_masked":                 maskSecret(cfg.APIKeyCiphertext),
 		"key_storage":                    keyStorage,

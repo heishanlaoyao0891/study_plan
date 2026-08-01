@@ -67,6 +67,14 @@ export async function request<T = any>(path: string, options: RequestOptions = {
   const needAuth = options.auth !== false
   const url = getApiBase() + path
   const header: Record<string, string> = { 'Content-Type': 'application/json' }
+  // Keep platform identification compile-time so the server can gate only new
+  // mini-program builds while preserving legacy clients without this header.
+  // #ifdef MP-WEIXIN
+  header['X-Client-Platform'] = 'mp-weixin'
+  // #endif
+  // #ifdef H5
+  header['X-Client-Platform'] = 'h5'
+  // #endif
   if (needAuth) {
     const token = getToken()
     if (!token) {

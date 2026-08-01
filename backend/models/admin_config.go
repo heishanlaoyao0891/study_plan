@@ -23,6 +23,7 @@ type AIConfig struct {
 	BackgroundJobTimeoutSeconds int       `gorm:"default:300" json:"background_job_timeout_seconds"`
 	DailyGenerationLimit        int       `gorm:"default:5" json:"daily_generation_limit"`
 	Enabled                     bool      `gorm:"default:true" json:"enabled"`
+	MiniProgramAIEnabled        bool      `gorm:"default:false" json:"mini_program_ai_enabled"`
 	APIKeyCiphertext            string    `gorm:"size:2048" json:"-"`
 	APIKeyEncrypted             bool      `gorm:"default:false" json:"-"`
 	UpdatedBy                   *uint     `json:"updated_by,omitempty"`

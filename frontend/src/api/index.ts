@@ -680,6 +680,16 @@ export interface StatsMetrics { study_minutes: number; planned_minutes: number; 
 export interface StatsPoint extends StatsMetrics { key: string; label: string; start: string; end: string; plan_id?: number; plan_title?: string }
 export interface StatsTrend { period: '7d' | '1m' | '1y'; dimension: 'time' | 'plan'; start: string; end: string; bucket_unit: 'day' | 'month' | 'plan'; summary: StatsMetrics; series: StatsPoint[] }
 
+export interface ClientFeatures {
+  mini_program_ai_enabled: boolean
+}
+
+export const ClientFeatureApi = {
+  get() {
+    return api.get<ClientFeatures>('/api/client-features')
+  },
+}
+
 export const AIApi = {
   submitPlanJob(data: SubmitAIPlanJobReq) {
     return api.post<AIPlanJob>('/api/ai/plan-jobs', data)

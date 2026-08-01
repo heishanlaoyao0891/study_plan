@@ -16,6 +16,12 @@
     </section>
     <form class="panel wide-panel" @submit.prevent="save">
       <label class="check-row"><input v-model="form.enabled" type="checkbox" /> 启用模型任务拆解</label>
+      <label class="check-row"><input v-model="form.mini_program_ai_enabled" type="checkbox" /> 开放微信小程序 AI 生成计划</label>
+      <div v-if="form.mini_program_ai_enabled" class="policy-warning">
+        <strong>平台政策风险提示</strong>
+        <span>该开关只控制已发布客户端的入口和接口，不代表微信平台已批准相关能力。开启后可能触发审核或平台处置，请确认你已承担相应风险。</span>
+        <label class="policy-confirm"><input v-model="platformWarningAcknowledged" type="checkbox" /> 我已了解并确认上述风险</label>
+      </div>
       <label class="field"><span>服务商</span><select v-model="form.provider" @change="applyPreset"><option value="siliconflow">SiliconFlow（推荐）</option><option value="openai_compatible">OpenAI 兼容服务</option><option value="mock">规则回退（不调用 AI）</option></select></label>
       <label class="field"><span>模型名称</span><input v-model.trim="form.model_name" /></label>
       <label class="field"><span>Base URL</span><input v-model.trim="form.base_url" /></label>
@@ -70,8 +76,10 @@ const invocationPage = ref(1)
 const invocationPageSize = ref(20)
 const invocationTotal = ref(0)
 const loadingInvocations = ref(false)
+const platformWarningAcknowledged = ref(false)
+let savedMiniProgramAIEnabled = false
 const invocationTotalPages = computed(() => Math.max(1, Math.ceil(invocationTotal.value / invocationPageSize.value)))
-const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, interactive_target_seconds: 2, background_job_timeout_seconds: 300, daily_generation_limit: 5, enabled: true })
+const form = reactive<AIConfig>({ provider: 'mock', model_name: '', base_url: '', request_timeout_seconds: 30, interactive_target_seconds: 2, background_job_timeout_seconds: 300, daily_generation_limit: 5, enabled: true, mini_program_ai_enabled: false })
 const modeLabel = computed(() => ({ ai: 'AI 生成', fallback: '规则回退', disabled: '已停用' }[form.effective_mode || (form.enabled ? (form.provider === 'mock' ? 'fallback' : 'ai') : 'disabled')]))
 const keyStorageLabel = computed(() => ({ encrypted: '已加密', plaintext: '明文，需重新保存密钥', missing: '未配置' }[form.key_storage || 'missing']))
 
@@ -79,6 +87,7 @@ onMounted(async () => {
   try {
     const [config, planningMetrics, invocationResult] = await Promise.all([AdminApi.aiConfig(), AdminApi.aiMetrics(), AdminApi.aiInvocations({ page: invocationPage.value, size: invocationPageSize.value })])
     Object.assign(form, config)
+    savedMiniProgramAIEnabled = form.mini_program_ai_enabled === true
     metrics.value = planningMetrics
     invocations.value = invocationResult.items
     invocationPage.value = invocationResult.page
@@ -119,8 +128,14 @@ function queryInvocations() {
 
 async function save() {
   error.value = ''
+  if (form.mini_program_ai_enabled && !savedMiniProgramAIEnabled && !platformWarningAcknowledged.value) {
+    error.value = '请先确认微信平台政策风险后再开启小程序 AI'
+    return
+  }
   try {
     Object.assign(form, await AdminApi.saveAIConfig({ ...form, api_key: apiKey.value || undefined }))
+    savedMiniProgramAIEnabled = form.mini_program_ai_enabled === true
+    platformWarningAcknowledged.value = false
     apiKey.value = ''
     status.value = 'AI 配置已保存'
   } catch (err) {
@@ -158,6 +173,9 @@ function statusLabel(value: AIInvocationLog['status']) { return ({ started: '执
 .metrics-grid div { display:flex; flex-direction:column; gap:3px; padding:14px; border:1px solid #e4e8f0; border-radius:10px; background:#fff; }
 .metrics-grid strong { font-size:20px; color:#1f4f9a; }
 .metrics-grid span { color:#788397; font-size:13px; }
+.policy-warning { display:flex; flex-direction:column; gap:7px; margin:12px 0 18px; padding:12px 14px; border:1px solid #f0c36d; border-radius:9px; background:#fff8e7; color:#7b5311; font-size:13px; line-height:1.5; }
+.policy-warning strong { color:#9a5a10; }
+.policy-confirm { display:flex; align-items:center; gap:7px; color:#70480c; }
 .invocation-panel { width:100%; max-width:none; margin-top:18px; }
 .invocation-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
 .invocation-filters { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:10px; margin:16px 0; }

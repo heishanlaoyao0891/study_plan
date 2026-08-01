@@ -41,6 +41,16 @@ test('AI invocation history exposes pagination and uses full workspace width', a
   assert.doesNotMatch(source, /min-width:1100px/)
 })
 
+test('AI configuration exposes an independent mini-program switch and policy acknowledgement', async () => {
+  const source = await view('AIConfigView.vue')
+
+  assert.match(source, /form\.mini_program_ai_enabled/)
+  assert.match(source, /开放微信小程序 AI 生成计划/)
+  assert.match(source, /平台政策风险提示/)
+  assert.match(source, /platformWarningAcknowledged/)
+  assert.match(source, /请先确认微信平台政策风险后再开启小程序 AI/)
+})
+
 test('user directory exposes account identities and safe management actions', async () => {
   const source = await view('UsersView.vue')
 
